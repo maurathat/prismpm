@@ -1,12 +1,13 @@
-// A test, not part of the package: in a browser worker, a model is checked and its semantic snapshot taken by
-// LexLean as WebAssembly, and its holo is built with nothing compiled (src/journey/model-holo.mjs). When the
-// Holospace shell is served beside it, the holo is then kept in the shell's store, a changed byte is planted
-// there, and the holo is opened through the shell's own path. No server takes part beyond serving these files.
+// A test, not part of the package: in a browser worker, a model is built by the package's own build
+// (src/journey/build-core.mjs), the functions `prism_build` runs in Node: LexLean as WebAssembly checks it and takes
+// its semantic snapshot, and its holo is built with nothing compiled. LexLean is admitted through the build's ports
+// (src/journey/toolchain.mjs): fetched, decoded, hashed and compiled as it arrives, kept, and read back from the
+// store. When the Holospace shell is served beside it, the holo is then kept in the shell's store, a changed byte is
+// planted there, and the holo is opened through the shell's own path. No server takes part beyond serving these files.
 //
 // Message in: { names: [...] }. Messages out: one row per name, then { done: true }.
-import { runWasi } from '/prism-code/journey/wasi-memory.mjs';
-import { kappa as blake3 } from '/prism-code/blake3.mjs';
-import { buildHolo } from '/prism-code/journey/model-holo.mjs';
+import { buildFromFiles } from '/prism-code/journey/build-core.mjs';
+import { admitModule, memoryStore } from '/prism-code/journey/toolchain.mjs';
 import { EVALUATOR_GUEST } from '/prism-code/journey/model-guest.mjs';
 
 const now = () => performance.now();
@@ -14,45 +15,38 @@ const ms = (from) => Math.round(now() - from);
 const bytesOf = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
 const fromBase64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
-const dec = new TextDecoder();
 
 let ready = null;
 async function start() {
   const pins = await (await fetch('/pins.json')).json();
-  const t0 = now();
-  const inflated = new Uint8Array(await new Response((await fetch('/lexlean.wasm.gz')).body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
-  const fetchMs = ms(t0);
-  const t1 = now();
-  const label = blake3(inflated);
-  if (label !== pins.lexlean) throw new Error(`the LexLean executable hashes to ${label}, not the pinned ${pins.lexlean}`);
-  const hashMs = ms(t1);
-  const t2 = now();
-  const lexlean = await WebAssembly.compile(inflated);
+  const pin = { kappa: pins.lexlean, url: '/lexlean.wasm.gz', encoding: 'gzip' };
+  const store = memoryStore();
+  const through = { store, fetch: (url) => fetch(url) };
+  const fetched = await admitModule(pin, through);
+  // Read back from the store, with no fetch to fall back on: the bytes are hashed again before they are compiled.
+  const kept = await admitModule(pin, { store });
+  // Planted: the same bytes asked for under another label are refused, and never compiled for the caller.
+  let planted;
+  try { await admitModule({ ...pin, kappa: `blake3:${'0'.repeat(64)}` }, { fetch: through.fetch }); planted = 'ADMITTED'; } catch (error) { planted = `refused: ${error.code}`; }
   const evaluator = await bytesOf(`/prism-code/journey/${EVALUATOR_GUEST.file}`);
   let shell = null;
   if (pins.shell) {
-    const [kernel, open, store] = await Promise.all([import('/shell/kernel.mjs'), import('/shell/open.mjs'), import('/shell/store.mjs')]);
+    const [kernel, open, shellStore] = await Promise.all([import('/shell/kernel.mjs'), import('/shell/open.mjs'), import('/shell/store.mjs')]);
     const kernels = await kernel.openKernels({ holoBytes: await bytesOf('/shell/kernels/holospace-kernel.holo'), pin: pins.shell });
-    const backing = await store.bestBacking();
-    shell = { kernels, open, store, backing, kept: store.openStore(backing, kernels) };
+    const backing = await shellStore.bestBacking();
+    shell = { kernels, open, store: shellStore, backing, kept: shellStore.openStore(backing, kernels) };
   }
-  return { lexlean, evaluator, shell, start: { fetchMs, hashMs, compileMs: ms(t2), lexleanBytes: inflated.length, backing: shell?.backing.kind ?? null } };
+  return { lexlean: kept.module, evaluator, shell, start: { fetchHashCompileMs: fetched.ms, fromStoreMs: kept.ms, from: [fetched.from, kept.from], wrongLabel: planted, streamed: typeof WebAssembly.compileStreaming === 'function', backing: shell?.backing.kind ?? null, ok: fetched.from === 'fetch' && kept.from === 'store' && planted === 'refused: lexlean.wasm-mismatch' } };
 }
 
 async function one(name, { lexlean, evaluator, shell }) {
   const listed = await (await fetch(`/projects/${name}.json`)).json();
   const files = new Map(Object.entries(listed.files).map(([path, text]) => [path, fromBase64(text)]));
-  const check = async () => { const t = now(); const run = await runWasi(lexlean, { files, args: ['--diagnostic-format', 'json', 'check', '--all'] }); return { ms: ms(t), ok: JSON.parse(dec.decode(run.stdout)).success === true }; };
-  const first = await check();
-  const second = await check();
-  const t1 = now();
-  const taken = await runWasi(lexlean, { files, args: ['snapshot', '--all'] });
-  if (taken.exit !== 0) throw new Error('LexLean took no snapshot');
-  const snapshotBytes = new Uint8Array(taken.stdout);
-  const snapshotMs = ms(t1);
-  const t2 = now();
-  const built = await buildHolo(JSON.parse(dec.decode(snapshotBytes)), { evaluator, snapshotBytes });
-  const row = { name, ok: first.ok && second.ok, checkMs: [first.ms, second.ms], snapshotMs, snapshotBytes: snapshotBytes.length, buildMs: ms(t2), holoBytes: built.bytes.length, label: built.label, vectors: built.vectors, compared: built.compared, expected: listed.expected, sameAsNode: built.label === listed.expected };
+  const result = await buildFromFiles({ files, lexlean, evaluator });
+  if (!result.ok) return { name, ok: false, stage: result.stage, error: result.message };
+  const again = await buildFromFiles({ files, lexlean, evaluator });
+  const built = result.holo;
+  const row = { name, ok: again.ok && again.holo.label === built.label, buildMs: [result.ms, again.ms], holoBytes: built.bytes.length, label: built.label, vectors: result.vectors, compared: result.compared, proved: result.proved, expected: listed.expected, sameAsNode: built.label === listed.expected };
   row.ok = row.ok && row.sameAsNode;
   if (shell) {
     // Kept under its BLAKE3 label, read back, and read again after one byte of it is changed where it is kept.
@@ -82,6 +76,7 @@ onmessage = async ({ data }) => {
     ready ??= start();
     const context = await ready;
     postMessage({ start: context.start });
+    if (!context.start.ok) postMessage({ row: { name: '(toolchain)', ok: false, error: JSON.stringify(context.start) } });
     for (const name of data.names) {
       try { postMessage({ row: await one(name, context) }); } catch (error) { postMessage({ row: { name, ok: false, error: String(error?.message ?? error) } }); }
     }

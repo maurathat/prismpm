@@ -919,6 +919,7 @@ pub fn run_at(root: &Path, id: &str) {
                 ("sdk/npm/prism-code/test/model-holo.test.mjs", 10),
                 ("sdk/npm/prism-code/test/model-bundle.test.mjs", 4),
                 ("sdk/npm/prism-code/test/model-site.test.mjs", 2),
+                ("sdk/npm/prism-code/test/build-core.test.mjs", 7),
             ],
             "600000",
         ),
