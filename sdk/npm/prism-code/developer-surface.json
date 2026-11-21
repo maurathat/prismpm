@@ -108,6 +108,11 @@
     },
     {
       "kind": "verb",
+      "place": "prism-code publish-model",
+      "name": "publish-model"
+    },
+    {
+      "kind": "verb",
       "place": "prism-code pull",
       "name": "pull"
     },

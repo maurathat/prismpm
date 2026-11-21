@@ -28,6 +28,8 @@
  *   prism-code export <NAME@sha256:DIGEST> [--out <dir> | --tar <file>]
  *                                                     write a verified release's six-file browser export
  *   prism-code generate <app.holo> --out <dir>        write bindings and a typed client from the world
+ *   prism-code publish-model <app.holo> --project <dir> --out <dir>
+ *                                                     write the holo's model beside its page, with a record of both
  *   prism-code check <app.holo> [--policy <file>] [--json]
  *                                                     judge the holo against a policy and print its verdict
  *   prism-code dev [<dir>] [--port N] [--no-open] [--policy <file>] [--build <command>] [--image <path>]
@@ -135,6 +137,10 @@ Usage:
                                                     <project>/.prism/oci, or one tarball, with the holo's
                                                     attestations beside it; every byte is checked against
                                                     the build manifest
+  prism-code publish-model <app.holo> --project <dir> --out <dir> [--json]
+                                                    write the LexLean model in --project into <out>/model, with
+                                                    <out>/app.holo.json naming the holo and the model identity
+                                                    the holo gives, so the model can be opened beside the app
   prism-code generate <app.holo> --out <dir> [--lang <language>]
                                                     write bindings and a typed client (js, rust or python;
                                                     js by default) from the holo's WIT world and model into
@@ -528,6 +534,18 @@ async function commandGenerate(positional, options) {
   const { status, out, files, record } = await generate({ holo, out: options.out, language });
   const what = `${language}, ${record.world.contract}, model blake3:${record.model.blake3.slice(0, 12)}`;
   process.stdout.write(status === 'unchanged' ? `${out} is up to date (${what})\n` : `wrote ${files.length} of ${Object.keys(record.files).length} files to ${out} (${what})\n`);
+  return 0;
+}
+
+async function commandPublishModel(positional, options) {
+  if (positional.length !== 1) return usage('publish-model takes one holo');
+  if (typeof options.project !== 'string' || options.project === '') return usage('publish-model needs --project <dir>, the LexLean model the holo was built from');
+  if (typeof options.out !== 'string' || options.out === '') return usage('publish-model needs --out <dir>; it never writes to a default place');
+  const { writeHoloAppModel } = await import('../src/journey/holo-app-site.mjs');
+  const out = resolve(options.out);
+  const made = writeHoloAppModel({ holo: new Uint8Array(await readFile(resolve(positional[0]))), model: resolve(options.project), out });
+  if (options.json) process.stdout.write(`${JSON.stringify(made)}\n`);
+  else process.stdout.write(`wrote the model, ${made.files} files, to ${join(out, 'model')} and its record to ${join(out, 'app.holo.json')} (holo ${made.holo.slice(0, 19)}, model ${made.semanticId.slice(0, 12)})\n`);
   return 0;
 }
 
@@ -1068,6 +1086,8 @@ async function main(argv) {
       return commandGenerate(positional, options);
     case 'export':
       return commandExport(positional, options);
+    case 'publish-model':
+      return commandPublishModel(positional, options);
     case 'rm':
       return commandRm(positional);
     case 'manifest':

@@ -1,6 +1,6 @@
 # Prism IDE, phase 2: open any Prism app to audit it and edit it, in any browser
 
-Status: proposed, and partly built. Since this was written, `main` has gained the audit page, the edit pages, the model in the VS Code workbench, LexLean colouring, a published model and the check that a model is the one its app runs, all live at https://uor-foundation.github.io/prismpm/ (`audit/`, `edit/`, `edit/ide/`). The table below was read before that work; the rows the terminal phase depends on are corrected, the rest are as written. Phase 2f is built: the terminal is in the plain edit page and in the workbench's terminal panel. Phase 2d is built but for one part awaiting review (below). Phase 2e is not built.
+Status: proposed, and partly built. Since this was written, `main` has gained the audit page, the edit pages, the model in the VS Code workbench, LexLean colouring, a published model and the check that a model is the one its app runs, all live at https://uor-foundation.github.io/prismpm/ (`audit/`, `edit/`, `edit/ide/`). The table below was read before that work; the rows the terminal phase depends on are corrected, the rest are as written. Phase 2f is built: the terminal is in the plain edit page and in the workbench's terminal panel. Phase 2d is built but for one part awaiting review (below). Phase 2e is written and in review, in two repositories (below).
 
 ## Why
 
@@ -104,6 +104,12 @@ Not built (2026-11-21). What was found on reading `UOR-Foundation/template` at `
 - The frame already has a `status` slot an app's page fills. A link put there by the app's own page would need no change to the frame; the proposal asks for a control in the frame itself.
 
 So this phase needs three changes in order: prism-code writes the model and the record for a holo app; the template's build calls it and publishes them; the frame, or the page, shows the control when they are there. The first is in this repository. The other two are the template's, and are items 2 and 3 of "Ask first".
+
+Since then (2026-11-21), in draft:
+
+- The first change is `prism-code publish-model <app.holo> --project <dir> --out <dir>`: it writes `model/`, `model/project.json` and `app.holo.json`, taking the model's identity from the holo's own provenance.
+- The other two are a draft in the template (UOR-Foundation/template#108): the page's build says where the model opens, and the frame shows the control, in the frame itself as was chosen. Tried on the template's fixture page: the control opens the audit view of that app. It was first written with the publishing inside the template, which that repository's own gate refuses: nothing but LexLean may be added there, and what is not LexLean may only shrink. So the publishing moved here, and the template's part waits on a prism-code release that has this command.
+- Found on the way: Prism IDE's LexLean accepts only Lean 4.32.2, and the template's app is on 4.32.1. The audit view works for such an app; the editor opens its files and cannot check them.
 
 ### Phase 2f: the terminal
 
