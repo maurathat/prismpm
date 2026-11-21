@@ -144,7 +144,23 @@ edit/ide/?registry=https://<registry>&namespace=<namespace>&model=blake3:<64 hex
 - `readModelTar` in `model-tar.mjs` reads the archive strictly: plain files of text under one folder, every header's checksum, no path that leaves the folder. Anything else is refused whole.
 - A line under the strip says which label was opened, how many bytes, and from where. A model opened this way is compared with no app.
 
-Tried by hand in the same browser, against a stand-in on this machine that answers at the registry's address shape. **kappa-registry itself was not run**: it is a Rust server and was not built here.
+Tried against kappa-registry itself (2026-11-21): its server built from `main` at `bd231d0` and run on this machine, with nothing configured but its address and its store.
+
+| Step | Result |
+|---|---|
+| Push two model archives with a plain `PUT` under their BLAKE3 labels | 201 each; `Docker-Content-Digest` is the label, `X-Kappa-Axis` is `blake3` |
+| Push other bytes under a label that is not theirs | 400: the registry checks before it stores |
+| The client fetches both back, from Node | the same bytes, the same labels, the same files |
+| A request that names the Pages site as its origin | answered with that origin allowed |
+| The workbench, served from this machine, opens one by label | 5 of 5 proved; "This is the model blake3:42a411b0…: 40448 bytes fetched from …, which derive to that label." |
+| A label the registry does not have | "the registry has no blob … under acme/models" |
+
+Two things that trial found:
+
+- **The published page cannot reach a registry on the reader's own machine.** Opened from `https://uor-foundation.github.io`, the browser refused the request to `http://127.0.0.1` before sending it; the registry's log shows nothing arrived. The page said the registry did not answer. A registry the published page can use must be reached by https.
+- **The registry refuses a preflight.** `OPTIONS` on a blob's address answers 405, though its own CORS code means to answer 204. The client's request is a plain `GET` and needs none, so reading works. A browser that sends one first (a request with a credential, or to a private network) would be refused.
+
+The rest was tried by hand in the same browser against a stand-in on this machine that answers at the registry's address shape, because the cases need a registry that lies.
 
 | Step | Shown |
 |---|---|
@@ -161,6 +177,7 @@ Limits of the workbench page:
 
 - Opening by label is read only: the page pushes nothing to a registry. A model gets there by `curl`, as the registry's README shows, or by a tool that can push.
 - Only a registry that needs no sign-in for reading can be used: the client sends no credential.
+- The published page reaches only a registry served by https. No such registry was tried: the one run here was on this machine.
 - A draft is trusted no further than the origin that serves the page: another page of the same origin can write to the same store. It is the reader's convenience, not evidence of anything.
 - Texts a discarded draft named stay in the browser until the site's data is cleared. Nothing names them.
 - Where the browser has no private file system for the page (a private window), nothing is kept, and the line says a reload loses the changes. That case was not tried by hand.
@@ -178,29 +195,36 @@ Limits of the workbench page:
 
 ## The terminal (phase 2f)
 
-Both pages have a terminal, and both are answered by one command line (`terminal/programs.mjs`, `terminal/session.mjs`).
+Both pages have a terminal, and both are answered by one command line (`terminal/programs.mjs`; the command language is `terminal/shell.mjs`, the keys are `terminal/line-editor.mjs`).
 
 - The plain page: below the guarantees, on xterm.js itself (`@xterm/xterm` 6.0.0, MIT) with the fit, webgl, web-links, search and unicode11 addons, installed by `ide/package-lock.json` and published beside the page as the files npm ships.
 - The workbench page: the workbench's own terminal panel (`@codingame/monaco-vscode-terminal-service-override` 39.0.5, which brings VS Code's terminal and the xterm.js it pins, 6.1.0-beta.327). The panel, its tabs, its find box and its renderer are VS Code's. `src/model-terminal.js` is the "process" behind it.
 
-It is not a shell. xterm.js draws and reports keys; a browser tab has no operating system to run anything else. What answers the keys is a fixed list of commands on the open model:
+xterm.js draws and reports keys; a browser tab has no operating system to run anything else. What answers the keys is a command language over a fixed list of 32 commands, each of them the page's own code or a question to one of the page's two workers:
 
-| Command | What it does |
+| Commands | What they do |
 |---|---|
-| `help`, `clear` | list the commands; clear the screen |
-| `ls [folder]`, `cat <file>`, `kappa <file>` | list the model's files; print one; print one file's `blake3:` label |
+| `help`, `clear`, `history`, `set`, `unset`, `env` | the terminal itself: the commands, the screen, the lines entered, variables |
+| `ls [-l]`, `cd`, `pwd`, `cat`, `kappa` | the model's files: list, move about, print, print a `blake3:` label |
+| `echo`, `grep`, `head`, `tail`, `wc`, `sort`, `uniq`, `diff` | text, from files of the model or from the command before in a pipe |
+| `write`, `append`, `touch`, `cp`, `mv`, `rm` | make, change or remove a file of the model, as the editor holds it |
 | `check`, `snapshot` | `lexlean check` and `lexlean snapshot`, on the model as it is in the editor |
 | `prove` | Lean's kernel on each guarantee |
 | `audit` | each guarantee's status by the rule of `model/ide-audit` |
+| `save`, `restore`, `sessions` | keep this session's transcript in this browser, print one, list them |
 
-Anything else is refused: there is no bash, no native program, no pipe and no connection to any machine.
+A line is commands joined as in a shell: `a | b` pipes, `a ; b`, `a && b` and `a || b` join, `> file` and `>> file` write a file of the model, `< file` reads one. `'…'` and `"…"` quote, `$NAME` and `${NAME}` are variables (`NAME=value` sets one, `$?` is the last command's status), `*` and `?` match the model's files, `#` starts a comment.
 
-The line is edited as in a terminal: Left, Right, Home, End, Backspace, Delete, Ctrl+A, Ctrl+E, Ctrl+U, Ctrl+K, Ctrl+W, history with Up and Down, Tab to complete a command name, Ctrl+C to abandon the line or stop a running command's output, Ctrl+L to clear. Keys pressed while a command runs are entered after it.
+It is a command line for the model, in this tab, and no more than that. Any other word is refused: there is no bash, no native program, no package manager, no git and no connection to any machine, because nothing in a browser tab can run them and this page talks to no server. A command cannot be run inside a word (`$( … )`), nothing runs in the background (`&`), and there are no scripts, loops or functions.
+
+The line is edited as in a terminal: Left, Right, Home, End, Ctrl+A, Ctrl+E; by word with Ctrl+Left, Ctrl+Right, Alt+B, Alt+F; Backspace, Delete, Ctrl+D; Ctrl+U, Ctrl+K, Ctrl+W, Alt+Backspace and Alt+D cut, and Ctrl+Y puts back; Up, Down, Ctrl+P and Ctrl+N walk the history and Ctrl+R searches it; Tab completes a command or a file of the model, and a second Tab lists what fits; Ctrl+C abandons the line or stops the running line; Ctrl+L clears. Keys pressed while a command runs are entered after it.
 
 ### What decides
 
-- Every line is put to `model/ide-terminal-commands` before anything runs. A program runs only when its executable hashed to its pinned label; with one byte of the LexLean executable changed, `check`, `snapshot`, `prove` and `audit` are refused and `ls` still answers.
-- Every use of a resource by a running command is put to `model/ide-terminal-reach`. The command line has nothing to hand a command but the screen, the model's files and the kept outputs.
+- Every command of a line is put to `model/ide-terminal-commands` before it runs, and a redirection is put to it as the command it stands for: `> file` as `write file`, `>> file` as `append file`, `< file` as `cat file`. A pipeline in which one word is not a command runs none of its commands. A program runs only when its executable hashed to its pinned label; with one byte of the LexLean executable changed, `check`, `snapshot`, `prove` and `audit` are refused and the builtins still answer.
+- Every use of a resource by a running command is put to `model/ide-terminal-reach`. A command is handed the screen, the model's files, the kept outputs and nothing else; six commands may change a file of the model, and no command is handed the network, the clipboard or a process.
+- A path never leaves the model: `..` above its root, an address, a drive letter or a control byte in a path is `outside`, and the command table refuses it to every command. A file that is not there can be named only by the five commands that make one. The whole model is not removed from here.
+- A file a command changes is changed where the editor holds it: the open file in its editor, the others beside it. The model is checked again, as after typing. The workbench keeps the change in its draft, in this browser; the plain page keeps nothing. A file removed from the workbench is back when the page is loaded again.
 - Everything a command prints is written as text: a control byte in it is written out (`^[`), never sent. So no file and no program output can carry a sequence to the terminal, in either page.
 - In the plain page, a sequence that would act outside the grid is also put to `model/ide-terminal-effects` (`terminal/effects.mjs`): OSC 52, notifications, file transfers and sixel are taken from xterm.js and ignored, a title is set as plain text, a link asks before it opens and only after a click, a paste of several lines asks first. The clipboard and image addons are not loaded. Window operations (CSI `t`) are dropped by xterm.js itself, whose options for them are all off.
 - In the workbench page the emulator and its handlers are VS Code's, so links and paste behave as they do in VS Code and the effects table is not asked. What protects that panel is the rule above: output is text.
@@ -211,36 +235,46 @@ The line is edited as in a terminal: Left, Right, Home, End, Backspace, Delete, 
 - `terminal/pins.json` names each published file of xterm.js by its `blake3:` label, and the plain page runs a file only when its bytes have that label. `node tools/terminal-site.mjs pin` rewrites the pins after a version change; the site builder refuses an installed file that is not the pinned one. The workbench's xterm.js is part of the workbench bundle and is held by the lockfile, not by a label the page checks.
 - A program's output is kept under the label of its program's label and the label of everything it read, and shown again only when `reuseAdmits` (proved in `model/rule-app`) admits it. A second `check` of an unchanged model starts nothing, on this visit or a later one, in either page.
 - The store (`terminal/kappa-space.mjs`) follows the browser store of Hologram (github.com/Hologram-Technologies/hologram, `crates/hologram-store/src/opfs/js_api.rs` at `e8fcdc70`): one file to a blob in the origin's private file system, named by its label, returned only when it re-derives to that label. It is that layout written in JavaScript, because Hologram publishes no browser build of its store. Where the browser has no such file system, things are kept for the visit only.
-- Hologram's rule that a pure function over a finite domain is computed once and kept as a table is applied to the decision tables: the command, reach, effects and audit tables are each computed once into a lookup table (180, 80, 108 and 108 answers, one byte each), named by its label, and a request is answered with one read. The flow table has a number in it and is judged rule by rule. `tables.json` carries the label each lookup table must have, and a terminal whose tables compute to another label does not start.
+- Hologram's rule that a pure function over a finite domain is computed once and kept as a table is applied to the decision tables: the command, reach, effects and audit tables are each computed once into a lookup table (792, 264, 108 and 108 answers, one byte each), named by its label, and a request is answered with one read. The flow table has a number in it and is judged rule by rule. `tables.json` carries the label each lookup table must have, and a terminal whose tables compute to another label does not start.
 - `site.json` names every published file by its `blake3:` label, beside its SHA-256.
 
 What this does and does not buy: content addressing makes a repeated command cost a few milliseconds and makes what is stored checkable. It does not make a key press faster. That time is xterm.js drawing, and it was already short.
 
-The tables reach the pages as `terminal/tables.json`, read at build time from the models through LexLean's own snapshot. The guarantees are proved of the tables; that this code asks them and obeys, and that each lookup table answers as its rules do, is tested by `node tools/terminal-test.mjs` (19 tests), not proved.
+The tables reach the pages as `terminal/tables.json`, read at build time from the models through LexLean's own snapshot. The guarantees are proved of the tables; that this code asks them and obeys, and that each lookup table answers as its rules do, is tested by `node tools/terminal-test.mjs` (30 tests), not proved.
 
 ### Measured
 
-On 2026-11-20 and 21, on one Windows development machine, in the Claude desktop app's browser pane, the page served from localhost. Not measured in CI, and not in other browsers.
+On 2026-11-21, on one Windows development machine, in headless Chrome driven over its debugging protocol, the page served from localhost, the display at 60 frames a second. Not measured in CI, and not in other browsers. An earlier table here was taken in the Claude desktop app's browser pane, which was not painting when the workbench was tried.
 
 | What | Plain page | Workbench page |
 |---|---|---|
-| Key to character drawn (1000 keys) | median 5.5 ms, 95th percentile 5.9 ms, 3 over 50 ms (worst 430 ms) | not measured: the pane was not painting when it was tried |
-| 10 MB of text | 629 ms, 15.9 MB/s, at most 114688 bytes pending | 1213 ms, 8.2 MB/s, at most 116272 characters pending |
-| Page opened to first prompt | 687 ms, then 292 ms on a later load | not timed |
-| `check` | 31 ms run, 2.4 ms kept | kept output shown in under 50 ms (the test's own wait) |
-| `prove`, 13 guarantees | 1521 ms run, 6.1 ms kept | the same program |
-| Heap with 10000 lines of 157 columns | 6.4 MB before, 48.5 MB after | not measured |
+| Key to character drawn (1000 keys) | median 16.7 ms, 95th percentile 17.0 ms, worst 17.5 ms, none lost | median 16.6 ms, 95th percentile 17.1 ms, worst 23.4 ms, none lost |
+| The same, during a 10 MB write (100 keys) | 95th percentile 18.4 ms, worst 37.5 ms | 95th percentile 19.8 ms, worst 27.8 ms |
+| 10 MB of text | 1255 ms, 8.0 MB/s, at most 114688 bytes pending | 1270 ms, 7.9 MB/s, at most 116382 characters pending |
+| Terminal asked to start, to first prompt | 901 ms the first time, 91 and 118 ms on later loads | the panel and its emulator were there 1.9 s after the page was opened |
+| A pipeline of builtins (`ls \| grep tex \| wc -l`) | 3.3 ms | 15.8 ms |
+| `check` | 106 ms run, 16 ms kept | 77 ms |
+| `prove`, 13 guarantees | 2003 ms run, 15 ms kept | 2131 ms |
+| Heap after the 10 MB write | 47.5 MB | 109.4 MB, the whole workbench |
 
-The key figure is `term.input` of one key to the next `onRender`. It leaves out the browser's own key event and the frame reaching the screen. The plain page's figures were taken before the search, Unicode 11 and store changes and were not taken again.
+What the key figure is. `term.input` of one key to the next `onRender`: the key reaches the emulator, the command line echoes it, and xterm.js draws it in the next frame of the display. It leaves out the browser's own key event and the frame reaching the screen. The test sends each key just after a frame was drawn, so every key waits nearly a whole frame: 16.7 ms is the worst case at 60 frames a second, and a key that arrives mid-frame is drawn sooner. No key took two frames outside the 10 MB write.
+
+What the command line adds to a key: 0.35 µs to edit the line and hand the echo to the emulator, measured over 50000 keys. One decision of the proved command table is one read of its lookup table, 190 ns. Completing a file's name over this model takes 21 µs. Nothing between a key and its echo waits on a promise, a worker or the store.
+
+The prompt no longer waits for the WebGL renderer: it is drawn by xterm.js's own renderer and the fast one is put in just after. `window.prismTerminal.timing` says when each part of starting was done. The first load's 0.8 s is fetching xterm.js, hashing it against its pins and compiling it.
 
 ### Not built
 
-- A shell, and anything that needs one.
-- Saved sessions. The serialize addon is not loaded.
-- A program is not paused mid-run: its output is produced whole, then written under flow control.
+- A shell that runs programs. No native program, package manager, git or SSH, and no connection to any machine. A WASI shell with core utilities is a later phase with its own proposal.
+- Scripts, loops, functions, command substitution and background commands.
+- A program is not paused mid-run: its output is produced whole, then written under flow control. Ctrl+C stops what is being written and the rest of the line.
+- A transcript is kept only by `save`, as text. The screen itself (colours, the scrollback as drawn) is not kept, and the serialize addon is not loaded.
+- The history is this visit's. It is not kept between visits unless a transcript is saved.
+- A character is taken to be one column wide by the line editor, so a line with wide characters is edited out of place.
 - `prove` is held to the SHA-256 names in the kernel's manifest; only the label of the whole list is BLAKE3.
 - The workbench bundle grew by the terminal: the published `edit/ide/` folder is 31 MiB.
 - Leaving the workbench page logs one more of the workbench's own shutdown notices (`join.terminalAutoReplies`).
+- Extension-contributed terminals are untried.
 
 ## Published
 

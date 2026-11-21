@@ -116,7 +116,7 @@ test('with nothing set and no LexLean as WebAssembly here, a rule app is refused
   const none = snapshotOf(ruleAppSnapshot());
   const b = await build(other.dir, other.session, { env: {}, snapshot: none.snapshot, wasm: () => false });
   assert.equal(b.code, 'build.frontend-unavailable');
-  assert.match(b.message, /no step runs that without an image yet/);
+  assert.match(b.message, /LexLean as WebAssembly is not on this machine/);
   assert.deepEqual(none.asked, [], 'no snapshot was taken');
 });
 

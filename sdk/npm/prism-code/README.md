@@ -107,9 +107,11 @@ once, about 4 MB, and used only when it has its κ-label (BLAKE3);
 `$PRISM_HOME/kappa`. `setup` and the first check after an upgrade remove what this
 version no longer pins; `prism-code system df` shows what that frees, and
 `prism-code system prune` frees it, with the proof cache past `PRISM_KAPPA_CACHE_MB`. Nothing about an
-app is sent anywhere. An app other than a rule app is not yet built into a holo by the guided build,
-which needs Lean's export, Rust and WebAssembly; that, and a step with nothing
-to run on, fails with `build.frontend-unavailable`. Publishing to GitHub from
+app is sent anywhere. An app other than a rule app is built into a holo with nothing compiled:
+one pinned evaluator guest runs the model's program, and the build is refused unless that guest answers the
+model's own examples as the model's definitions do (tested, not proved). A model the guest does not run yet
+is refused by name with `build.guest-uncovered`; a step with nothing to run on fails with
+`build.frontend-unavailable`. Publishing to GitHub from
 `prism_build` waits for the template's ID rows, scenarios and tests to be
 written from the snapshot (`build.publish-unavailable`).
 

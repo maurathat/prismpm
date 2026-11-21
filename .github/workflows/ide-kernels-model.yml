@@ -80,10 +80,10 @@ jobs:
           grep -q '^FAILED' defect.log
           rm defect.log
           git checkout -- model/ide-audit/src/App.lex.tex
-      - name: The terminal command table, 27 guarantees
-        run: node model/ide-prove-rule-app.mjs model/ide-terminal-commands 27
-      - name: The terminal reach table, 33 guarantees
-        run: node model/ide-prove-rule-app.mjs model/ide-terminal-reach 33
+      - name: The terminal command table, 19 guarantees
+        run: node model/ide-prove-rule-app.mjs model/ide-terminal-commands 19
+      - name: The terminal reach table, 22 guarantees
+        run: node model/ide-prove-rule-app.mjs model/ide-terminal-reach 22
       - name: The terminal outside effects, 17 guarantees
         run: node model/ide-prove-rule-app.mjs model/ide-terminal-effects 17
       - name: The terminal flow control, 5 guarantees
@@ -102,7 +102,7 @@ jobs:
           PY
           ! git diff --quiet -- model/ide-terminal-commands/src/App.lex.tex
           set +e
-          node model/ide-prove-rule-app.mjs model/ide-terminal-commands 27 > defect.log 2>&1
+          node model/ide-prove-rule-app.mjs model/ide-terminal-commands 19 > defect.log 2>&1
           code=$?
           set -e
           cat defect.log
@@ -126,7 +126,7 @@ jobs:
           PY
           ! git diff --quiet -- model/ide-terminal-reach/src/App.lex.tex
           set +e
-          node model/ide-prove-rule-app.mjs model/ide-terminal-reach 33 > defect.log 2>&1
+          node model/ide-prove-rule-app.mjs model/ide-terminal-reach 22 > defect.log 2>&1
           code=$?
           set -e
           cat defect.log

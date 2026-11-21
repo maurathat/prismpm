@@ -231,4 +231,10 @@ import('./terminal/terminal.mjs').then(({ startTerminal }) => startTerminal($('t
   pin: LEXLEAN_WASM,
   setTitle: (text) => { $('terminalTitle').textContent = text; },
   find: $('terminalFind'),
+  // The six commands that change a file change what this page holds: the open file in the editor, the others in
+  // memory. As with typing, nothing is saved anywhere, and the model is checked again.
+  change: {
+    write: (path, text) => { if (path === entry) $('source').value = text; else files[path] = text; clearTimeout(timer); run(); },
+    remove: (path) => { if (path === entry) throw new Error(listing.entry + ' is the file open in the editor; it stays'); delete files[path]; clearTimeout(timer); run(); },
+  },
 })).catch((error) => { $('terminal').textContent = 'The terminal could not start: ' + (error?.message ?? error); });
