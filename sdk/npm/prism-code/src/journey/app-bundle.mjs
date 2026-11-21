@@ -4,7 +4,8 @@
  * manifest: the same app is the same address on every machine, and no byte is trusted for where it came from.
  *
  * The manifest (`prism/app-bundle/1`) names the model's files, the files a check and a proof read (`modelFiles`), and,
- * when the app is built, the build's record and the files of its page. A store is a set of objects found by label:
+ * when the app is built, what was built: a rule app's record and the files of its page, or any other app's holo.
+ * A store is a set of objects found by label:
  *
  *   (no reference)        this machine's Prism store, a folder of objects ($PRISM_HOME/kappa/apps)
  *   dir://<folder>        a folder of objects, `<folder>/<hex>`, that any static host can serve as it is
@@ -63,6 +64,12 @@ export function bundleOf(dir, session) {
   if (rule?.path && existsSync(rule.path)) {
     const site = rule.site && existsSync(rule.site) ? Object.fromEntries(filesUnder(rule.site).map((p) => [p, keep(new Uint8Array(readFileSync(join(rule.site, p))))])) : {};
     manifest.built = { kind: 'rule-app', record: keep(new Uint8Array(readFileSync(rule.path))), address: rule.address, semanticId: rule.semanticId, site };
+  }
+  // Any other app: its holo, one object, whose label is the app's built address.
+  const holo = session.status?.built;
+  if (!manifest.built && holo?.path && existsSync(holo.path)) {
+    const label = keep(new Uint8Array(readFileSync(holo.path)));
+    manifest.built = { kind: 'holo', holo: label, address: label, semanticId: holo.semanticId ?? null };
   }
   const bytes = enc.encode(canonical(manifest));
   const address = keep(bytes);
@@ -134,7 +141,7 @@ export async function pullBundle(reference, { env = process.env, fetch = globalT
     if (path.startsWith('/') || path.split('/').includes('..')) fail('bundle.path', `The manifest names ${path}, outside the app`);
     files.set(path, await admitted(label, path));
   }
-  const built = manifest.built ? { record: await admitted(manifest.built.record, 'The build record'), site: new Map() } : null;
+  const built = manifest.built ? { record: manifest.built.record ? await admitted(manifest.built.record, 'The build record') : null, holo: manifest.built.holo ? await admitted(manifest.built.holo, 'The holo') : null, site: new Map() } : null;
   for (const [path, label] of Object.entries(manifest.built?.site ?? {})) built.site.set(path, await admitted(label, `site/${path}`));
   return { address: source.address, manifest, files, built };
 }

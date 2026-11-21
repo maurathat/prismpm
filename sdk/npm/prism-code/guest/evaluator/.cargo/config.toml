@@ -1,0 +1,7 @@
+[build]
+target = "wasm32-unknown-unknown"
+
+[target.wasm32-unknown-unknown]
+# The program is linked in at __heap_base, so the linker of an app (src/journey/model-guest.mjs) must be able to read it.
+# It removes this export again: a guest exports memory, holo_alloc and holo_run, and nothing else.
+rustflags = ["-C", "link-arg=--export=__heap_base", "-C", "link-arg=-zstack-size=65536", "-C", "target-feature=-bulk-memory,-reference-types,-multivalue,-sign-ext,-nontrapping-fptoint"]
