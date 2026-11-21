@@ -76,6 +76,7 @@
   "src/journey/github.mjs",
   "src/journey/guest/evaluator.wasm",
   "src/journey/hints.mjs",
+  "src/journey/holo-app-site.mjs",
   "src/journey/hosts.mjs",
   "src/journey/kappa-opfs.mjs",
   "src/journey/kappa-rules.mjs",
