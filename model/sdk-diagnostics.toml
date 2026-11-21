@@ -147,6 +147,16 @@ capability = "DK-46"
 statement = "LexLean's front end is not available: LexLean as WebAssembly is not on this machine and could not be fetched, or PRISM_CODE_TIER=offline fetches nothing. Nothing about the app is sent anywhere instead."
 
 [[error]]
+code = "build.guest-differs"
+capability = "DK-50"
+statement = "The app's holo is not built: its guest answered a request otherwise than the model's own definitions do. This is a fault of the builder and says nothing about the app."
+
+[[error]]
+code = "build.guest-uncovered"
+capability = "DK-50"
+statement = "The app's holo is not built: its model uses a construct, a profile or a capability the evaluator guest does not run yet, named in the message. Lean's kernel proved its theorems; this is a limit of the builder, not a verdict on the app."
+
+[[error]]
 code = "build.host-not-allowed"
 capability = "DK-45"
 statement = "A build asked a host outside its serverless boundary: not HTTPS, not GitHub's static hosts or the user's Pages site, or the hosted verifier, which is never asked. Nothing was sent, and there is no fallback."
@@ -155,6 +165,11 @@ statement = "A build asked a host outside its serverless boundary: not HTTPS, no
 code = "build.publish-unavailable"
 capability = "DK-46"
 statement = "Publishing an app to GitHub is not available until the template's ID rows, scenarios and tests are written from the model's semantic snapshot."
+
+[[error]]
+code = "build.vectors"
+capability = "DK-50"
+statement = "The app's holo is not built: the model has no acceptance vectors, or one of them is not what the model's own rules answer."
 
 [[error]]
 code = "bundle.altered"
