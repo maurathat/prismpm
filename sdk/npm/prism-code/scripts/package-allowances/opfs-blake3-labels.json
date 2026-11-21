@@ -1,4 +1,4 @@
 {
-  "kib": 6,
-  "reason": "the browser store keeps bytes under their BLAKE3 label, with the SHA-256 label as a checked field that leads to it: the second index, the check of both labels on a read, and the removal of a store laid out before (journey/kappa-opfs.mjs, about 1.9 KiB); and BLAKE3 written for speed, since a page now re-derives it for every byte it keeps: a round's steps on sixteen local numbers in place of allocated arrays (blake3.mjs, about 3.7 KiB, ten times the throughput)."
+  "kib": 10,
+  "reason": "the browser store keeps bytes under their BLAKE3 label, with the SHA-256 label as a checked field that leads to it: the second index, the check of both labels on a read, and the removal of a store laid out before (journey/kappa-opfs.mjs, about 1.9 KiB); and BLAKE3 written for speed, since a page now re-derives it for every byte it keeps: a round's steps on sixteen local numbers in place of allocated arrays, ten times the throughput (blake3.mjs, about 3.7 KiB, and the same again in the copy the bundled verifier carries, vendor/verify.mjs)."
 }
