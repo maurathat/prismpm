@@ -920,7 +920,7 @@ pub fn run_at(root: &Path, id: &str) {
                 ("sdk/npm/prism-code/test/model-bundle.test.mjs", 4),
                 ("sdk/npm/prism-code/test/model-site.test.mjs", 2),
                 ("sdk/npm/prism-code/test/build-core.test.mjs", 7),
-                ("sdk/npm/prism-code/test/prove-core.test.mjs", 5),
+                ("sdk/npm/prism-code/test/prove-core.test.mjs", 6),
             ],
             "600000",
         ),

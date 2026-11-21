@@ -109,6 +109,29 @@ test('a snapshot is proved on that kernel, a false statement is not, and a verdi
   assert.equal(judged.filter((t) => t.status === 'proved').length, 7);
 });
 
+test('a resettable kernel is laid back to its just-loaded state, and a kept memory resumes another', { skip: noKernel }, async () => {
+  const k = await openKernelFrom(pins, { store, fetch: serving().fetch, load, resettable: true });
+  const fresh = k.memory();
+  assert.equal((await proveSnapshot(snapshot('seat'), k)).ok, true);
+  const same = (a, b) => Buffer.compare(a, b) === 0;
+  assert.equal(same(k.memory().subarray(0, fresh.length), fresh), false, "judging changed the kernel's memory");
+  k.reset();
+  // After the reset every byte is the just-loaded kernel's, whatever the memory grew to, and it proves as before.
+  const back = k.memory();
+  assert.equal(same(back.subarray(0, fresh.length), fresh), true);
+  assert.ok(back.subarray(fresh.length).every((b) => b === 0));
+  assert.equal(k.check('').exit, 0);
+  assert.equal((await proveSnapshot(snapshot('loan'), k)).ok, true);
+  // The memory, given to a second kernel as its image, resumes it with no library read; a damaged one is set aside.
+  const resumed = await openKernelFrom(pins, { store, load, image: fresh });
+  assert.equal(resumed.resumed, true);
+  assert.equal((await proveSnapshot(snapshot('loan'), resumed)).ok, true);
+  const damaged = await openKernelFrom(pins, { store, load, image: fresh.subarray(0, 4096) });
+  assert.equal((await proveSnapshot(snapshot('loan'), damaged)).ok, true, 'a kernel is always had: an image only saves time');
+  // A kernel not opened resettable says so, and holds no copy.
+  await assert.rejects(kernel().then((plain) => plain.reset()), /not opened resettable/);
+});
+
 test('the build asks the prover, reports each theorem, and builds the same holo as without one', { skip: noLexlean }, async () => {
   const dir = appDir(mkdtempSync(join(tmpdir(), 'prism-prove-core-')));
   startApp(dir, 'decision-app');

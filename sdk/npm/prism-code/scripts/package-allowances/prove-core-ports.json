@@ -1,4 +1,4 @@
 {
-  "kib": 8,
-  "reason": "Lean's kernel judging a model's theorems with no disk of its own, so a browser worker proves as prism_build does (canonical-serverless-build, interface 1 of the completion plan): the prover src/journey/prove-core.mjs, about 16.1 KiB; the kernel's files admitted through a store and a fetch, in toolchain.mjs, about 1.9 KiB; less about 10.2 KiB that left model-prove.mjs for them."
+  "kib": 9,
+  "reason": "Lean's kernel judging a model's theorems with no disk of its own, so a browser worker proves as prism_build does (canonical-serverless-build, interface 1 of the completion plan): the prover src/journey/prove-core.mjs, with a kernel that can be laid back to its just-loaded state, about 17.0 KiB; the kernel's files admitted through a store and a fetch, in toolchain.mjs, about 1.9 KiB; less about 10.2 KiB that left model-prove.mjs for them."
 }

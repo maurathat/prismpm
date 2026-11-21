@@ -35,9 +35,14 @@ const enc = new TextEncoder();
  * κ-label. `image`, when given, is the whole memory of a kernel that had loaded this library: the kernel resumes
  * from it instead of reading the library, and when that fails for any reason a fresh kernel reads the library, so
  * an image only saves time. `keepImage` is given the image of a kernel that read the library.
- * Resolves `{ library, baseText, check, resumed, setAside? }`.
+ *
+ * With `resettable`, the kernel's memory as it is once the library is resident is held, and `reset()` lays it back:
+ * the kernel is then as it was before anything was judged, so what one batch declared cannot stand in for the next.
+ * It costs one copy of the kernel's memory. `memory()` is a copy of the kernel's memory as it is now, for a caller
+ * that keeps images in a format of its own (kernel-image.mjs).
+ * Resolves `{ library, baseText, check, memory, reset, resumed, setAside? }`.
  */
-export async function openKernel({ factory, wasm, baseText, image = null, keepImage = null }) {
+export async function openKernel({ factory, wasm, baseText, image = null, keepImage = null, resettable = false }) {
   const said = [];
   // A kernel, and its memory, taken from the instance: a view of memory made after it grows always reaches its end,
   // where a view kept from before the growth does not.
@@ -95,7 +100,15 @@ export async function openKernel({ factory, wasm, baseText, image = null, keepIm
     if (loaded.exit !== 0) throw new Error(`the kernel refused its base library: ${loaded.output}`);
     if (keepImage) await keepImage(heap().slice());
   }
-  return { library: loadLibrary(baseText), baseText, check: (text) => run('check_suffix', text), resumed, ...(setAside ? { setAside } : {}) };
+  const loaded = resettable ? heap().slice() : null;
+  const reset = () => {
+    if (!loaded) throw new Error('this kernel was not opened resettable');
+    // Memory only grows: what lies past the held copy was allocated since, and is cleared.
+    const now = heap();
+    now.set(loaded);
+    if (now.length > loaded.length) now.fill(0, loaded.length);
+  };
+  return { library: loadLibrary(baseText), baseText, check: (text) => run('check_suffix', text), memory: () => heap().slice(), reset, resumed, ...(setAside ? { setAside } : {}) };
 }
 
 /** A theorem's verdict from the axioms the kernel observed for its accepted proof: the same rule for both paths. */
@@ -256,12 +269,12 @@ export async function loaderFromBlob(glue) {
  * its factory (`loaderFromBlob` in a page). `image` and `keepImage` are as `openKernel` takes them.
  * Throws `ModelKernelMissing` for a file that cannot be had or is not the pinned one.
  */
-export async function openKernelFrom(pins, { store = null, fetch = null, load = loaderFromBlob, image = null, keepImage = null } = {}) {
+export async function openKernelFrom(pins, { store = null, fetch = null, load = loaderFromBlob, image = null, keepImage = null, resettable = false } = {}) {
   const refuse = (message) => new ModelKernelMissing(message);
   const [glue, wasm, base] = await Promise.all([
     admitBytes(pins.loader, { store, fetch, refuse, what: "the kernel's loader" }),
     admitBytes(pins.kernel, { store, fetch, refuse, what: "Lean's kernel" }),
     admitBytes(pins.library, { store, fetch, refuse, what: "the kernel's base library" }),
   ]);
-  return openKernel({ factory: await load(glue), wasm, baseText: new TextDecoder().decode(base), image, keepImage });
+  return openKernel({ factory: await load(glue), wasm, baseText: new TextDecoder().decode(base), image, keepImage, resettable });
 }
