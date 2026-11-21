@@ -1,17 +1,27 @@
-//! Holo v5: a Prism application is a UORC archive (ADR-017).
+//! Holo v5 and v6: a Prism application is a UORC archive (ADR-017, ADR-018).
 //!
 //! The file is one self-contained UORC archive (UOR-Foundation/compression,
 //! `Uorc.Codec.Archive.rawArchive` generalised to ordered objects, exactly what
 //! `uorc::archive::raw_objects` writes):
 //!
 //! ```text
-//! "UORC" 02 01 00 00 uleb(count) uleb(length)* uleb(bodyLength) body seal[32]
+//! "UORC" 02 profile 00 00 uleb(count) uleb(length)* uleb(bodyLength) body seal[32]
 //! ```
 //!
-//! where `body` is the objects laid end to end and `seal` is the
-//! UORC-SHA256-CHAIN-v1 digest of every byte before it. Any UORC reader
-//! (`uorc verify`, `uorc decompress --objects`, the uorc wasm client) opens a
-//! holo without Prism code.
+//! where `body` is the objects laid end to end. The profile byte says how the
+//! archive is sealed and named:
+//!
+//! - profile 1, holo v5 (ADR-017): `seal` is the UORC-SHA256-CHAIN-v1 digest of
+//!   every byte before it, and a κ-label is `sha256:`. Any UORC reader
+//!   (`uorc verify`, `uorc decompress --objects`, the uorc wasm client) opens it
+//!   without Prism code.
+//! - profile 2, holo v6 (ADR-018): `seal` is plain BLAKE3 of every byte before
+//!   it, and a κ-label is `blake3:`. Until UOR-Foundation/compression registers
+//!   the profile, only Prism readers open it.
+//!
+//! [`kappa`], [`is_kappa`], [`chain`] and [`write_objects`] keep their v5
+//! meaning; [`label`], [`is_label`], [`seal`] and [`write_objects_as`] take the
+//! [`Format`].
 //!
 //! Prism defines only the roles of the ordered objects and the manifest. Every
 //! identity is a κ-label: `sha256:` and the 64 lowercase hex digits of the
@@ -21,8 +31,10 @@
 use crate::error::PrismError;
 use sha2::{Digest, Sha256};
 
-/// The UORC magic, format 2, profile 1.
+/// The UORC magic of a holo v5: format 2, profile 1.
 const MAGIC: &[u8; 6] = b"UORC\x02\x01";
+/// The UORC magic of a holo v6: format 2, profile 2 (ADR-018).
+const MAGIC_V6: &[u8; 6] = b"UORC\x02\x02";
 /// Scope 0: a self-contained archive.
 const SELF_CONTAINED: u8 = 0;
 /// Representation 0: the body is the objects, stored raw.
@@ -48,6 +60,80 @@ pub const APPLICATION_BUDGET: Budget = Budget {
     objects: 16,
     bytes: 1 << 30,
 };
+
+/// How a holo archive is sealed and named, from its profile byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    /// Holo v5 (ADR-017): UORC-SHA256-CHAIN-v1 seal, `sha256:` κ-labels.
+    V5,
+    /// Holo v6 (ADR-018): plain BLAKE3 seal, `blake3:` κ-labels.
+    V6,
+}
+
+impl Format {
+    /// The holo format number, 5 or 6.
+    pub fn number(self) -> u8 {
+        match self {
+            Format::V5 => 5,
+            Format::V6 => 6,
+        }
+    }
+
+    /// The name of the seal, for messages.
+    pub fn seal_name(self) -> &'static str {
+        match self {
+            Format::V5 => "UORC-SHA256-CHAIN-v1",
+            Format::V6 => "BLAKE3",
+        }
+    }
+
+    fn magic(self) -> &'static [u8; 6] {
+        match self {
+            Format::V5 => MAGIC,
+            Format::V6 => MAGIC_V6,
+        }
+    }
+}
+
+/// The holo format a UORC archive's magic names, or `None` for any other bytes.
+pub fn format_of(bytes: &[u8]) -> Option<Format> {
+    if bytes.starts_with(MAGIC) {
+        Some(Format::V5)
+    } else if bytes.starts_with(MAGIC_V6) {
+        Some(Format::V6)
+    } else {
+        None
+    }
+}
+
+/// The κ-label of `bytes` in `format`: `sha256:` for v5, `blake3:` for v6.
+pub fn label(format: Format, bytes: &[u8]) -> String {
+    match format {
+        Format::V5 => kappa(bytes),
+        Format::V6 => format!("blake3:{}", blake3::hash(bytes).to_hex()),
+    }
+}
+
+/// Whether `label` is a well-formed κ-label of `format`.
+pub fn is_label(format: Format, label: &str) -> bool {
+    let prefix = match format {
+        Format::V5 => "sha256:",
+        Format::V6 => "blake3:",
+    };
+    label.len() == KAPPA_LEN
+        && label.starts_with(prefix)
+        && label[7..]
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// The seal of `preimage` in `format`.
+pub fn seal(format: Format, preimage: &[u8]) -> [u8; 32] {
+    match format {
+        Format::V5 => chain(preimage),
+        Format::V6 => *blake3::hash(preimage).as_bytes(),
+    }
+}
 
 /// The κ-label of `bytes`: `sha256:<64 lowercase hex>`.
 pub fn kappa(bytes: &[u8]) -> String {
@@ -140,11 +226,16 @@ fn read_uleb(data: &[u8], mut at: usize) -> Option<(u64, usize)> {
     None
 }
 
-/// The self-contained raw UORC archive of `objects`, in order.
+/// The self-contained raw UORC archive of `objects`, in order, as a holo v5.
 pub fn write_objects<T: AsRef<[u8]>>(objects: &[T]) -> Vec<u8> {
+    write_objects_as(Format::V5, objects)
+}
+
+/// The self-contained raw UORC archive of `objects`, in order, as a holo of `format`.
+pub fn write_objects_as<T: AsRef<[u8]>>(format: Format, objects: &[T]) -> Vec<u8> {
     let body: usize = objects.iter().map(|object| object.as_ref().len()).sum();
     let mut out = Vec::with_capacity(16 + 10 * objects.len() + body + SEAL);
-    out.extend_from_slice(MAGIC);
+    out.extend_from_slice(format.magic());
     out.push(SELF_CONTAINED);
     out.push(RAW);
     push_uleb(&mut out, objects.len() as u64);
@@ -155,8 +246,8 @@ pub fn write_objects<T: AsRef<[u8]>>(objects: &[T]) -> Vec<u8> {
     for object in objects {
         out.extend_from_slice(object.as_ref());
     }
-    let seal = chain(&out);
-    out.extend_from_slice(&seal);
+    let sealed = seal(format, &out);
+    out.extend_from_slice(&sealed);
     out
 }
 
@@ -165,14 +256,15 @@ pub fn write_objects<T: AsRef<[u8]>>(objects: &[T]) -> Vec<u8> {
 pub fn read_objects(bytes: &[u8], budget: Budget) -> Result<Vec<&[u8]>, PrismError> {
     // The seal is checked before the framing, so any changed byte is an
     // integrity failure (UORC UC-INT-01), not a structural one.
-    if bytes.starts_with(MAGIC)
-        && bytes.len() >= SEAL
-        && chain(&bytes[..bytes.len() - SEAL]) != bytes[bytes.len() - SEAL..]
-    {
-        return Err(PrismError::new(
-            "PP3004",
-            "UORC-SHA256-CHAIN-v1 seal does not match the archive",
-        ));
+    if let Some(format) = format_of(bytes) {
+        if bytes.len() >= SEAL
+            && seal(format, &bytes[..bytes.len() - SEAL]) != bytes[bytes.len() - SEAL..]
+        {
+            return Err(PrismError::new(
+                "PP3004",
+                format!("{} seal does not match the archive", format.seal_name()),
+            ));
+        }
     }
     Ok(layout(bytes, budget)?.0)
 }
@@ -182,17 +274,17 @@ pub fn read_objects(bytes: &[u8], budget: Budget) -> Result<Vec<&[u8]>, PrismErr
 /// refuse. The framing and `budget` are still enforced.
 pub fn layout(bytes: &[u8], budget: Budget) -> Result<(Vec<&[u8]>, bool), PrismError> {
     let structure = |message: &str| PrismError::new("PP3003", message.to_owned());
-    if !bytes.starts_with(MAGIC) {
+    let Some(format) = format_of(bytes) else {
         return Err(PrismError::new(
             "PP3001",
-            "a holo v5 file is a UORC archive (format 2, profile 1)",
+            "a holo v5 or v6 file is a UORC archive (format 2, profile 1 or 2)",
         ));
-    }
+    };
     if bytes.len() < MAGIC.len() + 2 + SEAL {
         return Err(structure("UORC archive is truncated"));
     }
-    let (preimage, seal) = bytes.split_at(bytes.len() - SEAL);
-    let sealed = chain(preimage) == seal;
+    let (preimage, stored) = bytes.split_at(bytes.len() - SEAL);
+    let sealed = seal(format, preimage) == stored;
     if preimage[6] != SELF_CONTAINED || preimage[7] != RAW {
         return Err(structure(
             "a holo is a self-contained archive whose objects are stored raw",

@@ -1,0 +1,4 @@
+{
+  "kib": 3,
+  "reason": "The holo v6 container (ADR-018): src/uorc.mjs reads and writes the BLAKE3-sealed, BLAKE3-addressed v6 alongside v4 and v5, about 2.1 KiB."
+}
