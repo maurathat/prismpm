@@ -14,8 +14,8 @@ const PASSING: [(&str, u64); 5] = [
     ("capabilities", 2),
     ("digests", 18),
     ("errors", 6),
-    ("verify", 26),
-    ("world", 14),
+    ("verify", 29),
+    ("world", 15),
 ];
 
 /// Build the shim and return its path, as cargo reports the artifact.

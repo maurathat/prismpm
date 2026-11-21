@@ -66,6 +66,8 @@ Gates: planted defect: a page served with one guarantee altered is refused. Budg
 
 Work: measure three options (LexLean emits WASM; pinned guest built by the user's Actions; prebuilt guest per model shape) and recommend one.
 
+Taken: one prebuilt evaluator guest for every text application, with the model's program attached as data, so nothing is compiled for an app. Record: [canonical-serverless-build/PHASE-6.md](canonical-serverless-build/PHASE-6.md).
+
 ### Phase 7. Canonical surface and end-to-end briefs
 
 Work: `setup`, the `prism` MCP, the skill and the docs describe only this path. Run leap year, shopping cart and booking calendar end to end, then a verdant-sized slice.

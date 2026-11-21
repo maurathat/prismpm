@@ -1,0 +1,4 @@
+{
+  "kib": 86,
+  "reason": "A text application's holo built with nothing compiled (DK-50): the reference evaluator src/journey/model-eval.mjs, about 20.7 KiB; the pinned evaluator guest src/journey/guest/evaluator.wasm, about 22.2 KiB; its encoder and linker model-guest.mjs, about 17.5 KiB; the sealer model-holo.mjs, about 8.9 KiB; the page writer text-view.mjs, about 8.4 KiB; the published folder model-site.mjs, about 2.2 KiB; and the build in engine.mjs, with the bundle, README and skill text, about 6.1 KiB."
+}
