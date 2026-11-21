@@ -1,6 +1,6 @@
 # Prism IDE, phase 2: open any Prism app to audit it and edit it, in any browser
 
-Status: proposed, and partly built. Since this was written, `main` has gained the audit page, the edit pages, the model in the VS Code workbench, LexLean colouring, a published model and the check that a model is the one its app runs, all live at https://uor-foundation.github.io/prismpm/ (`audit/`, `edit/`, `edit/ide/`). The table below was read before that work; the rows the terminal phase depends on are corrected, the rest are as written. Phase 2f is built: the terminal is in the plain edit page and in the workbench's terminal panel. Phase 2d is built but for one part awaiting review (below). Phase 2e is written and in review, in two repositories (below).
+Status: proposed, and partly built. Since this was written, `main` has gained the audit page, the edit pages, the model in the VS Code workbench, LexLean colouring, a published model and the check that a model is the one its app runs, all live at https://uor-foundation.github.io/prismpm/ (`audit/`, `edit/`, `edit/ide/`). The table below was read before that work; the rows the terminal phase depends on are corrected, the rest are as written. Phase 2f is built: the terminal is in the plain edit page and in the workbench's terminal panel. Phase 2d is built but for one part awaiting review (below). Phase 2e's part in this repository is merged; the template's part is in review and waits on a release (below). Phase 2c's table is measured, and its gate is met in part (below).
 
 ## Why
 
@@ -73,6 +73,11 @@ Gates: the starter apps (`templates/starters/*`) prove in the tab. A measured ta
 
 Budgets: none promised for arbitrary models. The table is the deliverable.
 
+Measured (2026-11-21): the table is in `ide/edit/README.md`, "Which models prove in the tab", for this package's twelve models and the three starters. All eight rule tables prove in the tab, in 0.2 to 6.8 s. The gate is met in part:
+
+- Of the three starters, `rule-app` proves. `decision-app` and `stateful-app` have theorems of their own; the page checks them and says they are not proved here. `modelProve` is not wired into the page. A prover behind a build port is in review (#791) and is the way to close this.
+- Five models are on Lean 4.32.1 and are refused before any check, `model/ide-scope` among them, so the page does not get as far as saying it cannot prove it or offering the build's attestation.
+
 ### Phase 2d: by content, offline
 
 Work: every file the IDE and an app publish is named by its BLAKE3 label and fetched through one store that verifies before it returns. `kappa-opfs` labels move from SHA-256 to BLAKE3, with SHA-256 kept as a checked field where tooling emits it. A first read-only client for kappa-registry's blob endpoint as a second source.
@@ -105,9 +110,9 @@ Not built (2026-11-21). What was found on reading `UOR-Foundation/template` at `
 
 So this phase needs three changes in order: prism-code writes the model and the record for a holo app; the template's build calls it and publishes them; the frame, or the page, shows the control when they are there. The first is in this repository. The other two are the template's, and are items 2 and 3 of "Ask first".
 
-Since then (2026-11-21), in draft:
+Since then (2026-11-21):
 
-- The first change is `prism-code publish-model <app.holo> --project <dir> --out <dir>`: it writes `model/`, `model/project.json` and `app.holo.json`, taking the model's identity from the holo's own provenance.
+- The first change is merged (#784): `prism-code publish-model <app.holo> --project <dir> --out <dir>` writes `model/`, `model/project.json` and `app.holo.json`, taking the model's identity from the holo's own provenance.
 - The other two are a draft in the template (UOR-Foundation/template#108): the page's build says where the model opens, and the frame shows the control, in the frame itself as was chosen. Tried on the template's fixture page: the control opens the audit view of that app. It was first written with the publishing inside the template, which that repository's own gate refuses: nothing but LexLean may be added there, and what is not LexLean may only shrink. So the publishing moved here, and the template's part waits on a prism-code release that has this command.
 - Found on the way: Prism IDE's LexLean accepts only Lean 4.32.2, and the template's app is on 4.32.1. The audit view works for such an app; the editor opens its files and cannot check them.
 
