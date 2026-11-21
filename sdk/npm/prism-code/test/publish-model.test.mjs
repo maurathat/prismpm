@@ -11,6 +11,7 @@ import { PrismCodeError } from '../src/index.mjs';
 import { kappa } from '../src/blake3.mjs';
 import { HOLO_APP_SCHEMA, writeHoloAppModel } from '../src/journey/holo-app-site.mjs';
 import { MODEL_LISTING_SCHEMA } from '../src/journey/model-files.mjs';
+import { holoAppRecord } from '../src/journey/model-site.mjs';
 
 const here = (relative) => fileURLToPath(new URL(relative, import.meta.url));
 const bin = here('../bin/prism-code.mjs');
@@ -58,6 +59,12 @@ test('the model is written as LexLean reads it, with a record that names the hol
   assert.deepEqual(made, { files: 3, entry: 'src/App.lex.tex', holo: record.holo, semanticId: ID, name: 'prism-calculator' });
   // The name the page gives is the record's, when it gives one.
   assert.equal(writeHoloAppModel({ holo, model, out, name: 'Calculator' }).name, 'Calculator');
+  // It adds to a site that is already there: what else the site holds is left as it was.
+  writeFileSync(join(out, 'index.html'), 'the page\n');
+  writeHoloAppModel({ holo, model, out });
+  assert.equal(readFileSync(join(out, 'index.html'), 'utf8'), 'the page\n');
+  // The record is the one a holo built by prism-code gets (model-site.mjs).
+  assert.deepEqual(readFileSync(join(out, 'app.holo.json')), holoAppRecord(holo, { name: 'prism-calculator', semanticId: ID }));
 });
 
 test('nothing is written for a folder that is no LexLean project, or bytes that are no holo', () => {
