@@ -99,6 +99,7 @@
   "src/journey/model-site.mjs",
   "src/journey/project.mjs",
   "src/journey/proof-store.mjs",
+  "src/journey/prove-core.mjs",
   "src/journey/register.mjs",
   "src/journey/request-text.mjs",
   "src/journey/rule-app-site.mjs",

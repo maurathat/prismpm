@@ -5,7 +5,9 @@
 // For each starter that builds a holo, this process starts the app in a temporary folder, takes its snapshot with
 // LexLean as WebAssembly and builds its holo. The page then does the same from the same files, in a worker, and
 // must name the holo by the same κ-label. With --shell, the holo is also kept in the shell's store, a changed byte
-// planted there must be refused, and the shell's own path must answer `verified`.
+// planted there must be refused, and the shell's own path must answer `verified`. When the lean-prover package is
+// beside this one, the page also opens Lean's kernel from its three pinned files and proves each model's theorems
+// before it builds; --no-prove leaves that out.
 //
 // Playwright is not a dependency of this package: it is taken from PLAYWRIGHT (a path to its index.mjs), else
 // from the global npm root. PW_EXECUTABLES='{"firefox":"…"}' names browsers installed elsewhere.
@@ -20,12 +22,17 @@ import { LEXLEAN_WASM, lexleanReady, lexleanWasmFile, projectFiles, wasmSnapshot
 import { EVALUATOR_GUEST } from '../../src/journey/model-guest.mjs';
 import { buildHolo } from '../../src/journey/model-holo.mjs';
 import { modelProgram } from '../../src/journey/model-eval.mjs';
+import { MODEL_KERNEL_FILES } from '../../src/journey/model-prove.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const option = (name) => { const at = process.argv.indexOf(`--${name}`); return at < 0 ? null : process.argv[at + 1]; };
 const shellDir = option('shell') ? resolve(option('shell')) : null;
 const browsers = (option('browsers') ?? 'chromium,firefox,webkit').split(',');
 const NAMES = ['decision-app', 'stateful-app'];
+const kernelPath = fileURLToPath(new URL('../../../lean-prover/kernel-path/', import.meta.url));
+const KERNEL = { 'lean-kernel.mjs': join(kernelPath, 'kernel', 'lean-kernel.mjs'), 'lean-kernel.wasm.gz': join(kernelPath, 'kernel', 'lean-kernel.wasm.gz'), 'base.ndjson.gz': join(kernelPath, 'library', 'base.ndjson.gz') };
+const proving = !process.argv.includes('--no-prove') && Object.values(KERNEL).every((file) => existsSync(file));
+const kernelPin = (name) => ({ kappa: MODEL_KERNEL_FILES[name].kappa, url: `/kernel/${name}`, encoding: MODEL_KERNEL_FILES[name].encoding });
 const base64 = (bytes) => Buffer.from(bytes).toString('base64');
 
 if (!(await lexleanReady({}))) throw new Error('LexLean as WebAssembly is not on this machine');
@@ -50,13 +57,14 @@ for (const name of NAMES) {
 }
 
 const TYPES = { '.html': 'text/html', '.mjs': 'text/javascript', '.js': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.holo': 'application/octet-stream', '.gz': 'application/gzip' };
-const pins = { lexlean: LEXLEAN_WASM.kappa, shell: shellDir ? JSON.parse(readFileSync(join(shellDir, 'kernels', 'kernel.json'), 'utf8')).sha256 : null };
+const pins = { kernel: proving ? { loader: kernelPin('lean-kernel.mjs'), kernel: kernelPin('lean-kernel.wasm.gz'), library: kernelPin('base.ndjson.gz') } : null, lexlean: LEXLEAN_WASM.kappa, shell: shellDir ? JSON.parse(readFileSync(join(shellDir, 'kernels', 'kernel.json'), 'utf8')).sha256 : null };
 const under = (folder, rest) => { const file = resolve(folder, `.${sep}${rest}`); return file.startsWith(resolve(folder) + sep) && existsSync(file) && statSync(file).isFile() ? file : null; };
 const server = createServer((request, response) => {
   const path = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
   const send = (body, type) => { response.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' }); response.end(body); };
   if (path === '/pins.json') return send(JSON.stringify(pins), TYPES['.json']);
   if (path === '/lexlean.wasm.gz') return send(readFileSync(lexleanFile), TYPES['.gz']);
+  if (proving && path.startsWith('/kernel/') && KERNEL[path.slice(8)]) return send(readFileSync(KERNEL[path.slice(8)]), TYPES[extname(path)] ?? 'application/octet-stream');
   const project = /^\/projects\/([a-z-]+)\.json$/.exec(path);
   if (project && projects.has(project[1])) return send(projects.get(project[1]), TYPES['.json']);
   const file = path.startsWith('/prism-code/') ? under(join(root, 'src'), path.slice('/prism-code/'.length))
@@ -71,7 +79,7 @@ const url = `http://127.0.0.1:${server.address().port}/build.html`;
 const playwrightAt = process.env.PLAYWRIGHT ?? join(execSync('npm root -g', { encoding: 'utf8' }).trim(), 'playwright', 'index.mjs');
 const pw = await import(pathToFileURL(playwrightAt).href);
 const executables = process.env.PW_EXECUTABLES ? JSON.parse(process.env.PW_EXECUTABLES) : {};
-console.log(`node ${process.version}: ${JSON.stringify(node)}`);
+console.log(`node ${process.version}: ${JSON.stringify(node)}${proving ? '' : ' (no proving in the page)'}`);
 let bad = 0;
 for (const name of browsers) {
   let browser;

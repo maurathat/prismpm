@@ -2,12 +2,15 @@
 // (src/journey/build-core.mjs), the functions `prism_build` runs in Node: LexLean as WebAssembly checks it and takes
 // its semantic snapshot, and its holo is built with nothing compiled. LexLean is admitted through the build's ports
 // (src/journey/toolchain.mjs): fetched, decoded, hashed and compiled as it arrives, kept, and read back from the
-// store. When the Holospace shell is served beside it, the holo is then kept in the shell's store, a changed byte is
+// store. When the runner pins Lean's kernel, its three files are admitted the same way, the kernel is opened in this
+// worker (src/journey/prove-core.mjs), and every theorem of the model is judged by it before anything is built.
+// When the Holospace shell is served beside it, the holo is then kept in the shell's store, a changed byte is
 // planted there, and the holo is opened through the shell's own path. No server takes part beyond serving these files.
 //
 // Message in: { names: [...] }. Messages out: one row per name, then { done: true }.
 import { buildFromFiles } from '/prism-code/journey/build-core.mjs';
 import { admitModule, memoryStore } from '/prism-code/journey/toolchain.mjs';
+import { kernelProver, openKernelFrom } from '/prism-code/journey/prove-core.mjs';
 import { EVALUATOR_GUEST } from '/prism-code/journey/model-guest.mjs';
 
 const now = () => performance.now();
@@ -29,6 +32,19 @@ async function start() {
   let planted;
   try { await admitModule({ ...pin, kappa: `blake3:${'0'.repeat(64)}` }, { fetch: through.fetch }); planted = 'ADMITTED'; } catch (error) { planted = `refused: ${error.code}`; }
   const evaluator = await bytesOf(`/prism-code/journey/${EVALUATOR_GUEST.file}`);
+  // Lean's kernel, from its loader, its bytes and its base library, each admitted by its label. Planted: the kernel
+  // asked for under another label is not opened.
+  let prove = null;
+  let kernel = null;
+  if (pins.kernel) {
+    const t = now();
+    const k = await openKernelFrom(pins.kernel, through);
+    const openMs = ms(t);
+    let wrong;
+    try { await openKernelFrom({ ...pins.kernel, kernel: { ...pins.kernel.kernel, kappa: `blake3:${'0'.repeat(64)}` } }, { fetch: through.fetch }); wrong = 'OPENED'; } catch (error) { wrong = `refused: ${error.code}`; }
+    prove = kernelProver(k);
+    kernel = { openMs, resumed: k.resumed, wrongLabel: wrong, ok: wrong === 'refused: kernel.unavailable' };
+  }
   let shell = null;
   if (pins.shell) {
     const [kernel, open, shellStore] = await Promise.all([import('/shell/kernel.mjs'), import('/shell/open.mjs'), import('/shell/store.mjs')]);
@@ -36,18 +52,23 @@ async function start() {
     const backing = await shellStore.bestBacking();
     shell = { kernels, open, store: shellStore, backing, kept: shellStore.openStore(backing, kernels) };
   }
-  return { lexlean: kept.module, evaluator, shell, start: { fetchHashCompileMs: fetched.ms, fromStoreMs: kept.ms, from: [fetched.from, kept.from], wrongLabel: planted, streamed: typeof WebAssembly.compileStreaming === 'function', backing: shell?.backing.kind ?? null, ok: fetched.from === 'fetch' && kept.from === 'store' && planted === 'refused: lexlean.wasm-mismatch' } };
+  return { lexlean: kept.module, evaluator, prove, shell, start: { kernel, fetchHashCompileMs: fetched.ms, fromStoreMs: kept.ms, from: [fetched.from, kept.from], wrongLabel: planted, streamed: typeof WebAssembly.compileStreaming === 'function', backing: shell?.backing.kind ?? null, ok: fetched.from === 'fetch' && kept.from === 'store' && planted === 'refused: lexlean.wasm-mismatch' && (kernel === null || kernel.ok) } };
 }
 
-async function one(name, { lexlean, evaluator, shell }) {
+async function one(name, { lexlean, evaluator, prove, shell }) {
   const listed = await (await fetch(`/projects/${name}.json`)).json();
   const files = new Map(Object.entries(listed.files).map(([path, text]) => [path, fromBase64(text)]));
-  const result = await buildFromFiles({ files, lexlean, evaluator });
-  if (!result.ok) return { name, ok: false, stage: result.stage, error: result.message };
+  const stages = [];
+  const result = await buildFromFiles({ files, lexlean, evaluator, prove, onStage: (stage) => stages.push([stage, Math.round(now())]) });
+  if (!result.ok) return { name, ok: false, stage: result.stage, error: result.message, theorems: result.theorems };
+  // Again with no prover: proving changes no byte of the holo.
   const again = await buildFromFiles({ files, lexlean, evaluator });
+  const statuses = {};
+  for (const t of result.theorems ?? []) statuses[t.status] = (statuses[t.status] ?? 0) + 1;
+  const proveMs = prove ? stages.find(([s]) => s === 'build')[1] - stages.find(([s]) => s === 'prove')[1] : null;
   const built = result.holo;
-  const row = { name, ok: again.ok && again.holo.label === built.label, buildMs: [result.ms, again.ms], holoBytes: built.bytes.length, label: built.label, vectors: result.vectors, compared: result.compared, proved: result.proved, expected: listed.expected, sameAsNode: built.label === listed.expected };
-  row.ok = row.ok && row.sameAsNode;
+  const row = { name, ok: again.ok && again.holo.label === built.label, buildMs: [result.ms, again.ms], holoBytes: built.bytes.length, label: built.label, vectors: result.vectors, compared: result.compared, proved: result.proved, theorems: statuses, proveMs, expected: listed.expected, sameAsNode: built.label === listed.expected };
+  row.ok = row.ok && row.sameAsNode && (prove === null || (result.proved === true && result.theorems.length > 0 && result.theorems.every((t) => t.status === 'proved')));
   if (shell) {
     // Kept under its BLAKE3 label, read back, and read again after one byte of it is changed where it is kept.
     const t3 = now();

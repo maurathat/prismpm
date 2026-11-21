@@ -93,3 +93,43 @@ export async function admitModule(pin, { store = null, fetch = null, log = () =>
   if (store) await store.put(bytes);
   return { module, from: 'fetch', ms: ms() };
 }
+
+/**
+ * Bytes that are not a module (Lean's kernel loader, its library), held to their κ-label the same way: from the
+ * store when it holds bytes with the pin's label, else fetched once, decoded and hashed as they arrive, and kept.
+ * `pin` is `{ kappa, url, encoding }`. Resolves the decoded bytes. `refuse` makes the error thrown for bytes that
+ * cannot be had or are not the pinned ones, so each caller refuses in its own registered way.
+ */
+export async function admitBytes(pin, { store = null, fetch = null, what = 'the file', refuse = (message) => new PrismCodeError('lexlean.wasm-unavailable', message) } = {}) {
+  const kept = store ? await store.get(pin.kappa) : null;
+  if (kept && kappa(kept) === pin.kappa) return kept;
+  if (!fetch || !pin.url) throw refuse(`${what} is not in the store, and there is nowhere to fetch it from`);
+  let response;
+  try {
+    response = await fetch(pin.url);
+  } catch (error) {
+    if (error.code === 'build.host-not-allowed') throw error;
+    throw refuse(`${pin.url} did not answer: ${error.cause?.code ?? error.message}`);
+  }
+  if (!response.ok) throw refuse(`${pin.url} answered HTTP ${response.status}`);
+  const hasher = new Blake3();
+  const chunks = [];
+  let size = 0;
+  try {
+    const reader = (encodingOf(pin) === 'gzip' ? response.body.pipeThrough(new DecompressionStream('gzip')) : response.body).getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      hasher.update(value);
+      chunks.push(value);
+      size += value.length;
+    }
+  } catch (error) {
+    throw refuse(`${what} did not decode (${error.message}), so it is not the pinned ${pin.kappa}`);
+  }
+  const got = `blake3:${toHex(hasher.digest())}`;
+  if (got !== pin.kappa) throw refuse(`${what} decodes to ${got}, not the pinned ${pin.kappa}`);
+  const bytes = joined(chunks, size);
+  if (store) await store.put(bytes);
+  return bytes;
+}
