@@ -328,5 +328,16 @@ async function main() {
   throw new Error('no app.rule-app.json and no app.holo at ' + appBase);
 }
 
+// Offline, by content: the site's service worker, where the site was assembled with one (tools/build-offline-site.mjs).
+// It serves each published file only as the bytes its BLAKE3 label names, from this browser once it has them. This
+// page loaded before the worker could take over, so it tells the worker what it loaded.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register(new URL('../sw.js', location.href)).then(async () => {
+    const worker = (await navigator.serviceWorker.ready).active;
+    navigator.serviceWorker.addEventListener('message', ({ data }) => { if (data && 'warmed' in data) state.offline = data; });
+    setTimeout(() => worker?.postMessage({ warm: [location.href, ...performance.getEntriesByType('resource').map((entry) => entry.name)] }), 4000);
+  }).catch(() => { /* no worker here: the page works as before, from the network */ });
+}
+
 main().catch((e) => { state.error = String(e?.stack ?? e); $('summary').textContent = 'This audit could not be made: ' + (e?.message ?? e); })
   .finally(() => { state.ready = true; });

@@ -244,11 +244,89 @@ async function proveRuleApp(dir, session, { log, where, snapshot, gaps, kernel, 
  * its holo needs Lean's export, Rust and WebAssembly, which no step runs
  * without an image yet.
  */
-async function buildUnheld(dir, session, { log = () => {}, env = process.env, snapshot = null, gaps = gapLedger(), kernel = null, remote = null, wasm = null } = {}) {
+async function buildUnheld(dir, session, { log = () => {}, env = process.env, snapshot = null, gaps = gapLedger(), kernel = null, modelKernel = null, remote = null, wasm = null } = {}) {
   wasm ??= wasmProbe(await lexleanReady({ env, log }));
   if (remote === 'github') return { ...failure(new PrismCodeError('build.publish-unavailable', `Publishing to GitHub writes the template's ID rows, scenarios and tests, and this prism-code does not yet write them from the model's semantic snapshot. ${NO_DOCKER_FREE_BUILD}`)), stage: 'build' };
   if (isRuleApp(session)) return buildRuleApp(dir, session, { log, env, snapshot, gaps, kernel, wasm });
-  return { ...failure(new PrismCodeError('build.frontend-unavailable', `This app's holo is built from Lean's export through Rust to WebAssembly, and no step runs that without an image yet; a rule app (the rule-app starter) builds with nothing compiled. prism_build proves this app's theorems. ${NO_DOCKER_FREE_BUILD}`)), stage: 'build' };
+  return buildModelApp(dir, session, { log, env, snapshot, gaps, kernel: modelKernel, wasm });
+}
+
+/**
+ * Any other app, when it is a text application: every theorem proved by Lean's kernel in this process, then its
+ * holo written with nothing compiled (model-holo.mjs): the evaluator guest with the model's program, the page, the
+ * model document and the seal. What is written is then read back as any holo is, and must verify and answer its
+ * own acceptance vectors. A model the evaluator guest does not run yet is refused, by name, and nothing is written.
+ */
+async function buildModelApp(dir, session, { log, env, snapshot, gaps, kernel, wasm }) {
+  const started = Date.now();
+  let frontend;
+  try {
+    frontend = frontendWhere({ env, hasWasm: wasm });
+  } catch (error) {
+    return { ...failure(error), stage: 'prove' };
+  }
+  const provedNow = await proveModel(dir, session, { log, frontend, snapshot, gaps, kernel, env });
+  if (!provedNow.ok) return { ...provedNow, stage: 'prove' };
+  let taken;
+  try {
+    // LexLean's exact bytes name the snapshot in the holo's records; a stand-in for LexLean has none.
+    taken = snapshot ? { snapshot: await snapshot(dir), bytes: null } : await wasmSnapshot(dir, { env });
+  } catch (error) {
+    return { ...failure(error), stage: 'build' };
+  }
+  const { buildHolo } = await import('./model-holo.mjs');
+  const { EVALUATOR_GUEST } = await import('./model-guest.mjs');
+  log("Writing the app's holo: the evaluator guest with the model's program. Nothing is compiled.");
+  let built;
+  try {
+    built = await buildHolo(taken.snapshot, { evaluator: readFileSync(new URL(EVALUATOR_GUEST.file, import.meta.url)), snapshotBytes: taken.bytes });
+  } catch (error) {
+    if (error.code === 'guest.uncovered' || error.code === 'eval.uncovered' || error.code === 'holo.profile' || error.code === 'holo.capabilities' || error.code === 'holo.facets') {
+      return { ...failure(new PrismCodeError('build.guest-uncovered', `Lean's kernel proved every theorem, and the holo is not built: ${error.message}. Nothing is compiled on this path, and it does not run this yet. This is a limit of the builder, not a verdict on the app. ${NO_DOCKER_FREE_BUILD}`)), stage: 'build', where: 'kernel', reason: error.code };
+    }
+    if (error.code === 'holo.vectors' || error.code === 'holo.no-vectors') return { ...failure(new PrismCodeError('build.vectors', `The holo is not built: ${error.message}. Change the examples or the rules in the model, then build again.`)), stage: 'build', where: 'kernel', reason: error.code };
+    if (error.code === 'holo.guest-differs') return { ...failure(new PrismCodeError('build.guest-differs', `The holo is not built: ${error.message}. This is a fault of the builder, and says nothing about the app.`)), stage: 'build', where: 'kernel', reason: error.code };
+    return { ok: false, stage: 'build', where: 'kernel', code: error.code ?? null, message: `The holo is not built: ${error.message}. This says nothing about the app.` };
+  }
+  const path = join(dir, '.prism', 'build', `${built.name.toLowerCase().match(/[a-z0-9]+/g)?.join('-') ?? 'app'}.holo`);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, built.bytes);
+  let app;
+  let acceptance;
+  try {
+    app = await fromFile(path);
+    acceptance = await app.acceptance();
+  } catch (error) {
+    return { ok: false, stage: 'build', where: 'kernel', code: error.code, message: `The holo that was written does not load (${error.message}).` };
+  }
+  const seconds = Math.round((Date.now() - started) / 100) / 10;
+  const ok = app.identities.verified === true && acceptance.failed.length === 0;
+  // The folder the app is published from: the holo, what it is, and the model's source beside it, as a rule app's page carries it.
+  let site = null;
+  if (ok) {
+    const { writeHoloSite } = await import('./model-site.mjs');
+    const { modelFiles } = await import('./model-files.mjs');
+    site = writeHoloSite(join(dir, '.prism', 'site'), built.bytes, { name: built.name, semanticId: `sha256:${built.semanticId}`, model: modelFiles(dir) }).directory;
+  }
+  session.status.holo = ok ? path : null;
+  session.status.built = ok ? { source: sourceDigest(dir), path, site, address: built.label, semanticId: `sha256:${built.semanticId}`, at: new Date().toISOString(), seconds, passed: acceptance.passed, total: acceptance.total, builder: 'evaluator-guest' } : null;
+  return {
+    ok,
+    stage: 'build',
+    where: 'kernel',
+    seconds,
+    holo: path,
+    site,
+    address: built.label,
+    semanticId: `sha256:${built.semanticId}`,
+    bytes: built.bytes.length,
+    theorems: provedNow.theorems,
+    vectors: { passed: acceptance.passed, total: acceptance.total },
+    compared: built.compared,
+    message: ok
+      ? `Built in ${seconds} s with nothing compiled: the holo ${relative(process.cwd(), path) || path}, ${built.bytes.length} bytes, named ${built.label}, for the model sha256:${built.semanticId}. Proved: Lean's kernel accepted every one of the model's ${provedNow.theorems.length} theorems. Tested, not proved: the holo's guest is the evaluator guest running the model's program, and it answers ${acceptance.passed} of ${acceptance.total} acceptance vectors and ${built.compared.agreed} of ${built.compared.total} requests made from them as the model's own definitions do.`
+      : `Written, but the holo does not verify or ${acceptance.failed.length} of ${acceptance.total} acceptance vectors fail through it. Nothing is recorded as built.`,
+  };
 }
 
 /** A rule app: kernel-checked from its snapshot, then written as the rule judge and its numbers, with its page. */

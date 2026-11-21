@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Prism: build in the browser</title>
+</head>
+<body>
+<h1>Build in the browser</h1>
+<pre id="out">working</pre>
+<script type="module">
+// A test page: starts build-worker.mjs and leaves its rows in window.results for the runner (run.mjs).
+const out = document.getElementById('out');
+const names = (new URLSearchParams(location.search).get('names') ?? 'decision-app,stateful-app').split(',');
+const worker = new Worker('./build-worker.mjs', { type: 'module' });
+const rows = [];
+let start = null;
+worker.onerror = (e) => { rows.push({ name: '(worker)', ok: false, error: e.message ?? 'the worker did not start' }); window.results = { start, rows }; };
+worker.onmessage = ({ data }) => {
+  if (data.start) start = data.start;
+  if (data.row) rows.push(data.row);
+  out.textContent = JSON.stringify({ start, rows }, null, 1);
+  if (data.done) window.results = { start, rows };
+};
+worker.postMessage({ names });
+</script>
+</body>
+</html>

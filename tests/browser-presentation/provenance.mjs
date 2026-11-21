@@ -27,6 +27,8 @@ export function provenanceProfile(name) {
       {kind: 'tex', path: 'modules/' + path + '.tex'},
       {kind: 'map', path: 'maps/' + path + '.map.json'},
       {kind: 'coverage', path: 'coverage/' + path + '.coverage.json'},
+      // LexLean 0.4.3 writes each semantic module's content-named declarations (SPEC §21.9).
+      {kind: 'declarations', path: 'declarations/' + path + '.json'},
       {kind: 'lexicon-closure', path: 'lexicons/' + name + '.closure.json'},
     ];
   }).sort((a, b) => Buffer.compare(Buffer.from(a.kind), Buffer.from(b.kind))

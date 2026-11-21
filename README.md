@@ -1,4 +1,50 @@
+![PrismPM provisional banner: build, verify, package. Placeholder not approved](assets/readme-banner-PLACEHOLDER.png)
+
+*Illustrative placeholder artwork, pending UOR Foundation brand approval.*
+
 # PrismPM
+
+**Turn a software model into an application you can build, check, and share.**
+
+[Why it exists](#why-prismpm-exists) · [What it provides](#what-this-repository-provides) · [Calculator quick start](#calculator-getting-started) · [Verification scope](#verification-scope) · [Development](#development-and-acceptance) · [Reference docs](#key-documents)
+
+[![Conformance gate](https://github.com/UOR-Foundation/prismpm/actions/workflows/conformance-gate.yml/badge.svg?branch=main)](https://github.com/UOR-Foundation/prismpm/actions/workflows/conformance-gate.yml) [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-718096)](LICENSE-MIT)
+
+
+## Why PrismPM exists
+
+Software teams often have two versions of the truth: what their design says
+the program should do, and what the program actually does. If developers
+maintain those separately, the design, code, and test evidence can drift
+apart. A passing build alone may not show which behavior was checked.
+
+**PrismPM aims to close that gap.** Developers describe an application
+using a controlled, structured model. PrismPM uses that model to generate
+software artifacts and collect verification evidence. The goal is to make
+the connection between the model, the resulting software, and its checks
+something people can inspect rather than simply trust.
+
+## What this repository provides
+
+PrismPM is a build and verification toolkit for [Prism](https://github.com/UOR-Foundation/prism)
+applications. It works with [LexLean](https://github.com/UOR-Foundation/lexlean)
+to check a model and produce application outputs such as Rust packages,
+WebAssembly modules, and portable Hologram archives.
+
+**It is not a guarantee that every generated application is correct.**
+The checks have a defined scope, and the production release is still
+subject to explicit acceptance requirements. See the
+[release status](RELEASE-STATUS.md) and [verification scope](#verification-scope).
+
+## Start here
+
+- [Calculator getting started](#calculator-getting-started): try the model-and-build workflow in the repository's devcontainer
+- [Artifact model](#artifact-model): see how source, checks, and outputs fit together
+- [Verification scope](#verification-scope): understand which claims the tooling supports
+- [Development and acceptance](#development-and-acceptance): reproduce the project's checks
+- [Key documents](#key-documents): read the specification, architecture, and release evidence
+
+## Technical model and release boundaries
 
 PrismPM compiles authoritative Prism models into verified software artifacts. A
 model is a closed `.lex.tex` source graph: LexLean produces its semantic
@@ -18,7 +64,6 @@ contract in [SPEC.md](SPEC.md).
 Version 0.4.0 is not an accepted production-system release. Component tests,
 contract fixtures and a successful Pages upload do not establish that acceptance.
 [Release status](RELEASE-STATUS.md) records the remaining release boundaries.
-
 ## Artifact model
 
 ```text

@@ -6,7 +6,9 @@
 // turns the answer into text. It starts nothing itself.
 
 import { materialize } from './kappa-space.mjs';
-import { createKept, createLineEditor, createSession, createWriter, makeJudge } from './session.mjs';
+import { createLineEditor } from './line-editor.mjs';
+import { createKept, createWriter, makeJudge } from './session.mjs';
+import { createSession, WORDS } from './shell.mjs';
 
 const enc = new TextEncoder();
 
@@ -95,8 +97,13 @@ export function createPins({ pin, manifest, kappa, held }) {
  *   sink(bytes, done)   the terminal's write, with its callback; echo(text) the same for keys, written at once
  *   clear()       clear the screen
  *   kept          where outputs are kept; this tab's memory when none is given
+ *   change        { write(path, text), remove(path) }: how the page changes a file of the model; without it the
+ *                 commands that change a file say the page holds the model read-only
  */
-export function createCommandLine({ tables, luts = {}, rules, kappa, reuseAdmits, project, check, snapshotOf, prove, held, pin, manifest, sink, echo, clear, kept = createKept() }) {
+export function createCommandLine({ tables, luts = {}, rules, kappa, reuseAdmits, project, check, snapshotOf, prove, held, pin, manifest, sink, echo, clear, kept = createKept(), change = null }) {
+  // The words the command line answers are exactly the words the proved table lists, or it does not start.
+  const listed = tables.commands.fields[0].values.filter((word) => word !== 'other');
+  if ([...listed].sort().join(' ') !== [...WORDS].sort().join(' ')) throw new Error('the command line and the proved command table list different commands');
   // Each table whose requests are finite is computed once, here, into a lookup table, and answered from it. The
   // table computed in this tab must have the label the site was built with, or the terminal does not start.
   const made = {};
@@ -110,7 +117,7 @@ export function createCommandLine({ tables, luts = {}, rules, kappa, reuseAdmits
   const programs = createPrograms({ check, snapshotOf, prove, judge, rules });
   const { labelOf, bytesOf } = createPins({ pin, manifest, kappa, held });
   const writer = createWriter({ judge, sink });
-  const session = createSession({ judge, writer, files: () => new Map(Object.entries(project())), bytesOf, labelOf, programs, kappa, reuseAdmits, kept, clear });
-  const editor = createLineEditor({ echo, submit: (line) => session.run(line), interrupt: () => writer.stop(), clear, commands: session.commands });
-  return { judge, writer, session, editor, luts: Object.fromEntries(Object.entries(made).map(([name, lut]) => [name, lut.kappa])), greeting: 'Prism model terminal. A command line for this model, not a shell. Type help.' };
+  const session = createSession({ judge, writer, files: () => new Map(Object.entries(project())), bytesOf, labelOf, programs, kappa, reuseAdmits, kept, clear, change });
+  const editor = createLineEditor({ echo, submit: (line) => session.run(line), interrupt: () => session.interrupt(), clear, complete: session.complete, prompt: session.prompt });
+  return { judge, writer, session, editor, luts: Object.fromEntries(Object.entries(made).map(([name, lut]) => [name, lut.kappa])), greeting: 'Prism terminal. A command line for this model, in this tab: no machine is behind it. Type help.' };
 }

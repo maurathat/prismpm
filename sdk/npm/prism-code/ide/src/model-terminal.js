@@ -28,6 +28,10 @@ export function prismTerminal(makeLine, seen = []) {
       // Output handed to the panel and not yet acknowledged as drawn: [characters left, drained].
       this.waiting = [];
       this.decoder = new TextDecoder('utf-8');
+      // The panel names a terminal after its process. Left alone it shows the name of the machine's usual shell,
+      // which this is not: nothing here is a shell. So the process says what it is.
+      this.properties = new Emitter();
+      this.onDidChangeProperty = this.properties.event;
     }
     async start() {
       const fire = (text) => { if (text) this.out.fire(text); };
@@ -41,6 +45,7 @@ export function prismTerminal(makeLine, seen = []) {
         clear: () => fire('\x1b[2J\x1b[3J\x1b[H'),
       });
       seen.push(this);
+      setTimeout(() => this.properties.fire({ type: 'title', value: 'prism model' }), 0);
       fire(this.line.greeting + '\r\n');
       this.line.editor.start();
       return undefined;

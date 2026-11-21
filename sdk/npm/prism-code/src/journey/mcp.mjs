@@ -64,7 +64,7 @@ export const TOOLS = [
   },
   {
     name: 'prism_build',
-    description: "Build the LexLean model as it is on disk into a verified app, as docker build builds an image: check it, prove every theorem with Lean's kernel in this process, and, for a rule app, build the verified rule judge. With check: true, as docker build --check, only check it: every diagnostic at the line of prism/src/ it anchors to, in seconds, proving nothing. When the model does not check, returns the first problem with the exact fix: the line, and the name to write when one is misspelled. Returns state running while it works; call again to keep waiting.",
+    description: "Build the LexLean model as it is on disk into a verified app, as docker build builds an image: check it, prove every theorem with Lean's kernel in this process, and build it with nothing compiled: a rule app as the verified rule judge, any other app as a holo whose guest runs the program of the model and is tested against the model on its own examples. With check: true, as docker build --check, only check it: every diagnostic at the line of prism/src/ it anchors to, in seconds, proving nothing. When the model does not check, returns the first problem with the exact fix: the line, and the name to write when one is misspelled. Returns state running while it works; call again to keep waiting.",
     inputSchema: { type: 'object', properties: { check: { type: 'boolean', description: 'Only check the model: every diagnostic, proving nothing. Default false.' }, wait: { type: 'number', description: 'Seconds to wait before returning, default 45.' } }, additionalProperties: false },
   },
   {
@@ -260,18 +260,15 @@ export function createServer({ cwd = process.cwd(), send, gaps = gapLedger() }) 
 
   const tools = {
     prism_init: (args) => initApp(args),
-    // Check, prove, then build what needs no image: a rule app's verified judge. Another app stops at proved.
+    // Check, prove, then build. Nothing is compiled: a rule app becomes the verified rule judge and its numbers,
+    // any other app a holo of the evaluator guest and the model's program (model-holo.mjs).
     // With check: true, as docker build --check, only the check.
     async prism_build(args, progress) {
       if (args.check) return { step: 'check', ...(await checkModel()) };
       const verified = await verifyModel(args, progress);
-      // Proved, not a rule app: say plainly that nothing was built here, and how it is built.
-      if (verified.step === 'prove' && verified.state === 'done' && verified.ok !== false && !isRuleApp(load())) {
-        return { ...verified, built: { ok: false, reason: "Proved, not built: this app is built into a holo through Rust to WebAssembly, which does not run in this process yet. npx prism-code build --remote github builds it on your repository's own GitHub Actions." } };
-      }
-      if (verified.step !== 'prove' || verified.state !== 'done' || verified.ok === false || !isRuleApp(load())) return verified;
+      if (verified.step !== 'prove' || verified.state !== 'done' || verified.ok === false) return verified;
       const built = await longTool('build', args, progress);
-      return { ...verified, step: 'build', built: { ok: built.ok, state: built.state, message: built.message ?? built.note } };
+      return { ...verified, step: 'build', built: { ok: built.ok, state: built.state, message: built.message ?? built.note, ...(built.holo ? { holo: built.holo, address: built.address, bytes: built.bytes, vectors: built.vectors, compared: built.compared } : {}), ...(built.reason ? { reason: built.reason } : {}) } };
     },
     // Build when the model changed (skipped when it did not), then answer.
     async prism_run(args, progress) {
@@ -291,7 +288,7 @@ export function createServer({ cwd = process.cwd(), send, gaps = gapLedger() }) 
       const now = status();
       const session = load();
       // A build of an earlier model is not this app's build: it is left out.
-      if (!now.built?.current) delete session.status.ruleApp;
+      if (!now.built?.current) { delete session.status.ruleApp; delete session.status.built; }
       let pushed;
       try {
         if (!now.proved?.current) throw new PrismCodeError('bundle.unproved', 'Only a proved app is pushed, and this model as it is on disk is not proved. Call prism_build first.');
@@ -325,7 +322,7 @@ export function createServer({ cwd = process.cwd(), send, gaps = gapLedger() }) 
       writeSession(target, session);
       const answer = { ok: proved.ok, address: pulled.address, installed: target, starter: pulled.manifest.starter, proved: { ok: proved.ok, message: proved.message, theorems: proved.theorems ?? proved.guarantees ?? null } };
       if (!proved.ok) return { ...answer, next: "Lean's kernel did not prove this app here, so nothing was built and nothing runs from it." };
-      if (pulled.manifest.built && isRuleApp(session)) {
+      if (pulled.manifest.built) {
         const built = await build(target, session, { log, gaps });
         writeSession(target, session);
         const same = built.ok && built.address === pulled.manifest.built.address;

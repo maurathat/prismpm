@@ -31,6 +31,8 @@ on:
       - sdk/npm/prism-code/ide/package-lock.json
       - sdk/npm/prism-code/ide/tools/build-audit-site.mjs
       - sdk/npm/prism-code/ide/tools/build-edit-site.mjs
+      - sdk/npm/prism-code/ide/tools/build-offline-site.mjs
+      - sdk/npm/prism-code/ide/offline/**
       - sdk/npm/prism-code/ide/tools/edit-project.mjs
       - sdk/npm/prism-code/ide/tools/terminal-site.mjs
       - sdk/npm/prism-code/model/ide-terminal-*/**
@@ -102,7 +104,7 @@ jobs:
           set -euo pipefail
           site="$RUNNER_TEMP/audit-site"
           for f in audit/index.html edit/index.html edit/edit.mjs edit/app-match.mjs edit/lexlean-worker.mjs edit/prove-worker.mjs edit/pin.json edit/lexlean.wasm.gz                    edit/kernel/manifest.json edit/project.json edit/project/lexlean.toml edit/prism-code/journey/rule-table.mjs                    edit/prism-code/journey/wasi-memory.mjs edit/ide/index.html edit/site.json \
-                   edit/terminal/terminal.mjs edit/terminal/session.mjs edit/terminal/programs.mjs edit/terminal/kappa-space.mjs edit/terminal/effects.mjs edit/terminal/pins.json edit/terminal/tables.json \
+                   edit/terminal/terminal.mjs edit/terminal/session.mjs edit/terminal/shell.mjs edit/terminal/line-editor.mjs edit/terminal/programs.mjs edit/terminal/kappa-space.mjs edit/terminal/effects.mjs edit/terminal/pins.json edit/terminal/tables.json \
                    edit/vendor/xterm/xterm.mjs edit/vendor/xterm/xterm.css edit/vendor/xterm/addon-fit.mjs edit/vendor/xterm/addon-webgl.mjs edit/vendor/xterm/addon-web-links.mjs edit/vendor/xterm/addon-search.mjs edit/vendor/xterm/addon-unicode11.mjs; do
             test -s "$site/$f" || { echo "missing: $f"; exit 1; }
           done
@@ -130,6 +132,33 @@ jobs:
             if (have !== part.sha256) throw new Error(`kernel/${part.file} decodes to sha256:${have}, not the pinned sha256:${part.sha256}`);
           }
           console.log('LexLean and the kernel are the pinned ones');
+          JS
+      # Last, over the whole site: every published file is listed with its BLAKE3 label, and a service worker
+      # serves each one only as those bytes, from the visitor's browser once it has them.
+      - name: Make the site work offline, by content
+        run: node ide/tools/build-offline-site.mjs "$RUNNER_TEMP/audit-site" "$GITHUB_SHA"
+      - name: The worker parses, and its listing names every page by the label of its bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          site="$RUNNER_TEMP/audit-site"
+          node --check "$site/sw.js"
+          node --input-type=module - "$site" <<'JS'
+          import { readFileSync } from 'node:fs';
+          import { kappa } from './src/blake3.mjs';
+          const site = process.argv[2];
+          const listing = JSON.parse(readFileSync(`${site}/offline.json`, 'utf8'));
+          const paths = Object.keys(listing.files);
+          for (const needed of ['index.html', 'audit/index.html', 'edit/index.html', 'edit/ide/index.html', 'edit/lexlean.wasm.gz', 'edit/kernel/manifest.json']) {
+            if (!paths.includes(needed)) throw new Error(`offline.json does not list ${needed}`);
+          }
+          for (const path of paths) {
+            if (path.split('/').some((part) => part.startsWith('.'))) throw new Error(`offline.json lists ${path}, which Pages would not publish`);
+            const have = kappa(readFileSync(`${site}/${path}`));
+            if (have !== listing.files[path].kappa) throw new Error(`${path} is ${have}, and offline.json names ${listing.files[path].kappa}`);
+          }
+          if (paths.includes('sw.js') || paths.includes('offline.json')) throw new Error('the worker and its listing must not list themselves');
+          console.log(`${paths.length} files listed, each the bytes its label names`);
           JS
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
