@@ -1,7 +1,12 @@
 // The terminal's command language: what a line means, and the commands that answer it. No DOM and no xterm.js
 // here, so Node can test it.
 //
-// A line is commands joined by `;`, `&&` and `||`. A command may pipe its output to the next (`|`), take a file as
+// A line is commands joined by `;`, `&&` and `||`, and may loop and choose: `for NAME in words; do …; done`,
+// `while …; do …; done`, `if …; then …; else …; fi`. `$( … )` in a word stands for the output of the commands inside
+// it, and `run file` enters the lines of a file of the model. None of these runs anything the line could not: each
+// command they reach is put to the tables like any other.
+//
+// A simple line is commands joined by `;`, `&&` and `||`. A command may pipe its output to the next (`|`), take a file as
 // its input (`< file`) and write its output to a file of the model (`> file`, `>> file`). Words are quoted with
 // '…' and "…", a variable is written $NAME, and * and ? in a word match the model's files.
 //
@@ -28,6 +33,7 @@ export const USAGE = [
   ['save [name]', "keep this session's transcript in this browser", 'This terminal'],
   ['restore [name]', 'print a kept transcript', 'This terminal'],
   ['sessions', 'list the kept transcripts', 'This terminal'],
+  ['run file', 'enter the lines of a file of the model', 'This terminal'],
   ['check', 'lexlean check, on the model as it is in the editor', 'The model'],
   ['snapshot', 'lexlean snapshot: what the model means, as JSON', 'The model'],
   ['prove', "have Lean's kernel judge each guarantee", 'The model'],
@@ -44,7 +50,7 @@ export const USAGE = [
   ['mv from to', 'rename a file', 'Files of the model'],
   ['rm [-r] file…', 'remove files', 'Files of the model'],
   ['echo [-n] word…', 'print its words', 'Text'],
-  ['grep [-ivnc] pattern [file…]', 'print the lines that hold a pattern', 'Text'],
+  ['grep [-ivncq] pattern [file…]', 'print the lines that hold a pattern', 'Text'],
   ['head [-n N] [file…]', 'print the first lines', 'Text'],
   ['tail [-n N] [file…]', 'print the last lines', 'Text'],
   ['wc [-lwc] [file…]', 'count lines, words and bytes', 'Text'],
@@ -58,8 +64,8 @@ const PROGRAMS = ['check', 'snapshot', 'prove', 'audit'];
 // Which of a command's words are paths, the options it takes, and the one option that takes a value.
 const SHAPE = {
   ls: { paths: 'all', flags: 'l' }, cd: { paths: 'all' }, cat: { paths: 'all' }, kappa: { paths: 'all' }, touch: { paths: 'all' },
-  write: { paths: 'all' }, append: { paths: 'all' }, cp: { paths: 'all' }, mv: { paths: 'all' }, rm: { paths: 'all', flags: 'r' },
-  grep: { paths: 'rest', flags: 'ivnc' }, head: { paths: 'all', value: 'n' }, tail: { paths: 'all', value: 'n' },
+  run: { paths: 'all' }, write: { paths: 'all' }, append: { paths: 'all' }, cp: { paths: 'all' }, mv: { paths: 'all' }, rm: { paths: 'all', flags: 'r' },
+  grep: { paths: 'rest', flags: 'ivncq' }, head: { paths: 'all', value: 'n' }, tail: { paths: 'all', value: 'n' },
   wc: { paths: 'all', flags: 'lwc' }, sort: { paths: 'all', flags: 'run' }, uniq: { paths: 'all', flags: 'c' }, diff: { paths: 'all' },
   check: { paths: 'first', free: true }, snapshot: { paths: 'first', free: true }, prove: { paths: 'first', free: true }, audit: { paths: 'first', free: true },
 };
@@ -68,6 +74,9 @@ const MAX_PATH = 512;
 const MAX_FILE = 4 << 20;
 const MAX_FILES = 2000;
 const MAX_TRANSCRIPT = 512 * 1024;
+// A loop stops after this many turns, and scripts and $( … ) nest no deeper than this.
+const MAX_LOOPS = 10000;
+const MAX_DEPTH = 8;
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SESSION_NAME = /^[A-Za-z0-9._-]{1,40}$/;
 const SESSION = 'prism/terminal-session/1';
@@ -99,7 +108,19 @@ export function lex(line) {
   const end = () => { if (word) { tokens.push({ word }); word = null; } };
   const variable = (at, quoted) => {
     // `at` is just past the $. Resolves [part, next index], or null when the $ stands for itself.
-    if (line[at] === '(') throw new Error('$( … ) is not part of this command line: a command cannot be run inside a word.');
+    if (line[at] === '(') {
+      // $( … ): the commands inside are run when the word is used, and what they print stands in the word.
+      let depth = 1;
+      let quote = null;
+      let j = at + 1;
+      for (; j < line.length; j++) {
+        const c = line[j];
+        if (quote) { if (c === quote) quote = null; continue; }
+        if (c === "'" || c === '"') quote = c; else if (c === '(') depth++; else if (c === ')' && --depth === 0) break;
+      }
+      if (j >= line.length) throw new Error('A $( is not closed.');
+      return [{ sub: line.slice(at + 1, j), quoted }, j + 1];
+    }
     if (line[at] === '?') return [{ name: '?', quoted }, at + 1];
     if (line[at] === '{') {
       const close = line.indexOf('}', at);
@@ -114,7 +135,9 @@ export function lex(line) {
   while (i < line.length) {
     const ch = line[i];
     if (ch === ' ' || ch === '\t') { end(); i++; continue; }
-    if (ch === '#' && !word) break;
+    // A line break ends a command, as ; does, unless the line before it ends in an operator that waits for more.
+    if (ch === '\n' || ch === '\r') { end(); if (tokens.length && tokens[tokens.length - 1].word) tokens.push({ op: ';' }); i++; continue; }
+    if (ch === '#' && !word) { while (i < line.length && line[i] !== '\n') i++; continue; }
     if (ch === "'") {
       const close = line.indexOf("'", i + 1);
       if (close < 0) throw new Error("A ' is not closed.");
@@ -130,7 +153,7 @@ export function lex(line) {
         const c = line[i];
         if (c === '"') { i++; break; }
         if (c === '\\' && '"\\$`'.includes(line[i + 1] ?? '')) { text += line[++i]; continue; }
-        if (c === '`') throw new Error('` … ` is not part of this command line: a command cannot be run inside a word.');
+        if (c === '`') throw new Error('` … ` is not part of this command line: write $( … ).');
         if (c === '$') {
           const got = variable(i + 1, true);
           if (got) { if (text) part({ text, quoted: true }); text = ''; part(got[0]); i = got[1] - 1; continue; }
@@ -141,7 +164,7 @@ export function lex(line) {
       continue;
     }
     if (ch === '\\') { if (i + 1 < line.length) part({ text: line[i + 1], quoted: true }); i += 2; continue; }
-    if (ch === '`') throw new Error('` … ` is not part of this command line: a command cannot be run inside a word.');
+    if (ch === '`') throw new Error('` … ` is not part of this command line: write $( … ).');
     if (ch === '$') {
       const got = variable(i + 1, false);
       if (got) { part(got[0]); i = got[1]; continue; }
@@ -154,7 +177,7 @@ export function lex(line) {
     if (ch === '&') throw new Error('& is not part of this command line: nothing runs in the background.');
     if ('|;<>'.includes(ch)) { end(); tokens.push({ op: ch }); i++; continue; }
     let j = i;
-    while (j < line.length && !' \t\'"\\`$&|;<>'.includes(line[j])) j++;
+    while (j < line.length && !' \t\n\r\'"\\`$&|;<>'.includes(line[j])) j++;
     part({ text: line.slice(i, j), quoted: false });
     i = j;
   }
@@ -162,39 +185,101 @@ export function lex(line) {
   return tokens;
 }
 
-/** Tokens as a list of pipelines: [{ join, stages: [{ words, from, to, append }] }]. */
+const RESERVED = ['for', 'in', 'do', 'done', 'while', 'if', 'then', 'else', 'fi'];
+/** The reserved word a token is, when it is one written plainly; null otherwise. */
+const keyword = (token) => {
+  const w = token?.word;
+  return w && w.length === 1 && w[0].text !== undefined && !w[0].quoted && RESERVED.includes(w[0].text) ? w[0].text : null;
+};
+
+/**
+ * Tokens as a list of items, each joined to the one before by `join` (null, ';', '&&' or '||'). An item is a
+ * pipeline, { stages: [{ words, from, to, append }] }, or one of
+ *   { kind: 'for', name, words, body }   { kind: 'while', test, body }   { kind: 'if', test, then, else }
+ * whose test, body, then and else are lists again. A reserved word is one only where a command could start.
+ */
 export function build(tokens) {
-  const list = [];
-  let join = null;
-  let stages = [];
-  let stage = { words: [], from: null, to: null, append: false };
-  const closeStage = () => {
-    if (stage.words.length === 0) throw new Error(stage.from || stage.to ? 'A redirection needs a command.' : 'A command is missing.');
-    stages.push(stage);
-    stage = { words: [], from: null, to: null, append: false };
-  };
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (t.word) { stage.words.push(t.word); continue; }
-    if (t.op === '<' || t.op === '>' || t.op === '>>') {
-      const next = tokens[++i];
-      if (!next?.word) throw new Error(`${t.op} needs a file.`);
-      if (t.op === '<') stage.from = next.word; else { stage.to = next.word; stage.append = t.op === '>>'; }
-      continue;
+  let i = 0;
+  const fresh = () => ({ words: [], from: null, to: null, append: false });
+  const skip = () => { while (tokens[i]?.op === ';') i++; };
+  const expect = (word, after) => { skip(); if (keyword(tokens[i]) !== word) throw new Error(`${after} needs a ${word}.`); i++; };
+  function pipelineOf() {
+    const stages = [];
+    let stage = fresh();
+    const close = () => {
+      if (stage.words.length === 0) throw new Error(stage.from || stage.to ? 'A redirection needs a command.' : 'A command is missing.');
+      stages.push(stage);
+      stage = fresh();
+    };
+    for (; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (t.word) { stage.words.push(t.word); continue; }
+      if (t.op === '<' || t.op === '>' || t.op === '>>') {
+        const next = tokens[++i];
+        if (!next?.word) throw new Error(`${t.op} needs a file.`);
+        if (t.op === '<') stage.from = next.word; else { stage.to = next.word; stage.append = t.op === '>>'; }
+        continue;
+      }
+      if (t.op === '|') { close(); continue; }
+      break;
     }
-    if (t.op === '|') { closeStage(); continue; }
-    // ; && ||. A line may end with a ; and nothing after it.
-    if (stage.words.length === 0 && stages.length === 0 && !stage.from && !stage.to) {
-      if (t.op === ';' && list.length > 0 && i === tokens.length - 1) break;
-      throw new Error('A command is missing.');
-    }
-    closeStage();
-    list.push({ join, stages });
-    stages = [];
-    join = t.op;
+    close();
+    return stages;
   }
-  if (stage.words.length || stage.from || stage.to || stages.length) { closeStage(); list.push({ join, stages }); } else if (join && join !== ';') throw new Error('A command is missing.');
-  return list;
+  function list(stops) {
+    const items = [];
+    let join = null;
+    for (;;) {
+      skip();
+      const word = keyword(tokens[i]);
+      if (i >= tokens.length || (word && stops.includes(word))) {
+        if (join && join !== ';') throw new Error('A command is missing.');
+        break;
+      }
+      let item;
+      if (word === 'for') {
+        const named = tokens[++i]?.word;
+        const name = named && named.length === 1 && named[0].text !== undefined && !named[0].quoted ? named[0].text : '';
+        if (!NAME.test(name)) throw new Error('for needs a variable name.');
+        if (keyword(tokens[++i]) !== 'in') throw new Error('for NAME needs in.');
+        const words = [];
+        for (i++; tokens[i]?.word; i++) words.push(tokens[i].word);
+        expect('do', 'for');
+        const body = list(['done']);
+        expect('done', 'for');
+        item = { kind: 'for', name, words, body };
+      } else if (word === 'while') {
+        i++;
+        const test = list(['do']);
+        expect('do', 'while');
+        const body = list(['done']);
+        expect('done', 'while');
+        item = { kind: 'while', test, body };
+      } else if (word === 'if') {
+        i++;
+        const test = list(['then']);
+        expect('then', 'if');
+        const then = list(['else', 'fi']);
+        let other = null;
+        skip();
+        if (keyword(tokens[i]) === 'else') { i++; other = list(['fi']); }
+        expect('fi', 'if');
+        item = { kind: 'if', test, then, else: other };
+      } else if (word) throw new Error(`${word} is out of place.`);
+      else item = { stages: pipelineOf() };
+      item.join = join;
+      items.push(item);
+      const t = tokens[i];
+      if (!t) break;
+      if (t.op !== ';' && t.op !== '&&' && t.op !== '||') throw new Error('A ; is missing.');
+      join = t.op;
+      i++;
+    }
+    return items;
+  }
+  const items = list([]);
+  if (i < tokens.length) throw new Error(`${keyword(tokens[i]) ?? 'That'} is out of place.`);
+  return items;
 }
 
 const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -254,15 +339,30 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
   const rel = (path) => (path.startsWith(cwd) ? path.slice(cwd.length) : path);
   const label = (text) => kappa(enc.encode(text));
 
-  /** A word's parts as one string, and whether it is a pattern over the model's files. */
-  function expand(word) {
+  // What $( … ) and a piped `run` collect: the output of the last command of each pipeline run inside them.
+  const captures = [];
+  let depth = 0;
+  async function captured(work) {
+    if (depth >= MAX_DEPTH) throw new Error('That is nested too deep.');
+    const buffer = [];
+    captures.push(buffer);
+    depth++;
+    try { await work(); } finally { depth--; captures.pop(); }
+    return buffer.join('');
+  }
+  /** What the commands of a $( … ) print, without the line breaks at its end. */
+  const substitute = async (text) => (await captured(() => runList(build(lex(text)), text))).replace(/\n+$/, '');
+
+  /** A word as the words it stands for: one, or the files a pattern matches, or the words a lone $( … ) printed. */
+  async function expand(word) {
+    if (word.length === 1 && word[0].sub !== undefined && !word[0].quoted) return (await substitute(word[0].sub)).split(/\s+/).filter(Boolean);
     let text = '';
     let pattern = '';
     let wild = false;
     for (const p of word) {
-      const piece = p.name === undefined ? p.text : p.name === '?' ? String(status) : p.name === 'PWD' ? (cwd === '/' ? '/' : cwd.slice(0, -1)) : vars.get(p.name) ?? '';
+      const piece = p.sub !== undefined ? await substitute(p.sub) : p.name === undefined ? p.text : p.name === '?' ? String(status) : p.name === 'PWD' ? (cwd === '/' ? '/' : cwd.slice(0, -1)) : vars.get(p.name) ?? '';
       text += piece;
-      if (p.name === undefined && !p.quoted && /[*?]/.test(piece)) { wild = true; pattern += escape(piece).replace(/\\\*/g, '[^/]*').replace(/\\\?/g, '[^/]'); } else pattern += escape(piece);
+      if (p.text !== undefined && !p.quoted && /[*?]/.test(piece)) { wild = true; pattern += escape(piece).replace(/\\\*/g, '[^/]*').replace(/\\\?/g, '[^/]'); } else pattern += escape(piece);
     }
     if (!wild) return [text];
     const at = resolveTarget(text.replace(/[*?]/g, 'x'), files(), cwd);
@@ -304,6 +404,7 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
     };
     return {
       stdin: io.stdin,
+      piped: io.piped,
       /** The command's output: to the screen, or to whatever the line sends it to. */
       print: (text) => { if (io.piped) { io.out.push(text); return true; } need('screen'); return say(text); },
       /** What the command says about itself, always to the screen. */
@@ -352,7 +453,7 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
       const groups = [...new Set(USAGE.map(([, , group]) => group))];
       return hand.print('A command line for the open model. It starts no native program: the commands are these, and nothing else runs.\n'
         + groups.map((group) => group + '\n' + USAGE.filter(([, , g]) => g === group).map(([usage, what]) => '  ' + usage.padEnd(30) + what).join('\n')).join('\n')
-        + '\nOn a line: a | b pipes, a ; b and a && b and a || b join, > file and >> file write, < file reads,\n\'…\' and "…" quote, $NAME is a variable, * and ? match files. Tab completes; Ctrl+R searches the history.\n');
+        + '\nOn a line: a | b pipes, a ; b and a && b and a || b join, > file and >> file write, < file reads,\n\'…\' and "…" quote, $NAME is a variable, $( … ) is what its commands print, * and ? match files.\nfor NAME in words; do …; done   while …; do …; done   if …; then …; else …; fi\nTab completes; Ctrl+R searches the history.\n');
     },
     clear: () => clear(),
     history: (hand) => hand.print(entered.map((line, i) => String(i + 1).padStart(4) + '  ' + line).join('\n') + (entered.length ? '\n' : '')),
@@ -402,7 +503,7 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
         found += count;
       }
       if (found === 0) hand.status(1);
-      return hand.print(out.join(''));
+      return c.flags.has('q') ? undefined : hand.print(out.join(''));
     },
     head: async (hand, c) => { const from = await sources(hand, 'head', c); if (from) for (const s of from) await hand.print(linesOf(s.text).slice(0, c.value ?? 10).map((l) => l + '\n').join('')); },
     tail: async (hand, c) => { const from = await sources(hand, 'tail', c); if (from) for (const s of from) { const n = c.value ?? 10; await hand.print((n === 0 ? [] : linesOf(s.text).slice(-n)).map((l) => l + '\n').join('')); } },
@@ -479,6 +580,15 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
       // What comes back is shown only when it is the bytes its record names.
       if (!found || found.output !== kappa(found.bytes)) return hand.fail(`restore: no transcript is kept as ${name}.\n`);
       return hand.print(ended(dec.decode(found.bytes)));
+    },
+    run: async (hand, c) => {
+      if (c.ats.length !== 1 || !c.ats[0].file) return hand.fail('run takes one file of the model.\n');
+      let list;
+      try { list = build(lex(hand.read(c.ats[0].file))); } catch (error) { return hand.fail(`run: ${rel(c.ats[0].file)}: ${String(error?.message ?? error)}\n`); }
+      // Each line is entered as if it were typed: every command of it is put to the tables on its own.
+      const text = await captured(() => runList(list, 'run ' + rel(c.ats[0].file), !hand.piped));
+      if (hand.piped) await hand.print(text);
+      hand.status(status);
     },
     sessions: async (hand) => hand.print((await sessionNames(hand)).map((n) => n + '\n').join('')),
   };
@@ -564,13 +674,15 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
   async function pipeline(stages, line) {
     const plan = [];
     for (const stage of stages) {
-      let argv = stage.words.flatMap(expand);
+      let argv = [];
+      for (const word of stage.words) argv.push(...await expand(word));
+      if (argv.length === 0) continue;
       // NAME=value is `set NAME value`; `lexlean check` and `lexlean snapshot` are the commands' full names.
-      const assigned = argv.length === 1 && stage.words[0][0].name === undefined && !stage.words[0][0].quoted ? /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s.exec(argv[0]) : null;
+      const assigned = argv.length === 1 && stage.words[0][0].text !== undefined && !stage.words[0][0].quoted ? /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s.exec(argv[0]) : null;
       if (assigned) argv = ['set', assigned[1], assigned[2]];
       if (argv[0] === 'lexlean' && ['check', 'snapshot'].includes(argv[1])) argv.shift();
-      const one = (word, what) => { const got = expand(word); if (got.length !== 1) throw new Error(`${what} names ${got.length} files; it takes one.`); return got[0]; };
-      plan.push({ argv, from: stage.from ? one(stage.from, '<') : null, to: stage.to ? one(stage.to, stage.append ? '>>' : '>') : null, append: stage.append });
+      const one = async (word, what) => { const got = await expand(word); if (got.length !== 1) throw new Error(`${what} names ${got.length} files; it takes one.`); return got[0]; };
+      plan.push({ argv, from: stage.from ? await one(stage.from, '<') : null, to: stage.to ? await one(stage.to, stage.append ? '>>' : '>') : null, append: stage.append });
     }
     // Nothing of a pipeline runs when one of its words is not a command.
     const unknown = plan.find((p) => !WORDS.includes(p.argv[0]));
@@ -581,6 +693,8 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
     }
     let stdin = null;
     let answer = null;
+    // Inside $( … ) and a piped `run`, what the last command would have shown is collected instead.
+    const collect = captures.length > 0 && !showing ? captures[captures.length - 1] : null;
     for (const [i, p] of plan.entries()) {
       if (stopped) { status = 130; return answer; }
       if (p.from !== null) {
@@ -589,11 +703,12 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
         stdin = read.out;
       }
       const last = i === plan.length - 1;
-      const ran = await exec(p.argv[0], p.argv.slice(1), { stdin, piped: !last || p.to !== null }, line);
+      const ran = await exec(p.argv[0], p.argv.slice(1), { stdin, piped: !last || p.to !== null || collect !== null }, line);
       answer = ran.answer;
       status = ran.status;
       if (ran.answer === 'refuse') return answer;
       stdin = ran.out;
+      if (last && p.to === null && collect) collect.push(ran.out);
       if (p.to !== null) {
         const wrote = await exec(p.append ? 'append' : 'write', [p.to], { stdin, piped: false }, line);
         if (wrote.answer !== 'builtin') { status = wrote.status; return wrote.answer; }
@@ -601,6 +716,43 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
         stdin = '';
       }
     }
+    return answer;
+  }
+
+  // Whether the commands running now show their output, though something further out is collecting.
+  let showing = false;
+  /** Run a list of items. `shown` is whether its commands show their output. Resolves the last answer. */
+  async function runList(list, line, shown = false) {
+    const before = showing;
+    showing = shown;
+    let answer = null;
+    try {
+      for (const item of list) {
+        if (stopped) break;
+        if ((item.join === '&&' && status !== 0) || (item.join === '||' && status === 0)) continue;
+        try {
+          if (item.stages) answer = await pipeline(item.stages, line);
+          else if (item.kind === 'for') {
+            const values = [];
+            for (const word of item.words) values.push(...await expand(word));
+            if (values.length > MAX_LOOPS) throw new Error(`for: more than ${MAX_LOOPS} words.`);
+            for (const value of values) { if (stopped) break; vars.set(item.name, value); answer = await runList(item.body, line, shown) ?? answer; }
+          } else if (item.kind === 'while') {
+            for (let turn = 0; !stopped; turn++) {
+              if (turn >= MAX_LOOPS) throw new Error(`while: stopped after ${MAX_LOOPS} turns.`);
+              await runList(item.test, line, shown);
+              if (status !== 0) { status = 0; break; }
+              answer = await runList(item.body, line, shown) ?? answer;
+            }
+          } else if (item.kind === 'if') {
+            await runList(item.test, line, shown);
+            if (status === 0) answer = await runList(item.then, line, shown) ?? answer;
+            else if (item.else) answer = await runList(item.else, line, shown) ?? answer;
+            else status = 0;
+          }
+        } catch (error) { status = 2; answer = 'refuse'; await say(String(error?.message ?? error) + '\n'); }
+      }
+    } finally { showing = before; }
     return answer;
   }
 
@@ -612,13 +764,7 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
     if (line.trim()) entered.push(line);
     let list;
     try { list = build(lex(line)); } catch (error) { status = 2; await say(String(error?.message ?? error) + '\n'); return 'refuse'; }
-    let answer = null;
-    for (const item of list) {
-      if (stopped) break;
-      if ((item.join === '&&' && status !== 0) || (item.join === '||' && status === 0)) continue;
-      try { answer = await pipeline(item.stages, line); } catch (error) { status = 2; answer = 'refuse'; await say(String(error?.message ?? error) + '\n'); }
-    }
-    return answer;
+    return runList(list, line);
   }
 
   /**

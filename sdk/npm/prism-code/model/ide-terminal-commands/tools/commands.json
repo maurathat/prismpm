@@ -22,6 +22,7 @@
   "uniq": "drop a line that repeats the one before",
   "diff": "print the lines in which two files differ",
   "cd": "change the folder paths start from",
+  "run": "enter the lines of a file of the model",
   "append": "add what is piped in to the end of a file of the model",
   "mv": "rename a file of the model",
   "cp": "copy a file of the model",

@@ -200,11 +200,12 @@ Both pages have a terminal, and both are answered by one command line (`terminal
 - The plain page: below the guarantees, on xterm.js itself (`@xterm/xterm` 6.0.0, MIT) with the fit, webgl, web-links, search and unicode11 addons, installed by `ide/package-lock.json` and published beside the page as the files npm ships.
 - The workbench page: the workbench's own terminal panel (`@codingame/monaco-vscode-terminal-service-override` 39.0.5, which brings VS Code's terminal and the xterm.js it pins, 6.1.0-beta.327). The panel, its tabs, its find box and its renderer are VS Code's. `src/model-terminal.js` is the "process" behind it.
 
-xterm.js draws and reports keys; a browser tab has no operating system to run anything else. What answers the keys is a command language over a fixed list of 32 commands, each of them the page's own code or a question to one of the page's two workers:
+xterm.js draws and reports keys; a browser tab has no operating system to run anything else. What answers the keys is a command language over a fixed list of 33 commands, each of them the page's own code or a question to one of the page's two workers:
 
 | Commands | What they do |
 |---|---|
 | `help`, `clear`, `history`, `set`, `unset`, `env` | the terminal itself: the commands, the screen, the lines entered, variables |
+| `run file` | enter the lines of a file of the model, as a script |
 | `ls [-l]`, `cd`, `pwd`, `cat`, `kappa` | the model's files: list, move about, print, print a `blake3:` label |
 | `echo`, `grep`, `head`, `tail`, `wc`, `sort`, `uniq`, `diff` | text, from files of the model or from the command before in a pipe |
 | `write`, `append`, `touch`, `cp`, `mv`, `rm` | make, change or remove a file of the model, as the editor holds it |
@@ -213,15 +214,15 @@ xterm.js draws and reports keys; a browser tab has no operating system to run an
 | `audit` | each guarantee's status by the rule of `model/ide-audit` |
 | `save`, `restore`, `sessions` | keep this session's transcript in this browser, print one, list them |
 
-A line is commands joined as in a shell: `a | b` pipes, `a ; b`, `a && b` and `a || b` join, `> file` and `>> file` write a file of the model, `< file` reads one. `'…'` and `"…"` quote, `$NAME` and `${NAME}` are variables (`NAME=value` sets one, `$?` is the last command's status), `*` and `?` match the model's files, `#` starts a comment.
+A line is commands joined as in a shell: `a | b` pipes, `a ; b`, `a && b` and `a || b` join, `> file` and `>> file` write a file of the model, `< file` reads one. `'…'` and `"…"` quote, `$NAME` and `${NAME}` are variables (`NAME=value` sets one, `$?` is the last command's status), `*` and `?` match the model's files, `#` starts a comment. `$( … )` in a word stands for what the commands inside it print. A line loops and chooses with `for NAME in words; do …; done`, `while …; do …; done` and `if …; then …; else …; fi`; a loop stops after 10000 turns, and scripts and `$( … )` nest eight deep.
 
-It is a command line for the model, in this tab, and no more than that. Any other word is refused: there is no bash, no native program, no package manager, no git and no connection to any machine, because nothing in a browser tab can run them and this page talks to no server. A command cannot be run inside a word (`$( … )`), nothing runs in the background (`&`), and there are no scripts, loops or functions.
+It is a command line for the model, in this tab, and no more than that. Any other word is refused: there is no bash, no native program, no package manager, no git and no connection to any machine, because nothing in a browser tab can run them and this page talks to no server. Nothing runs in the background (`&`), and there are no functions, no `case`, no arithmetic and no `test`: a condition is a command's own status, such as `grep -q`.
 
 The line is edited as in a terminal: Left, Right, Home, End, Ctrl+A, Ctrl+E; by word with Ctrl+Left, Ctrl+Right, Alt+B, Alt+F; Backspace, Delete, Ctrl+D; Ctrl+U, Ctrl+K, Ctrl+W, Alt+Backspace and Alt+D cut, and Ctrl+Y puts back; Up, Down, Ctrl+P and Ctrl+N walk the history and Ctrl+R searches it; Tab completes a command or a file of the model, and a second Tab lists what fits; Ctrl+C abandons the line or stops the running line; Ctrl+L clears. Keys pressed while a command runs are entered after it.
 
 ### What decides
 
-- Every command of a line is put to `model/ide-terminal-commands` before it runs, and a redirection is put to it as the command it stands for: `> file` as `write file`, `>> file` as `append file`, `< file` as `cat file`. A pipeline in which one word is not a command runs none of its commands. A program runs only when its executable hashed to its pinned label; with one byte of the LexLean executable changed, `check`, `snapshot`, `prove` and `audit` are refused and the builtins still answer.
+- Every command of a line is put to `model/ide-terminal-commands` before it runs, and a redirection is put to it as the command it stands for: `> file` as `write file`, `>> file` as `append file`, `< file` as `cat file`. A pipeline in which one word is not a command runs none of its commands. A loop, a `$( … )` and a script add no way round this: they only decide which commands are reached, and each one reached is put to the table under its own name. A program runs only when its executable hashed to its pinned label; with one byte of the LexLean executable changed, `check`, `snapshot`, `prove` and `audit` are refused and the builtins still answer.
 - Every use of a resource by a running command is put to `model/ide-terminal-reach`. A command is handed the screen, the model's files, the kept outputs and nothing else; six commands may change a file of the model, and no command is handed the network, the clipboard or a process.
 - A path never leaves the model: `..` above its root, an address, a drive letter or a control byte in a path is `outside`, and the command table refuses it to every command. A file that is not there can be named only by the five commands that make one. The whole model is not removed from here.
 - A file a command changes is changed where the editor holds it: the open file in its editor, the others beside it. The model is checked again, as after typing. The workbench keeps the change in its draft, in this browser; the plain page keeps nothing. A file removed from the workbench is back when the page is loaded again.
@@ -235,12 +236,12 @@ The line is edited as in a terminal: Left, Right, Home, End, Ctrl+A, Ctrl+E; by 
 - `terminal/pins.json` names each published file of xterm.js by its `blake3:` label, and the plain page runs a file only when its bytes have that label. `node tools/terminal-site.mjs pin` rewrites the pins after a version change; the site builder refuses an installed file that is not the pinned one. The workbench's xterm.js is part of the workbench bundle and is held by the lockfile, not by a label the page checks.
 - A program's output is kept under the label of its program's label and the label of everything it read, and shown again only when `reuseAdmits` (proved in `model/rule-app`) admits it. A second `check` of an unchanged model starts nothing, on this visit or a later one, in either page.
 - The store (`terminal/kappa-space.mjs`) follows the browser store of Hologram (github.com/Hologram-Technologies/hologram, `crates/hologram-store/src/opfs/js_api.rs` at `e8fcdc70`): one file to a blob in the origin's private file system, named by its label, returned only when it re-derives to that label. It is that layout written in JavaScript, because Hologram publishes no browser build of its store. Where the browser has no such file system, things are kept for the visit only.
-- Hologram's rule that a pure function over a finite domain is computed once and kept as a table is applied to the decision tables: the command, reach, effects and audit tables are each computed once into a lookup table (792, 264, 108 and 108 answers, one byte each), named by its label, and a request is answered with one read. The flow table has a number in it and is judged rule by rule. `tables.json` carries the label each lookup table must have, and a terminal whose tables compute to another label does not start.
+- Hologram's rule that a pure function over a finite domain is computed once and kept as a table is applied to the decision tables: the command, reach, effects and audit tables are each computed once into a lookup table (816, 272, 108 and 108 answers, one byte each), named by its label, and a request is answered with one read. The flow table has a number in it and is judged rule by rule. `tables.json` carries the label each lookup table must have, and a terminal whose tables compute to another label does not start.
 - `site.json` names every published file by its `blake3:` label, beside its SHA-256.
 
 What this does and does not buy: content addressing makes a repeated command cost a few milliseconds and makes what is stored checkable. It does not make a key press faster. That time is xterm.js drawing, and it was already short.
 
-The tables reach the pages as `terminal/tables.json`, read at build time from the models through LexLean's own snapshot. The guarantees are proved of the tables; that this code asks them and obeys, and that each lookup table answers as its rules do, is tested by `node tools/terminal-test.mjs` (30 tests), not proved.
+The tables reach the pages as `terminal/tables.json`, read at build time from the models through LexLean's own snapshot. The guarantees are proved of the tables; that this code asks them and obeys, and that each lookup table answers as its rules do, is tested by `node tools/terminal-test.mjs` (33 tests), not proved.
 
 ### Measured
 
@@ -266,7 +267,8 @@ The prompt no longer waits for the WebGL renderer: it is drawn by xterm.js's own
 ### Not built
 
 - A shell that runs programs. No native program, package manager, git or SSH, and no connection to any machine. A WASI shell with core utilities is a later phase with its own proposal.
-- Scripts, loops, functions, command substitution and background commands.
+- Functions, `case`, arithmetic, `test` and background commands. A script is a file of the model entered by `run`; it takes no arguments.
+- A paste of several lines is entered line by line, so a loop pasted over several lines is refused; in a script file it may span lines.
 - A program is not paused mid-run: its output is produced whole, then written under flow control. Ctrl+C stops what is being written and the rest of the line.
 - A transcript is kept only by `save`, as text. The screen itself (colours, the scrollback as drawn) is not kept, and the serialize addon is not loaded.
 - The history is this visit's. It is not kept between visits unless a transcript is saved.

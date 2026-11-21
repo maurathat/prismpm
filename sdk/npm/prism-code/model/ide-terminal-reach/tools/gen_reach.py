@@ -11,7 +11,7 @@ head = src[: src.index("definition{name: title")]
 BUILTINS = ["help", "clear", "ls", "cat", "kappa"]
 PROGRAMS = ["check", "snapshot", "prove", "audit"]
 MORE = ["echo", "pwd", "set", "unset", "env", "history", "sessions", "restore", "save",
-        "grep", "head", "tail", "wc", "sort", "uniq", "diff", "cd", "append", "mv", "cp", "write", "touch", "rm"]
+        "grep", "head", "tail", "wc", "sort", "uniq", "diff", "cd", "run", "append", "mv", "cp", "write", "touch", "rm"]
 LISTED = BUILTINS + PROGRAMS + MORE
 # command: the command that is running. resource: what it asks its host for.
 #   screen: write to the terminal.          readmodel, writemodel: the open model's files.
@@ -50,7 +50,7 @@ ALLOWED = [("ls", "audit", "readmodel"), ("grep", "cp", "readmodel"), ("append",
            ("check", "audit", "readstore"), ("sessions", "save", "readstore"),
            ("check", "audit", "writestore"), ("save", "save", "writestore")]
 DENIED = [("other", "clear", "readmodel"), ("echo", "save", "readmodel"), ("write", "rm", "readmodel"),
-          ("other", "cd", "writemodel"),
+          ("other", "run", "writemodel"),
           ("other", "kappa", "readstore"), ("echo", "history", "readstore"), ("grep", "rm", "readstore"),
           ("other", "kappa", "writestore"), ("echo", "restore", "writestore"), ("grep", "rm", "writestore")]
 # The two lists leave no command out, for any of the four resources.
@@ -102,6 +102,9 @@ EXAMPLES = [
     ("restore readstore", "allow"),
     ("restore writestore", "deny"),
     ("mv process", "deny"),
+    ("run readmodel", "allow"),         # a script is read from the model; what its lines do is asked line by line
+    ("run writemodel", "deny"),
+    ("run network", "deny"),
 ]
 
 

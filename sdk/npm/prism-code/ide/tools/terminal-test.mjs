@@ -261,7 +261,7 @@ await test('each finite table as a lookup table answers every request as its rul
       if (f < 0) break;
     }
   }
-  assert.equal(requests, 792 + 264 + 108 + 108);
+  assert.equal(requests, 816 + 272 + 108 + 108);
   // A table with a number in it has no finite list of requests, and is judged rule by rule.
   assert.equal(materialize(tables.flow, judgeTable, kappa), null);
   assert.equal(judge('flow', { pending: 100000, paused: 'no' }), 'hold');
@@ -367,7 +367,7 @@ await test('a line is commands joined by pipes, ; && and ||, with quotes, variab
 
 await test('what the command line does not do, it says, and runs nothing', async () => {
   const t = setup();
-  for (const line of ['echo $(ls)', 'echo `ls`', 'check &', 'echo "open', "echo 'open", '| ls', 'ls |', 'ls > ', 'ls ; ; ls', '&& ls', 'cat < src/*']) {
+  for (const line of ['echo `ls`', 'check &', 'echo "open', "echo 'open", '| ls', 'ls |', 'ls > ', 'ls && ; ', '&& ls', 'cat < src/*']) {
     t.take();
     assert.equal(await t.session.run(line), 'refuse', line);
     assert.ok(t.take().length > 0, line);
@@ -462,7 +462,7 @@ await test('the text commands answer as their names say', async () => {
   assert.equal(await out('head -x n.txt'), 'head: unknown option -x.\n');
   assert.equal(await out('set A 1; set B two words; env; unset A; env'), 'A=1\nB=two words\nB=two words\n');
   assert.match(await out('history'), /^ {3}1 {2}sort n\.txt\n/);
-  assert.match(await out('help'), /Files of the model[\s\S]*grep \[-ivnc\]/);
+  assert.match(await out('help'), /Files of the model[\s\S]*grep \[-ivncq\]/);
   // A file's control bytes are written out by every command that prints them.
   for (const line of ['grep before src/evil.txt', 'head src/evil.txt', 'sort src/evil.txt', 'cat src/evil.txt | tail', 'echo "\u001b]52;c;eA==\u0007"']) assert.ok(!/[\u001b\u0007]/.test(await out(line)), line);
 });
@@ -555,6 +555,75 @@ await test('the history is searched with Ctrl+R, and the line is moved through b
   assert.equal(editor.line, 'wo three');
   await type('\x1b[1;5C', '\x1b[1;5C', 'X', '\x1b[1;5D', 'Y');
   assert.equal(editor.line, 'wo YthreeX');
+});
+
+await test('$( … ) stands for what its commands print, and each of them is judged like any other', async () => {
+  const t = setup();
+  const out = async (line) => { t.take(); await t.session.run(line); return t.take(); };
+  assert.equal(await out('echo $(echo a b)'), 'a b\r\n');
+  assert.equal(await out('echo "[$(ls | grep toml)]" $(ls | wc -l)'), '[lexlean.toml] 3\r\n');
+  assert.equal(await out('wc -l $(ls | grep tex)'), '       1 src/App.lex.tex\r\n');
+  assert.equal(await out('echo $(echo $(echo deep))'), 'deep\r\n');
+  assert.equal(await out('N=$(grep -c model src/App.lex.tex); echo $N'), '1\r\n');
+  assert.equal(await out('echo [$(grep zzz lexlean.toml)]'), '[]\r\n');
+  // What is inside is not let past the tables: an unlisted word runs nothing, and a path outside is refused.
+  assert.equal(await out('echo $(bash -c ls) done'), 'bash: not a command here. Type help.\r\ndone\r\n');
+  assert.equal(await out('echo $(cat ../secret) x'), '../secret: not in the open model.\r\nx\r\n');
+  assert.equal(await out('echo $(check) | wc -w'), '       4\r\n');
+  assert.equal(t.started.check, 1);
+  for (const line of ['echo $(ls', 'echo `ls`']) assert.equal(await t.session.run(line), 'refuse', line);
+  // Nesting stops.
+  t.model.set('/loop.sh', 'echo $(run loop.sh)\n');
+  assert.match(await out('run loop.sh'), /nested too deep/);
+});
+
+await test('a line loops and chooses, within bounds, and Ctrl+C stops it', async () => {
+  const t = setup();
+  const out = async (line) => { t.take(); await t.session.run(line); return t.take(); };
+  assert.equal(await out('for f in a b c; do echo "<$f>"; done'), '<a>\r\n<b>\r\n<c>\r\n');
+  assert.equal(await out('for f in src/*; do kappa $f | wc -l; done'), '       1\r\n       1\r\n');
+  assert.equal(await out('for f in $(ls); do echo $f; done | wc -l'), 'A ; is missing.\r\n');
+  assert.equal(await out('if grep -q spec lexlean.toml; then echo yes; else echo no; fi'), 'yes\r\n');
+  assert.equal(await out('if grep -q nope lexlean.toml; then echo yes; else echo no; fi; echo $?'), 'no\r\n0\r\n');
+  assert.equal(await out('if cat nothing; then echo yes; fi; echo after'), 'nothing: no such file in the open model.\r\nafter\r\n');
+  assert.equal(await out('touch n.txt; while grep -c x n.txt | grep -q -v 3; do echo x >> n.txt; done; wc -l n.txt'), '       3 n.txt\r\n');
+  assert.equal(await out('for a in 1 2; do for b in x y; do echo $a$b; done; done'), '1x\r\n1y\r\n2x\r\n2y\r\n');
+  assert.equal(await out('echo for in do done if then else fi while'), 'for in do done if then else fi while\r\n');
+  for (const line of ['for; do echo; done', 'for x in a; echo', 'for x in a; do echo', 'if ls; echo; fi', 'done', 'if ls; then echo; fi echo', 'while ls; done']) assert.equal(await t.session.run(line), 'refuse', line);
+  // A loop that would not end is ended.
+  assert.match(await out('while echo -n; do set X 1; done'), /while: stopped after 10000 turns\./);
+  const slow = setup({ delay: 40 });
+  const running = slow.session.run('for i in 1 2 3 4 5; do check; done; echo after');
+  await new Promise((r) => setTimeout(r, 5));
+  slow.session.interrupt();
+  await running;
+  assert.equal(slow.started.check, 1);
+  assert.equal(slow.text(), '');
+  // Every command a loop reaches was put to the command table.
+  const judged = t.session.log.filter((e) => e.line && e.line.startsWith('for a in 1 2')).map((e) => e.command);
+  assert.deepEqual(judged, ['echo', 'echo', 'echo', 'echo']);
+});
+
+await test('run enters the lines of a file of the model, each judged on its own', async () => {
+  const t = setup();
+  const out = async (line) => { t.take(); await t.session.run(line); return t.take(); };
+  t.model.set('/tools/report.sh', '# what the model holds\nFILES=$(ls | grep -c .)\necho "files: $FILES"\nfor f in lexlean.toml src/App.lex.tex\ndo\n  kappa $f | wc -l\ndone\n\nif grep -q spec lexlean.toml\nthen echo has-spec\nelse echo no-spec\nfi\nls |\n  grep toml\n');
+  assert.equal(await out('run tools/report.sh'), 'files: 4\r\n       1\r\n       1\r\nhas-spec\r\nlexlean.toml\r\n');
+  assert.equal(await out('run tools/report.sh | grep -c 1'), '2\r\n');
+  assert.equal(await out('echo "[$(run tools/report.sh | head -1)]"'), '[files: 4]\r\n');
+  // A script cannot do what a line cannot.
+  t.model.set('/bad.sh', 'echo one\nbash -c "rm -rf /"\ncurl https://example.org\necho x > ../escape.txt\ncat ../../etc/passwd\necho two\n');
+  assert.equal(await out('run bad.sh'), 'one\r\nbash: not a command here. Type help.\r\ncurl: not a command here. Type help.\r\n../escape.txt: not in the open model.\r\n../../etc/passwd: not in the open model.\r\ntwo\r\n');
+  assert.equal(t.model.size, 5);
+  const uses = t.session.log.filter((e) => e.resource && !['screen', 'readmodel', 'writemodel'].includes(e.resource));
+  assert.equal(uses.length, 0);
+  assert.equal(judge('reach', { command: 'run', resource: 'writemodel' }), 'deny');
+  // A file that is not there, a folder, a path outside, a script that does not parse.
+  assert.equal(await t.session.run('run nothing.sh'), 'refuse');
+  assert.equal(await t.session.run('run ../x.sh'), 'refuse');
+  assert.equal(await out('run src'), 'run takes one file of the model.\r\n');
+  t.model.set('/broken.sh', 'for x in a\necho $x\n');
+  assert.equal(await out('run broken.sh; echo $?'), 'run: broken.sh: for needs a do.\r\n1\r\n');
 });
 
 console.log(`${passed} tests passed` + (failed ? `, ${failed} FAILED` : ''));
