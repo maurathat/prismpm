@@ -823,6 +823,16 @@ capability = "CT-12"
 statement = "The provider service answered with a reply of the wrong shape."
 
 [[error]]
+code = "publish-model.identity"
+capability = "DK-46"
+statement = "The holo names no model identity in its provenance, so a model published beside it could be held to nothing; publish-model writes nothing."
+
+[[error]]
+code = "publish-model.model"
+capability = "DK-46"
+statement = "The folder given to publish-model is not a LexLean project that can be published: it is absent, or its lexlean.toml names no entrypoint that is in it; publish-model writes nothing."
+
+[[error]]
 code = "pull_verification_failed"
 class = "PullVerificationError"
 capability = "CT-12"

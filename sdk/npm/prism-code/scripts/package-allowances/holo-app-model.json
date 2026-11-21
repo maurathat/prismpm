@@ -1,0 +1,4 @@
+{
+  "kib": 5,
+  "reason": "prism-code publish-model writes a holo app's model beside its page with a record naming the holo and the model identity the holo gives, so the model can be opened beside the app: journey/holo-app-site.mjs and the command in bin/prism-code.mjs (about 4.1 KiB)."
+}
