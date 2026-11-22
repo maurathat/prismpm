@@ -86,8 +86,7 @@ Nothing is Stable today.
 | `prism-code` middleware: `Application.experimental_middleware` (the stack, its four steps and the `Pluggable` shape), `MIDDLEWARE_STEPS`, `experimental_tracing`, `MiddlewareError` and the `middleware.*` codes | `sdk/npm/prism-code` | Experimental |
 | SDK image contract: the digest-pinned OCI index for `linux/amd64` and `linux/arm64` | [SPEC.md](SPEC.md) section 1 | Experimental |
 | `prism-code` containers ([#348](https://github.com/UOR-Foundation/PrismPM/issues/348)): `prism.containers`, the `prism/container/1` shape, `EXIT_CODES`, `run <holo> <input>`, `--rm`, `rm` and the `PRISM_HOME` store | `sdk/npm/prism-code` | Experimental |
-| `prism-code setup` and `prism-code open`: the agent ids, the `holo://build?agent=<id>&q=<sentence>` link, the `prism/open-ticket/1` ticket, `$PRISM_HOME/config.json` `preferredAgent`, and the `open.*` and `setup.*` codes | `sdk/npm/prism-code` | Experimental |
-| `prism-code setup` machine rows (`node`, `docker`, `image`, `cache`, `endings`), `--machine-only`, `--agents-only`, `--json` and `prism/setup-report/1`, `$PRISM_HOME/config.json` `docker` and `cache`, `PRISM_DOCKER`, `PRISM_DOCKER_MOUNT`, `PRISM_CODE_NO_CACHE`, `verify --lean`, `axioms` and `prism/axioms-report/1`, and the `docker.*`, `tier.*` and `axioms.*` codes | `sdk/npm/prism-code` | Experimental |
+| `prism-code check`, `build` and `verify` of a project, the `prism/report/1` report and its `--json`, `--project` and `--out`, `skill --out`, `PRISM_CODE_BUNDLED`, and the `tier.*`, `verify.*`, `vectors.*`, `proof.rejected`, `model.unchecked`, `build.failed`, `holo.identities` and `report.uncoded` codes | `sdk/npm/prism-code` | Experimental |
 | `prism-code` gap telemetry: `$PRISM_HOME/gaps.jsonl` and `gaps.json`, the `prism/gaps/1` batch under the `_meta` key `foundation.uor/prism-gaps`, the gap kinds and constructs, `PRISM_TELEMETRY` and `DO_NOT_TRACK` | `sdk/npm/prism-code` | Experimental |
 | `prism-code` CLI plugins ([#293](https://github.com/UOR-Foundation/PrismPM/issues/293)): `prism-<name>` on the PATH runs as `prism-code <name>`, the `prism-cli-plugin-metadata` and `prism-cli-plugin-hooks` calls (schema version 1), `errorHooks`, `PRISM_CODE_NO_HOOKS`, and the first-party `prism-doctor` | `sdk/npm/prism-code` | Experimental |
 | `@prism-code/conformance` 0.1.0: the `prism-conformance` CLI, the scenarios and check ids, the shim contract `prism/conformance-shim/1`, the `prism/conformance-declaration/1` and `prism/conformance-results/1` shapes | `sdk/npm/conformance` | Experimental |
@@ -116,7 +115,7 @@ A flag marked planned is named here so you can plan for it; its spelling may cha
 | `inspect <path.holo>`, `--json`, `--format <path>` in the Rust CLI | [#271](https://github.com/UOR-Foundation/PrismPM/issues/271) | On main |
 | `prism-code check <holo>`, `--policy <file>`, `--json` and exit codes 0, 1, 2 | [#270](https://github.com/UOR-Foundation/PrismPM/issues/270) | On main |
 | `--policy` on `prism-code check` and `run` taking a Rego file or the name of a shipped policy (`default`, `pure-only`, `provenance-only`) | [#285](https://github.com/UOR-Foundation/PrismPM/issues/285) | On main |
-| `prism-code build --check` | [#270](https://github.com/UOR-Foundation/PrismPM/issues/270) | On main |
+| `prism-code check [<dir>]`, the model check and proof in this process, and `prism-code build --check` | [#270](https://github.com/UOR-Foundation/PrismPM/issues/270) | On main |
 | `prism-code check` signer flags: `--key <public.pem>`, `--certificate-identity`, `--certificate-identity-regexp`, `--certificate-oidc-issuer`, `--trusted-root <file>`, and the `statements` option of `@prism-code/verify` | [#270](https://github.com/UOR-Foundation/PrismPM/issues/270) | On main |
 | `prismpm check <path.holo>` signer flags: `--key <public.pem>`, `--certificate-identity`, `--certificate-identity-regexp`, `--certificate-oidc-issuer`, `--trusted-root <file>` | [#270](https://github.com/UOR-Foundation/PrismPM/issues/270) | On main |
 | `check <path.holo>` as a typed verdict in the Rust CLI, with `--json`, `--policy <file>` and exit codes 0, 1, 2 | [#270](https://github.com/UOR-Foundation/PrismPM/issues/270) | On main |
@@ -137,7 +136,7 @@ A flag marked planned is named here so you can plan for it; its spelling may cha
 | `prism-code record <holo>` (`history` deprecated, removed in 0.9.0), `--output <file>`; `prism-code run --record <file>` | [#284](https://github.com/UOR-Foundation/PrismPM/issues/284) | On main |
 | `replay <history \| dir>... --holo <holo>`, `--statement <file>` in the Rust CLI, exit codes 0, 1, 2 | [#284](https://github.com/UOR-Foundation/PrismPM/issues/284) | On main |
 | `prism-code run <holo> <input>`, `--input`, `--rm`; `prism-code inspect <container>`; `prism-code rm <container>`; the exit codes of `EXIT_CODES`; `PRISM_HOME` | [#348](https://github.com/UOR-Foundation/PrismPM/issues/348) | On main |
-| `prism-code init [<dir>]`, `--name`, `--template`, `--sdk-image`, `--force`; `npm create prism-code` | [#281](https://github.com/UOR-Foundation/PrismPM/issues/281) | On main |
+| `prism-code init [<dir>]`, `--name`, `--template`, `--no-skill`, `--force`; `npm create prism-code` | [#281](https://github.com/UOR-Foundation/PrismPM/issues/281) | On main |
 | `prism-code dev [<dir>]`, `--port`, `--no-open`, `--policy <file>`, `--build <command>`, `--image <path>` (`--holo` deprecated, removed in 0.9.0); the studio on port 4100, its Check and Replay tabs and the `prism/dev-state/1` state it reads | [#288](https://github.com/UOR-Foundation/PrismPM/issues/288) | On main |
 | `prism-code manifest [<dir>]`, `--target <browser\|node>`, `--json` | [#280](https://github.com/UOR-Foundation/PrismPM/issues/280) | On main |
 | `prism-code providers <up\|down> [<dir>]`, `--target <browser\|node>`, `--json`; the `prism-provider-kv` binary, its flags and file layout | [#294](https://github.com/UOR-Foundation/PrismPM/issues/294) | On main |
@@ -149,7 +148,7 @@ A flag marked planned is named here so you can plan for it; its spelling may cha
 | Keyless (OIDC) signing in the Rust `attest`; fetching the trusted root over TUF in the Rust `verify-attestation` | [#272](https://github.com/UOR-Foundation/PrismPM/issues/272) | Planned |
 
 Today `prismpm check` validates the model, `prismpm check <path.holo>` judges a holo and returns a verdict (#270, `docs/proposals/270-check-rust.md`), and `prismpm verify` checks the Lean proofs.
-In the JavaScript CLI `check` judges a holo and the model check is `prism-code build --check`.
+In the JavaScript CLI `check <app.holo>` judges a holo, and `check` with a project, or nothing, checks the model and proves its theorems in this process.
 Both CLIs name the attestation verb `verify-attestation`, because `prism-code verify` already runs `prismpm verify`, which is build verification (`docs/proposals/272-attest-verify.md`).
 `prismpm verify-attestation` checks a holo's attestations against a signer policy and returns `prismpm/attestation-verification-result/1`, on exit 0 and 1 alike.
 `prism-code check` verifies the signatures of the provenance and proof statements in the attestation section against the signer the caller names (`--key`, or `--certificate-identity` or `--certificate-identity-regexp` with `--certificate-oidc-issuer`, and `--trusted-root`), and with a signer a holo reaches P1 and P2. Without one a signed holo is P0. `prismpm check` takes the same signer flags and reaches the same verdict on the same holo; the two CLIs are held to the committed signed fixtures in `sdk/npm/prism-code/test/fixtures/signed`. Wiring signature verification into the verdict is breaking and gets its changelog line; the holo form of `check` was additive and is not.
@@ -159,7 +158,9 @@ Wiring that verification into the verdict is breaking and gets its changelog lin
 
 None.
 
-Removed: `prism-code check [args]` with no holo, which ran `prismpm check` in the SDK image. Its removal was announced for `prism-code` 0.4.0 and happened after 0.7.2 (#584). It is now a usage error that names the replacement, `prism-code build --check [args]`.
+Removed: `prism-code check [args]` with no holo, which ran `prismpm check` in the SDK image. Its removal was announced for `prism-code` 0.4.0 and happened after 0.7.2 (#584). Since `prism-code` stands alone, `check` with no holo judges the project in this process instead.
+
+Removed, all experimental: `prism-code setup`, `open`, `mcp`, `axioms` and `conformance`, `build --remote github`, `init --sdk-image`, `verify --lean`, and the `open.*`, `setup.*`, `docker.*`, `hosted.*`, `remote.*` and `axioms.*` codes. `npx prism-code@latest init` is the one command an app starts with; `check`, `build` and `verify` run in this process.
 
 ### 6.2 SDK exports
 

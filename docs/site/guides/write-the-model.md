@@ -7,7 +7,7 @@ A Prism application's one source of truth is its LexLean model under `prism/src/
 
 ## Start from a starter
 
-`prism_init` starts the model from a starter, a LexLean module named by its SHA-256 and copied only when its bytes match:
+`npx prism-code@latest init` starts the model from a starter, a LexLean module named by its SHA-256 and copied only when its bytes match:
 
 - `rule-app`: one answer from one request, each condition a field against a value. Lean's kernel checks its guarantees from the model's semantic snapshot, and the app is the verified rule judge with the model's numbers, served as a static page.
 - `decision-app`: one answer from one request, with its own judge and theorems, built into a holo.

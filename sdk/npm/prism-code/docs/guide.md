@@ -7,9 +7,9 @@ A Prism application is modeled in LexLean, proved in Lean 4, and built by
 Hologram `.holo` archive (the Core-Wasm guest, the model document, the
 portable view, the proof and build provenance, all content-addressed) and a
 six-file browser closure. This package opens both, verifies their identities,
-runs the guest, and replays the modeled acceptance vectors. It does not
-compile, prove or produce artifacts; that stays in the SDK image, which the
-command line runs for you.
+runs the guest, and replays the modeled acceptance vectors. It also checks a
+model, proves its theorems and builds the app, in this process, with nothing
+else installed.
 
 No required dependencies. ESM only. Node 22 or newer, or a browser. Signing and checking
 attestations use the optional [`sigstore`](https://github.com/sigstore/sigstore-js)
@@ -19,112 +19,48 @@ packages, which need Node 22.22.2 or newer; nothing else loads them.
 npm install prism-code
 ```
 
-## Set up your agents (experimental)
+## Start an app
+
+Every Prism app starts with one command:
 
 ```
-npx prism-code@latest setup
+npx prism-code@latest init my-app
 ```
 
-Spell it `prism-code@latest`. `npx` prefers a `prism-code` installed in any folder above the one you run it in, so a project with an older `prism-code` would otherwise run that version, which may have no `setup`.
+It writes three things, all inside `my-app`: `prism.toml`, a starter LexLean
+model to edit, and the Prism skill for an agent, in `.claude/skills/prism` and
+`.agents/skills/prism`. Nothing outside the folder is written or configured,
+and nothing is fetched. Run again in a folder that holds a model, it leaves
+the model as it is and writes only the skill, so it is safe to repeat.
+`npm create prism-code my-app` runs the same code.
 
-One run gets this machine ready for the build box on uor.foundation, with no Docker. It does six things:
+The starter is `rule-app` unless `--template` names another:
 
-1. It checks Node and the GitHub sign-in. Signed in, your app builds on GitHub Actions and this machine only verifies it; `--local` also readies Docker and the SDK image for local builds.
-2. It adds two MCP servers to every agent it finds, and prints one line per agent: `lexlean` at `https://mcp.uor.foundation/`, which checks and proves LexLean, and `prism`, the local guided build.
-3. It installs the Prism skill, so the agent knows how to build a Prism app.
-4. It registers a `holo://` link handler for this OS, so the website's Build button can open your agent.
-5. It remembers your preferred agent. `--agent <id>` sets it. Otherwise it is the first terminal agent found.
-6. It prints what to do next: sign in to GitHub if that is missing, restart the agent if it changed, then the first sentence to ask it.
-
-There is one skill, `prism`. It covers building a new app from one sentence, the commands, and the MCP server. It ships inside this package (`skill/SKILL.md`, the repository's `skills/prism/SKILL.md` byte for byte), so it always matches the installed CLI and needs no network. Setup writes it to `~/.claude/skills/prism/` when Claude Code is found. It writes to the shared `~/.agents/skills/prism/`, which Codex, Cursor and VS Code read, when any of those is found. A `.prism-code.json` beside the `SKILL.md` marks it as setup's, so a later run updates it. A skill folder setup did not write is `left alone`. Setup removes the `prism-sdk` skill an earlier setup installed, and only where its marker is. Claude Desktop, claude.ai and ChatGPT take skills only through their own settings.
-
-| Agent | Found by | What setup writes |
-| --- | --- | --- |
-| `claude-code` | `claude` on the PATH, or `~/.claude.json` | `claude mcp add --transport http --scope user lexlean https://mcp.uor.foundation/`; without the CLI, `mcpServers.lexlean` in `~/.claude.json` |
-| `codex` | `codex` on the PATH, or `~/.codex` (`$CODEX_HOME`) | a `[mcp_servers.lexlean]` table with `url`, appended to `config.toml` |
-| `cursor` | `~/.cursor`, or `cursor` on the PATH | `mcpServers.lexlean` with `url` in `~/.cursor/mcp.json` |
-| `vscode` | the VS Code user directory, or `code` on the PATH | `servers.lexlean` with `type: "http"` in the user `mcp.json` |
-| `claude-desktop` | its config directory | nothing. Its config file takes no remote server, so setup prints the step: Settings > Connectors > Add custom connector |
-
-The user scope matters for Claude Code: without `--scope user`, `claude mcp add` configures only the current directory.
-A server already named `lexlean` with the same URL is `already configured`.
-One with another URL is `left alone`.
-A file that does not parse, such as a VS Code `mcp.json` with comments, is `skipped` and never rewritten.
-Before setup changes an existing JSON file, it copies the file to `<file>.prism-backup`.
-`--agent <id>` limits setup to that agent, and also takes `claude` or `chatgpt`, which print their one manual step.
-`--dry-run` prints every file and command and changes nothing:
-
-```
-$ npx prism-code@latest setup --dry-run
-prism-code setup --dry-run: this machine
-  node            ok                  node 22.21.0
-  endings         skipped             no project here
-  github          ok                  signed in (gh auth token): apps build on GitHub Actions, no Docker needed
-prism-code setup --dry-run: your agents
-  the server lexlean, remote at https://mcp.uor.foundation/: checks and proves LexLean models
-  claude-code     would configure     C:\Users\you\.claude.json
-      set mcpServers.lexlean = {"type":"http","url":"https://mcp.uor.foundation/"} in C:\Users\you\.claude.json (backup C:\Users\you\.claude.json.prism-backup)
-  codex           not found
-  cursor          would configure     C:\Users\you\.cursor\mcp.json
-  ...
-  the server prism, local (prism-code mcp): asks for the spec, proves and builds the app
-  claude-code     would configure     C:\Users\you\.claude.json
-  ...
-  holo://         would register      HKCU\Software\Classes\holo -> "C:\Program Files\nodejs\node.exe" "C:\Users\you\.prism\handler\handler.mjs" "%1"
-  preferred agent claude-code
-next
-  1. Restart Claude Code, so it loads the new servers.
-  2. Ask Claude Code: "build me a Prism app that tells whether a year is a leap year"
-```
-
-The handler is a copy of five files of this package in `$PRISM_HOME/handler` (default `~/.prism/handler`), so it keeps working after npx clears its cache. It runs with the `node` that ran setup, so run setup again after you move Node.
-
-| OS | How the handler is registered |
+| Starter | Shape |
 | --- | --- |
-| Windows | `HKCU\Software\Classes\holo`, with `shell\open\command` set to `"<node>" "<handler>" "%1"`, written by `reg.exe` |
-| macOS | `~/Applications/Prism Open.app`, an AppleScript applet from `osacompile` with a `holo` URL type, signed again with `codesign --sign -` and registered with `lsregister` |
-| Linux | `~/.local/share/applications/prism-open.desktop` with `MimeType=x-scheme-handler/holo`, made the default with `xdg-mime` |
+| `rule-app` | one answer from one request, each condition a field against a value |
+| `decision-app` | one answer from one request, with its own judge and theorems |
+| `stateful-app` | state kept between steps, with actions and invariants |
 
-`holo://` may already belong to another program, such as the Hologram app. Taking it over would send that program's links to a handler that opens only `holo://build`. So setup checks first, on Windows with `HKCR\holo\shell\open\command` and on Linux with `xdg-mime query default x-scheme-handler/holo`. When `holo://` already opens something else, setup prints `left alone` with the program it found, and registers nothing. It still installs the handler, and writes where it is to `$PRISM_HOME/handler.json`:
+`--template text-request` writes a plain LexLean project instead, `--name`
+names the application, `--no-skill` leaves the skill out, and `--force`
+overwrites files that exist.
 
-```json
-{ "schema": "prism/handler/1", "scheme": "holo", "host": "build", "node": "<the node that ran setup>", "entry": "<$PRISM_HOME>/handler/handler.mjs" }
-```
-
-An app that owns `holo://`, such as the Hologram app, forwards a `holo://build` link by running `node` with two arguments, `entry` and the link, without a shell. The handler checks the link itself. `prism-code open <link>` does the same by hand. macOS has no simple query for this. When two apps claim `holo`, LaunchServices picks one, so check with `open "holo://build?agent=claude-code&q=hi"`.
-
-### Open a link
+Then three commands take the model to a verified app, each in this process:
 
 ```
-prism-code open "holo://build?agent=claude-code&q=Go%20to%20uor.foundation%20and%20build%20me%20a%20Prism%20app%20that%20tells%20whether%20a%20year%20is%20a%20leap%20year."
+cd my-app
+npx prism-code check --json     # prism.toml, the model, and every theorem proved by Lean's kernel
+npx prism-code build --json     # check, then the app under .prism/build, with nothing compiled
+npx prism-code verify --json    # check again, then every acceptance vector on a fresh instance
 ```
 
-The handler runs this for every link the browser hands it.
-
-- **Claude Code and Codex** get a new terminal: Windows Terminal, or a console from `start`; Terminal.app; `$TERMINAL` or the first of `x-terminal-emulator`, `gnome-terminal`, `konsole` and the rest. It shows the sentence and runs `claude "<sentence>"` or `codex "<sentence>"` after you press Enter.
-- **Cursor and VS Code** get their own MCP install link, and the sentence goes on the clipboard to paste into the agent panel.
-- **Claude and ChatGPT** get their prompt URL with the sentence in it.
-
-`agent` names one of `claude-code`, `codex`, `cursor`, `vscode`, `claude` or `chatgpt`, and defaults to the preferred agent.
-`q` is the sentence, at most 2000 characters on one line.
-A host other than `build`, an unknown agent or parameter, a repeated parameter, a control character or a sentence that starts with `-` exits 2 with an `open.*` code.
-`--dry-run` prints the files and commands.
-
-The sentence is never parsed by a shell. `open` writes it to a one-time ticket in `$PRISM_HOME/tickets`, and the new terminal runs only the handler with the ticket's path. The handler then starts the agent with the sentence as its one argument. An npm `.cmd` shim gets that argument escaped for `cmd.exe`, as plugins do. The terminal waits for Enter because any web page can write a `holo://` link, and the person should read what will run.
-
-### Check it by hand
-
-Run `npx prism-code@latest setup`, then open the leap-year link above from a browser's address bar. The browser asks whether to open the link. Then a terminal shows the sentence, and Enter starts Claude Code. On each OS, confirm the registration first:
-
-- **Windows:** `reg query HKCR\holo\shell\open\command` prints the handler command. A Windows Terminal tab titled Prism opens.
-- **macOS:** `open "holo://build?agent=claude-code&q=hi"` opens Terminal.app. `~/Applications/Prism Open.app/Contents/Info.plist` lists `holo` under `CFBundleURLSchemes`.
-- **Linux:** `xdg-mime query default x-scheme-handler/holo` prints `prism-open.desktop`, and `xdg-open "holo://build?agent=claude-code&q=hi"` opens a terminal.
-
-A link the handler refuses on macOS or Linux has no terminal to show the refusal in, so the refusal is also written to `$PRISM_HOME/handler.log`.
+An agent with the skill does the same: it edits the model, runs `check` after
+every edit, and builds and verifies before it calls the work done.
 
 ## Write the model
 
-An app's one source of truth is its LexLean model under `prism/src/`. `prism-code mcp` starts it from a content-addressed starter module, the agent writes it, and Lean proves it. A Docker-free build is temporarily unavailable until LexLean's front end runs as WebAssembly (`docs/proposals/canonical-serverless-build.md`, Phase 3).
+An app's one source of truth is its LexLean model under `src/`. `init` starts it from a content-addressed starter module, you or your agent write it, and Lean's kernel proves it. The skill's `references/lexlean-1.2.md` holds every form a model uses.
 
 ## Three calls
 
@@ -298,21 +234,18 @@ runtime, `holo.verify()` and the browser verifier cannot disagree. Design:
 ## Start a project (experimental, #281)
 
 ```
-npx prism-code init calculator                       # or: npm create prism-code calculator
-npx prism-code init calculator --sdk-image ghcr.io/uor-foundation/prismpm-sdk@sha256:<digest> --force
+npx prism-code init calculator --template text-request   # or: npm create prism-code calculator -- --template text-request
 ```
 
-`init` writes `prism.toml` (application `calculator` 0.1.0, nothing granted) and the
+With `--template text-request`, `init` writes `prism.toml` (application `calculator` 0.1.0, nothing granted) and the
 `text-request` template: a language-1.2 text application, its `prism.arch` lexicon, its Lean
 workspace and the `lexlean.lock` that binds them. The template is a byte-for-byte copy of the
 reviewed fixture `tests/fixtures/holo/ho-11-text-application`, so the project starts from a model
 the repository's own gate checks; edit it from there. Existing files are never overwritten without
-`--force`.
+`--force`. Without `--template`, `init` writes the `rule-app` starter, as "Start an app" says.
 
-`--sdk-image` binds the project to an SDK image: it copies the image's `standards.lock` and runs
-`prismpm update --toolchain <image>` in it, which writes `prismpm.lock`. Then `npx prism-code
-build --check` checks the model in that image, and `npx prism-code check <app.holo>` judges a built
-holo. No PrismPM SDK release exists yet, so there is no default image.
+Then `npx prism-code check` checks the model and proves its theorems, and `npx prism-code check <app.holo>`
+judges a built holo.
 
 ## The prism.toml manifest (experimental, #280)
 
@@ -691,8 +624,8 @@ section exits 2 until the format revision that admits it lands with #267's
 wire model change. From `P2` up, the text form also prints what the check
 trusts the signer for.
 
-`prism-code check` with no holo was the 0.2.0 spelling of `build --check`.
-It is now a usage error that names `build --check` (#584).
+`prism-code check` with no holo, or with a project directory, judges the
+project instead: it checks the model and proves every theorem.
 
 ## Develop with the studio (experimental, #288)
 
@@ -720,142 +653,56 @@ loads nothing from outside the machine. The build is separate: without
 
 ## Build one
 
-`build`, `build --check`, `verify` and `conformance` run `prismpm` inside the
-digest-pinned SDK image named by `prismpm.lock` in the current directory, with
-the same `docker run` invocation the UOR template uses. Docker is required;
-the image is Linux (amd64 and arm64). `build` and `verify` also mount the
-Docker socket. `build --check` runs `prismpm check`: it validates the model
-and writes nothing.
+`check`, `build` and `verify` run in this process. LexLean checks the model and
+Lean's own kernel proves every theorem, both as WebAssembly shipped in this
+package, and `build` writes the app with nothing compiled. No server, no
+container and no host Lean toolchain is involved, and nothing about a model is
+sent anywhere.
 
 ```
-cd my-prism-project
-npx prism-code build --check
+cd my-app
+npx prism-code check
 npx prism-code build
+npx prism-code verify
 ```
 
-Nothing in this package can produce a `.holo` without the image, and no
-native `prismpm` binary ships in this release.
-
-### Set up this machine (experimental)
-
-```
-npx prism-code@latest setup --machine-only
-```
-
-Before the agents, `setup` gets the machine ready for the build, one row each. A plain `setup` plans `node`, `endings` and `github` only, because the guided build proves on the hosted verifier and builds on GitHub Actions. `docker`, `image` and `cache` are planned with `--local`, which `--pull`, `--image` and `--machine-only` imply.
-
-| Row | What it checks | What it does |
+| Verb | What it does | Writes |
 | --- | --- | --- |
-| `node` | 22 or later | nothing; an older Node fails the row |
-| `github` | outside a repository, a GitHub sign-in (`GITHUB_TOKEN`, `GH_TOKEN` or `gh`); inside one, a github.com origin, the token and `.github/workflows/build.yml` | nothing; a missing piece is `manual` and named |
-| `docker` | `docker` or `podman` on the PATH; on Windows without Docker Desktop, the first WSL distribution whose `docker version` answers | records the program in `$PRISM_HOME/config.json`, so every later `check`, `build` and `verify` spawns it, and mounts the project under `/mnt/<drive>/...` when the daemon lives in WSL |
-| `image` | the SDK image `prismpm.lock` pins, or `--image <ref>` | with `--pull` or `--image`, `docker pull` with its progress when the image is not here; otherwise `deferred`: nothing is pulled, `build --check` and `verify --lean` run hosted, and the first `build`, `verify`, `axioms` or `conformance` pulls it (about 5.7 GB) and says so first |
-| `cache` | a volume named by the image digest | creates it; later runs mount it at `/tmp` in place of the 2 GB in-memory tmpfs, so the SDK's 1.2 GB Cargo home is on disk instead of in memory beside the build. A full verify of the chess example took 814 s with the tmpfs and 284 s with the volume. Without `setup --local`, the first command that runs the image records Docker and turns the cache on itself; `PRISM_CODE_NO_CACHE=1` restores the tmpfs |
-| `endings` | `.gitattributes` keeps sources LF | writes `* text eol=lf`; files already CRLF are counted and `git add --renormalize .` named, because LexLean refuses a CRLF source (`LLC0101`) |
+| `check [<dir>]` | reads `prism.toml`, checks the model, proves every theorem within its declared axioms | nothing |
+| `build [<dir>] [--out <dir>]` | `check`, then the app under `.prism/build`, then replays its acceptance vectors | the app, and its page under `.prism/site` |
+| `verify [<dir>]` | `check`, requires what is built to be the build of the model on disk, then replays every vector on a fresh instance | nothing |
+| `verify <app.holo>` | the holo's digests, its world within the grant, and every vector | nothing |
 
-`PRISM_DOCKER="<command>"` overrides the probe, for example
-`PRISM_DOCKER="wsl.exe -d Ubuntu -- docker"`, with `PRISM_DOCKER_MOUNT=wsl|native`
-for how host paths are spelled; `PRISM_CODE_NO_CACHE=1` restores the tmpfs for
-one run. Without Docker the row is a manual step that says what to install, and
-the agents are still set up. A delegated verb that finds no Docker exits 69 and
-points here. `--json` prints the rows as data.
+A rule app is written as the verified rule judge with the model's numbers. Any
+other text application is a holo whose guest is one pinned evaluator running
+the model's program; the build is refused unless that guest answers the
+model's own examples as its definitions do. Guarantees are proved; that the
+guest follows the model is tested.
 
-### Verify in tiers (experimental)
+Each verb takes `--json` and prints one report, `prism/report/1`:
 
-Three gates of rising cost, so an edit is judged by the cheapest one that can
-refuse it:
-
-| Tier | Command | What it proves | How long |
-| --- | --- | --- | --- |
-| T0 | `prism-code build --check` | `prismpm check`: the model is well formed and locked | seconds |
-| T1 | `prism-code verify --lean` | `lexlean verify`: every theorem through Lean and leanchecker, every axiom policy exact | about a minute for one module |
-| T2 | `prism-code verify` | `prismpm verify`: T1, then LCNF, the generated Rust, the guest and the holo with its vectors | minutes |
-
-`verify --lean` runs `lexlean` in the image on the project's `lexlean.toml`,
-which it finds at the project root or between `[model] source` of `prism.toml`
-and the root, as in a UOR template instance's `app/`. It mounts no Docker socket.
-The arguments after `--lean` go to `lexlean verify`.
-
-#### Without the image: the hosted tiers
-
-When the SDK image is not on this machine, T0 and T1 run on the hosted verifier
-at `https://mcp.uor.foundation/`, profile `prism-app`; `--hosted` asks for it
-and `--local` for the image, and a flag of `lexlean` or `prismpm check` keeps a
-tier in the image. T2 always needs the image.
-
-| | In the image | Hosted |
-| --- | --- | --- |
-| T0 `build --check` | `prismpm check`: model, lockfile and SDK pins, when a `prismpm.toml` is here | `prism.toml` here and `lexlean check` of the files under `src/` there: syntax and types, not proofs; the lockfile and SDK pins are skipped, and the last line says so |
-| T1 `verify --lean` | `lexlean verify` with the project's own `lexlean.toml` | `lexlean verify` of the project's entrypoints on the profile's pinned toolchain; it passes only when every entrypoint's module comes back verified (`hosted.coverage`), and the record goes to `.lexlean/hosted/<attestation_id>.json` |
-| What is sent | nothing | the files under `src/`, stored unlisted: not searchable, but readable by anyone with the draft's ID |
-
-The profile takes a project whose only source root is `src` and whose lexicon
-packages it carries; any other shape is refused with `hosted.layout` before
-anything is sent, and runs with `--local`. The hosted attestation is not the
-local one byte for byte: the profile has its own `module_prefix`. `axioms`
-reads the local build directory, so it needs the image.
-
-#### Without Docker at all: GitHub builds, this machine checks
-
-```
-npx prism-code build --remote github
+```json
+{
+  "schema": "prism/report/1",
+  "ok": false,
+  "command": "verify",
+  "durationMs": 2410,
+  "summary": { "modulesChecked": 3, "theoremsDeclared": 3, "theoremsVerified": 3 },
+  "diagnostics": [
+    { "code": "verify.unbuilt", "severity": "error", "file": null, "line": null, "column": null,
+      "message": "The model checks and is proved, and nothing is built from it yet.",
+      "remediation": "Run prism-code build, then verify again." }
+  ]
+}
 ```
 
-The repository's own GitHub Actions builds one commit and this machine verifies
-what comes back; nothing here needs Docker, the SDK image or a toolchain. The
-principle is build anywhere, verify locally: the runner is not trusted, it is
-checked.
+Exit codes: 0 the gate passed; 1 a theorem is not proved, a vector fails,
+nothing is built or the build is stale; 2 the manifest or the model does not
+check.
 
-1. The commit (`HEAD`, or `--ref <commit>`) is pushed to
-   `refs/heads/prism/build/<sha>`, so the run is that commit and no other,
-   whatever the branch does meanwhile. A working tree with changes is refused
-   unless `--allow-dirty`, because a remote build cannot see them. A run that
-   already exists for the commit, from `pages.yml` for instance, is reused.
-2. The repository's `build.yml` (the template's, which `pages.yml` calls too)
-   runs `prismpm verify` in the SDK image, uploads the artifact
-   `prism-build-<sha>` and signs the holo's provenance with
-   `actions/attest-build-provenance`.
-3. Before anything is written under `.prism/build/`, in this order: `build.json`
-   names this commit and this repository; the holo's SHA-256 is the one
-   recorded; the provenance statement is about that SHA-256 and names this
-   repository and commit; its signature verifies and the signer is a workflow
-   of this repository through `https://token.actions.githubusercontent.com`;
-   `check` reaches a verdict at the P0 policy (`--policy` raises it; the
-   provenance is the bundle beside the holo, which `check` does not read); the
-   fingerprint is the one recorded; every acceptance vector replays here.
-4. The build directory lands at `<project>/.prism/build/<build>/` and the
-   record and bundle at `<project>/.prism/remote/<sha>/`; the build ref is
-   deleted.
-
-The signature is checked by prism-code's own Sigstore verifier when its
-optional packages are installed (Node 22.22.2 or newer), else by
-`gh attestation verify`, else refused. A refusal is typed (`remote.*`, exit 2);
-bytes that differ from their digest exit 1; a verdict or a vector that fails
-exits as `check` or `vectors` would. The token (`GITHUB_TOKEN`, `GH_TOKEN` or
-`gh auth token`) goes to `api.github.com` and nowhere else, and is never
-printed. Pages on a private repository needs a paid plan; the artifact and the
-run's summary (fingerprint, provenance, how to verify) need none.
-
-### Settle the axioms in one pass (experimental)
-
-```
-npx prism-code axioms
-npx prism-code axioms --write
-```
-
-Language 1.2 needs an exact axiom policy on every definition and theorem, and
-`lexlean verify` reports the first wrong one per run. LexLean's own audit
-already asks Lean `#print axioms` for every declaration, and records each
-module's answer before it enforces any policy. `axioms` runs `lexlean verify` in
-the image and copies those records under `.lexlean/axioms` as soon as every
-module has one, then stops the verify before its certificate stage; a verify
-that already passed is read from the published set its attestation names. So the
-sets are exactly the ones LexLean's policy check judges. It prints the observed set
-beside the declared one, `ok` or `FIX` per declaration, and exits 1 while any
-differs. `--write` sets each `axioms` member to the observed set, in the
-member's canonical place, and runs `lexlean fmt` on the project. `--json`
-prints `prism/axioms-report/1`. A project that does not compile exits 2 with
-the tail of the verify log.
+`--project <dir>` names the folder that holds `lexlean.toml` when it is not the
+project root or the one folder directly under it. `PRISM_CODE_BUNDLED=0` sets
+the shipped WebAssembly aside, for a build that must fetch its own.
 
 ## Plugins (experimental, #293)
 
