@@ -21,7 +21,7 @@ pub(super) fn verify(root: &Path) {
         .expect("Python runtime required for portable SDK classifier conformance");
     let transcript = String::from_utf8_lossy(&result.stderr);
     const EXPECTED: &[&str] = &[
-        "test_cli_emits_closed_success_receipt_and_digest",
+        "test_cli_refuses_synthetic_image_not_on_approved_allowlist",
         "test_cli_emits_closed_refusal_receipt_and_digest",
         "test_passes_two_regular_presentation_paths",
         "test_rejects_unapproved_png",

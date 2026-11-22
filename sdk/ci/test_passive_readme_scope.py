@@ -69,25 +69,25 @@ class PassiveReadmeTests(unittest.TestCase):
         if reason:
             self.assertIn(reason, str(error.exception))
 
-    def test_cli_emits_closed_success_receipt_and_digest(self):
+    def test_cli_refuses_synthetic_image_not_on_approved_allowlist(self):
         self.build()
+        # Tests may inject a synthetic image blob into qualify(), but production
+        # CLI must refuse it because --expected-banner-blob is never exposed.
+        self.assertEqual(self.check()["classification"], "PASSIVE_README")
         result = subprocess.run(
             [sys.executable, str(FILE), "--repo", str(self.root),
              "--base", self.base, "--head", self.head],
             text=True, capture_output=True, check=False,
         )
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 2, result.stderr)
         receipt = json.loads(result.stdout)
         self.assertEqual(set(receipt), {
-            "schema", "classifier_sha256", "classification", "base", "head",
-            "merge_base", "paths", "banner_blob", "checked_local_links",
-            "known_anchors", "claim",
+            "schema", "classifier_sha256", "classification", "reason",
         })
         self.assertEqual(receipt["schema"], "prismpm/passive-readme-receipt/1")
-        self.assertEqual(receipt["classification"], "PASSIVE_README")
+        self.assertEqual(receipt["classification"], "FULL_REQUIRED")
+        self.assertIn("unapproved placeholder image bytes", receipt["reason"])
         self.assertEqual(receipt["classifier_sha256"], hashlib.sha256(FILE.read_bytes()).hexdigest())
-        self.assertEqual(receipt["base"], self.base)
-        self.assertEqual(receipt["head"], self.head)
 
     def test_cli_emits_closed_refusal_receipt_and_digest(self):
         self.build()
