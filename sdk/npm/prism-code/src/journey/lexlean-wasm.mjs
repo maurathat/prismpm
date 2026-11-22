@@ -14,7 +14,8 @@
  *
  * It runs in this process on wasi-memory.mjs, a WASI host over the project's
  * files held in memory: `node:wasi` lists no directory on Windows, and the
- * same host serves a browser. The module is compiled once per process, so
+ * same host serves a browser. What is run is lexlean-core.mjs, which reads no
+ * disk; this module is its Node side: the pinned file and the project's folder. The module is compiled once per process, so
  * every check after the first pays only for the run.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -22,7 +23,7 @@ import { join, resolve } from 'node:path';
 import { PrismCodeError } from '../errors.mjs';
 import { buildFetch } from './hosts.mjs';
 import { admittedLabel, decoded, pinnedFile, receiveDecoded, writeAtomic } from './kappa-store.mjs';
-import { runWasi } from './wasi-memory.mjs';
+import { DECLARE_LIBRARY_PATH, lexleanCheck, lexleanDeclare, lexleanRun, lexleanSnapshot } from './lexlean-core.mjs';
 
 /**
  * The pinned executable: LexLean at `commit`, built with
@@ -149,33 +150,32 @@ function moduleOf(file) {
   return compiled.get(file);
 }
 
+/** The admitted module and the project's files: what lexlean-core.mjs runs on. */
+async function here(projectDir, { env = process.env, pin = null } = {}) {
+  const file = lexleanWasmFile({ env, pin });
+  if (!file) throw new PrismCodeError('lexlean.wasm-unavailable', 'LexLean as WebAssembly is not on this machine');
+  return { module: await moduleOf(file), files: projectFiles(projectDir) };
+}
+
 /**
  * Run `lexlean <args>` on the project at `projectDir` as WebAssembly. Resolves
- * `{ exit, stdout, stderr, ms }`, stdout as bytes. Only `check` and `snapshot`
+ * `{ exit, stdout, stderr, ms }`, stdout as bytes. Only `check`, `snapshot` and `declare`
  * are run here: a command that changes the project is refused by LexLean on
  * WASI (`LLV7010`), and the file system it sees is read only.
  */
 export async function runLexleanWasm(projectDir, args, { env = process.env, pin = null, files = null } = {}) {
-  const file = lexleanWasmFile({ env, pin });
-  if (!file) throw new PrismCodeError('lexlean.wasm-unavailable', 'LexLean as WebAssembly is not on this machine');
   const started = performance.now();
-  // `files` adds read-only files beside the project's own, such as the library export `declare` continues.
-  const all = projectFiles(projectDir);
+  const { module, files: all } = await here(projectDir, { env, pin });
+  // `files` adds read-only files beside the project's own.
   for (const [path, bytes] of files ?? []) all.set(path, bytes);
-  const r = await runWasi(await moduleOf(file), { files: all, args });
-  return { exit: r.exit, stdout: Buffer.from(r.stdout), stderr: Buffer.from(r.stderr).toString('utf8'), ms: Math.round(performance.now() - started) };
+  const r = await lexleanRun(module, all, args);
+  return { exit: r.exit, stdout: Buffer.from(r.stdout), stderr: r.stderr, ms: Math.round(performance.now() - started) };
 }
 
 /** `lexlean --diagnostic-format json check --all`: the command result, parsed. */
 export async function wasmCheck(projectDir, options = {}) {
-  const r = await runLexleanWasm(projectDir, ['--diagnostic-format', 'json', 'check', '--all'], options);
-  let result;
-  try {
-    result = JSON.parse(r.stdout.toString('utf8'));
-  } catch {
-    throw new PrismCodeError('lexlean.wasm-failed', `LexLean as WebAssembly gave no command result (exit ${r.exit}): ${r.stderr.slice(0, 400)}`);
-  }
-  return { ...result, ms: r.ms };
+  const { module, files } = await here(projectDir, options);
+  return lexleanCheck(module, files);
 }
 
 /**
@@ -184,14 +184,12 @@ export async function wasmCheck(projectDir, options = {}) {
  * resolves `{ ok: false, check }` with the command result of `check`.
  */
 export async function wasmSnapshot(projectDir, options = {}) {
-  const r = await runLexleanWasm(projectDir, ['snapshot', '--all'], options);
-  if (r.exit !== 0) return { ok: false, check: await wasmCheck(projectDir, options), ms: r.ms };
-  // LexLean names the snapshot (its semantic_id); Prism derives no identity of its own for it.
-  return { ok: true, bytes: r.stdout, snapshot: JSON.parse(r.stdout.toString('utf8')), ms: r.ms };
+  const { module, files } = await here(projectDir, options);
+  const taken = await lexleanSnapshot(module, files);
+  return taken.ok ? { ...taken, bytes: Buffer.from(taken.bytes) } : taken;
 }
 
-/** Where the library export `declare` continues is placed in the instance's file system, beside the project. */
-export const DECLARE_LIBRARY_PATH = '/.prism-code/base.ndjson';
+export { DECLARE_LIBRARY_PATH };
 
 /**
  * `lexlean declare --all --library <base>` (LexLean CL-29): the project's kernel declarations, written by LexLean
@@ -201,14 +199,6 @@ export const DECLARE_LIBRARY_PATH = '/.prism-code/base.ndjson';
  * command result of `check` when LexLean refuses the model.
  */
 export async function wasmDeclare(projectDir, base, options = {}) {
-  const files = new Map([[DECLARE_LIBRARY_PATH, typeof base === 'string' ? new TextEncoder().encode(base) : base]]);
-  const r = await runLexleanWasm(projectDir, ['declare', '--all', '--library', DECLARE_LIBRARY_PATH], { ...options, files });
-  if (r.exit === 0) {
-    const document = JSON.parse(r.stdout.toString('utf8'));
-    if (document.spec !== 'lexlean/kernel-declarations/2') throw new PrismCodeError('lexlean.wasm-failed', `LexLean's declare gave a ${document.spec}, not lexlean/kernel-declarations/2`);
-    return { ok: true, document, ms: r.ms };
-  }
-  // CLI misuse naming the command: this LexLean predates `declare` (a release before CL-29).
-  if (r.exit === 2 && /unrecognized subcommand|invalid value 'declare'|unexpected argument/i.test(r.stderr)) return { ok: false, unsupported: true, ms: r.ms };
-  return { ok: false, check: await wasmCheck(projectDir, options), ms: r.ms };
+  const { module, files } = await here(projectDir, options);
+  return lexleanDeclare(module, files, base);
 }

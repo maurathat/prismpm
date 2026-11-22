@@ -21,6 +21,7 @@ import { fromFile } from '../node.mjs';
 import { VERSION } from '../version.mjs';
 import { gapLedger } from '../gaps.mjs';
 import { NO_DOCKER_FREE_BUILD, frontendWhere, proverWhere } from './frontend.mjs';
+import { fromHosted, holoFromSnapshot, isWarning } from './build-core.mjs';
 import { lexleanReady, wasmCheck, wasmDeclare, wasmSnapshot } from './lexlean-wasm.mjs';
 import { collectIfUpgraded, withStoreHeld } from './store-gc.mjs';
 import { sourceDigest } from './project.mjs';
@@ -35,14 +36,8 @@ export const isRuleApp = (session) => session.starter === 'rule-app';
 
 const failure = (error) => ({ ok: false, code: error.code, message: error.message });
 
-/** A Lean warning, such as an unused simp argument: reported, never a reason a step failed. */
-export const isWarning = (d) => d.severity === 'warning' || /^Lean rejected `[^`]+` \(warning\):/.test(d.message);
-
-/** A `lexlean/diagnostic/1` from the hosted verifier, in the shape `parseDiagnostics` gives. */
-export function fromHosted(d) {
-  const p = d.primary;
-  return { severity: d.severity ?? 'error', code: d.code, message: String(d.message ?? ''), span: p?.path ? { file: p.path, line: p.line_start, column: p.column_start } : null };
-}
+// What a diagnostic is, and which are warnings, is build-core.mjs's: the browser build reads them the same way.
+export { fromHosted, isWarning };
 
 /**
  * Diagnostics as the author reads them: code, message, and the line of the model they anchor to. With the model's
@@ -274,20 +269,12 @@ async function buildModelApp(dir, session, { log, env, snapshot, gaps, kernel, w
   } catch (error) {
     return { ...failure(error), stage: 'build' };
   }
-  const { buildHolo } = await import('./model-holo.mjs');
   const { EVALUATOR_GUEST } = await import('./model-guest.mjs');
   log("Writing the app's holo: the evaluator guest with the model's program. Nothing is compiled.");
-  let built;
-  try {
-    built = await buildHolo(taken.snapshot, { evaluator: readFileSync(new URL(EVALUATOR_GUEST.file, import.meta.url)), snapshotBytes: taken.bytes });
-  } catch (error) {
-    if (error.code === 'guest.uncovered' || error.code === 'eval.uncovered' || error.code === 'holo.profile' || error.code === 'holo.capabilities' || error.code === 'holo.facets') {
-      return { ...failure(new PrismCodeError('build.guest-uncovered', `Lean's kernel proved every theorem, and the holo is not built: ${error.message}. Nothing is compiled on this path, and it does not run this yet. This is a limit of the builder, not a verdict on the app. ${NO_DOCKER_FREE_BUILD}`)), stage: 'build', where: 'kernel', reason: error.code };
-    }
-    if (error.code === 'holo.vectors' || error.code === 'holo.no-vectors') return { ...failure(new PrismCodeError('build.vectors', `The holo is not built: ${error.message}. Change the examples or the rules in the model, then build again.`)), stage: 'build', where: 'kernel', reason: error.code };
-    if (error.code === 'holo.guest-differs') return { ...failure(new PrismCodeError('build.guest-differs', `The holo is not built: ${error.message}. This is a fault of the builder, and says nothing about the app.`)), stage: 'build', where: 'kernel', reason: error.code };
-    return { ok: false, stage: 'build', where: 'kernel', code: error.code ?? null, message: `The holo is not built: ${error.message}. This says nothing about the app.` };
-  }
+  // The same function a browser build calls (build-core.mjs), so the two build the same bytes.
+  const made = await holoFromSnapshot(taken.snapshot, { evaluator: readFileSync(new URL(EVALUATOR_GUEST.file, import.meta.url)), snapshotBytes: taken.bytes });
+  if (!made.ok) return made;
+  const { built } = made;
   const path = join(dir, '.prism', 'build', `${built.name.toLowerCase().match(/[a-z0-9]+/g)?.join('-') ?? 'app'}.holo`);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, built.bytes);
