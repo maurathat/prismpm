@@ -193,6 +193,7 @@
   "types/index.d.ts",
   "types/node.d.ts",
   "types/webgpu.d.ts",
+  "wasm/NOTICE.md",
   "wasm/pinned/1d/8b899ed1eb5b7703151fff2bf525c24e9b24768ae6c1c7281fd19c53512b3d",
   "wasm/pinned/21/b2c46df9424cc7f12001f94ea8696f2b773e1cbd30e8e44c593207dc8ea177",
   "wasm/pinned/2f/254140590074724ca1a8033080e0ae0834a018e06481ad7ccf7de9b80f175a",
