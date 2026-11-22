@@ -1523,7 +1523,7 @@ pub fn f9(v0: List<Str>) -> Bytes {
 }
 
 pub fn f10() -> Str {
-    Str::lit("ghcr.io/uor-foundation/prismpm-sdk@sha256:d6c263a733a6bc36e0458c3f5b9a1f5ea9c14dfbe8c257d3f650a960b5fe633c")
+    Str::lit("ghcr.io/uor-foundation/prismpm-sdk-candidate@sha256:6fe8aba8e5094c549a3c7f7ba26e1ff43c60ab7098403fdb35a7aff1dac56cad")
 }
 
 pub fn f11(v0: List<Adt6>, v1: List<Str>, v2: List<(Str, bool)>) -> Str {
