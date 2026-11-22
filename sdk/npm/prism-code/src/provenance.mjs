@@ -21,6 +21,7 @@ import { fail } from './errors.mjs';
 import { asBytes, parseArchive, resolveArchive, canonicalJson } from './archive.mjs';
 import { appendAttestations, readAttestations, BUNDLE_MEDIA_TYPE, STATEMENT_TYPE, DSSE_PAYLOAD_TYPE } from './attestations.mjs';
 import { sha256Hex } from './sha256.mjs';
+import { blake3Hex } from './blake3.mjs';
 
 export const PROVENANCE_PREDICATE_TYPE = 'https://slsa.dev/provenance/v1';
 export const HOLO_BUILD_TYPE = 'https://uor.foundation/prism/holo-build/v1';
@@ -191,7 +192,9 @@ export async function provenanceStatement(source, options = {}) {
   const subject = [];
   for (const [role, blob] of blobs) {
     if (typeof names[role] !== 'string' || names[role].length === 0) fail('provenance.input', `subjectNames.${role} is not a path`);
-    subject.push({ name: names[role], digest: await kappaDigest(blob.content) });
+    // A v6 object is named by blake3 and sha256 over the same bytes (ADR-018 §4); a v5 object by its κ alone.
+    const digest = blob.label.startsWith('blake3:') ? { blake3: blake3Hex(blob.content), ...(await kappaDigest(blob.content)) } : await kappaDigest(blob.content);
+    subject.push({ name: names[role], digest });
   }
   if (new Set(subject.map((s) => s.name)).size !== subject.length) fail('provenance.input', 'two subjects share a name');
 

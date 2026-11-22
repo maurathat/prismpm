@@ -1789,15 +1789,17 @@ fn application_archive(
     let bytes = file(files, &format!("{}.holo", application.name()))?;
     let archive = crate::holo::archive::parse_application(bytes)
         .map_err(|error| invalid(format!("application archive: {}", error.message)))?;
+    // A holo v6 names its objects `blake3:`, a v5 `sha256:` (ADR-018).
+    let format = crate::holo::v5::format_of(bytes).unwrap_or(crate::holo::v5::Format::V5);
     let model_bytes = file(files, "model.prism.json")?;
     ensure(
         archive.blobs.values().any(|content| content == model_bytes)
             && archive.blobs.values().any(|content| content == guest)
             && archive.application_manifest == file(files, "application/holo-manifest.json")?
             && archive.metadata == file(files, "application/source-manifest.json")?
-            && archive.identities.guest_content_kappa == crate::holo::archive::content_kappa(guest)
+            && archive.identities.guest_content_kappa == crate::holo::v5::label(format, guest)
             && archive.identities.model_content_kappa
-                == crate::holo::archive::content_kappa(model_bytes),
+                == crate::holo::v5::label(format, model_bytes),
         "application archive content differs from release artifacts",
     )?;
     let identities = serde_json::to_value(&archive.identities)

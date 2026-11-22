@@ -74,6 +74,10 @@
     {
       "files": ["crates/prismpm/src/holo/archive.rs"],
       "reason": "The Rust reader and composer learn holo v6 (ADR-018), the format #798 already defines and the scenarios already pin: load.reference-v6.opens, verify.reference-v6.default-policy and verify.reference-v6.seal-broken. The Rust runtime's declaration drops its expected failure for the verify check, which now passes, so that check holds this change. No byte of v5 changes: compose_application still writes v5, and upgrade_application_v6 writes the same bytes as prism-code's upgradeToV6, the committed corpus/Calculator.v6.holo."
+    },
+    {
+      "files": ["crates/prismpm/src/holo/archive.rs"],
+      "reason": "Signing and stripping a holo v6 in Rust keep it a v6: attach_attestations and strip_attestations reseal with the holo's own format, as prism-code's appendAttestations and stripAttestations do since #798. The format is the one the v6 scenarios pin; attest::tests::a_holo_v6_is_signed_with_blake3_and_sha256_subjects_and_verifies holds the Rust side. No byte of a v5 changes."
     }
   ]
 }

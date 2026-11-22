@@ -758,3 +758,53 @@ fn ho_30_the_policy_and_the_signing_request_are_checked_first() {
         json!([1, 2])
     );
 }
+
+/// The reference application as a holo v6 (ADR-018), as prism-code's `upgradeToV6` wrote it.
+const CALCULATOR_V6: &[u8] =
+    include_bytes!("../../../../sdk/npm/conformance/corpus/Calculator.v6.holo");
+
+#[test]
+fn a_holo_v6_is_signed_with_blake3_and_sha256_subjects_and_verifies() {
+    let parsed = parse_application(CALCULATOR_V6).unwrap();
+    let label = parsed.identities.guest_content_kappa.clone();
+    let content = parsed.blobs[&label].clone();
+    assert!(label.starts_with("blake3:"));
+    let out = attest(
+        CALCULATOR_V6,
+        &request(PROOF, r#"{"accepted":true}"#, &[], P256_PRIVATE),
+    )
+    .unwrap();
+    // The member order prism-code's signer writes: blake3, then sha256 (ADR-018 §4).
+    let payload = STANDARD
+        .decode(
+            serde_json::from_slice::<Value>(&out.bundle).unwrap()["dsseEnvelope"]["payload"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+    let text = String::from_utf8(payload).unwrap();
+    assert!(text.contains(&format!(
+        r#""digest":{{"blake3":"{}","sha256":"{}"}}"#,
+        &label[7..],
+        der::hex(&crypto::sha256(&content))
+    )));
+    assert!(
+        out.holo.starts_with(b"UORC\x02\x02"),
+        "signing keeps the holo v6"
+    );
+    assert_eq!(strip_attestations(&out.holo).unwrap(), CALCULATOR_V6);
+    let verdict = verify_attestations(&out.holo, &typed(P256_PUBLIC, PROOF)).unwrap();
+    assert!(verdict.passed, "{verdict:?}");
+    // A v6 subject is also named by its blake3 κ.
+    let named = attest(
+        CALCULATOR_V6,
+        &request(
+            PROOF,
+            r#"{"accepted":true}"#,
+            &[label.as_str()],
+            P256_PRIVATE,
+        ),
+    )
+    .unwrap();
+    assert_eq!(named.subjects, [label]);
+}

@@ -1,7 +1,7 @@
 //! Generic production pipeline for a closed Prism application value.
 
 use crate::error::PrismError;
-use crate::holo::archive::{compose_application, ApplicationArchiveInput, ArchiveProvenance};
+use crate::holo::archive::{compose_application_as, ApplicationArchiveInput, ArchiveProvenance};
 use crate::holo::browser_application::BrowserApplication;
 use crate::holo::canonical::{content_id, encode_value};
 use crate::holo::model_document::{Application, ApplicationModel, ModelDocument};
@@ -1342,36 +1342,40 @@ fn generate_in(
         "roots_sha256": sha256(&roots_bytes),
         "schema": "prismpm/lcnf-manifest/1"
     }))?;
-    let holo = compose_application(&ApplicationArchiveInput {
-        application_name: application.name().clone(),
-        guest_wasm: wasm.clone(),
-        view_bundle: generated_view.hologram_bundle.bytes.clone(),
-        model_document: model_bytes.to_vec(),
-        source_manifest: source_manifest.clone(),
-        provenance: ArchiveProvenance {
-            source_id: model.provenance.source_id.clone(),
-            semantic_id: model.provenance.semantic_id.clone(),
-            compiler_semantics_id: model.provenance.compiler_semantics_id.clone(),
-            snapshot_id: model.provenance.snapshot_id.clone(),
-            stdlib_semantics_id: stdlib.semantic_id,
-            prism_stdlib_crate_sha256: stdlib.crate_sha256,
-            lexlean_commit: lexlean.revision.clone(),
-            lexlean_package_sha256: artifact_sha(lexlean, ".crate")?,
-            lean4_prod_commit: lean4_prod.revision.clone(),
-            hologram_live_commit: HOLOGRAM_LIVE_COMMIT.to_owned(),
-            uor_hologram_commit: UOR_HOLOGRAM_COMMIT.to_owned(),
-            target_profile_id: sha256(&target_profile),
-            lean_manifest_sha256: sha256(lex_manifest_bytes),
-            lcnf_manifest_sha256: sha256(&lcnf_manifest),
-            generated_core_sha256: generated_core_sha,
-            cargo_name: application.cargo_name().clone(),
-            cargo_version: application.cargo_version().clone(),
-            cargo_crate_sha256: sha256(&crate_bytes),
-            view_model_id,
-            browser_projection_sha256: browser_projection_sha,
+    // A built application is a holo v6 (ADR-018): sealed by BLAKE3 and named by `blake3:` κ-labels.
+    let holo = compose_application_as(
+        crate::holo::v5::Format::V6,
+        &ApplicationArchiveInput {
+            application_name: application.name().clone(),
+            guest_wasm: wasm.clone(),
+            view_bundle: generated_view.hologram_bundle.bytes.clone(),
+            model_document: model_bytes.to_vec(),
+            source_manifest: source_manifest.clone(),
+            provenance: ArchiveProvenance {
+                source_id: model.provenance.source_id.clone(),
+                semantic_id: model.provenance.semantic_id.clone(),
+                compiler_semantics_id: model.provenance.compiler_semantics_id.clone(),
+                snapshot_id: model.provenance.snapshot_id.clone(),
+                stdlib_semantics_id: stdlib.semantic_id,
+                prism_stdlib_crate_sha256: stdlib.crate_sha256,
+                lexlean_commit: lexlean.revision.clone(),
+                lexlean_package_sha256: artifact_sha(lexlean, ".crate")?,
+                lean4_prod_commit: lean4_prod.revision.clone(),
+                hologram_live_commit: HOLOGRAM_LIVE_COMMIT.to_owned(),
+                uor_hologram_commit: UOR_HOLOGRAM_COMMIT.to_owned(),
+                target_profile_id: sha256(&target_profile),
+                lean_manifest_sha256: sha256(lex_manifest_bytes),
+                lcnf_manifest_sha256: sha256(&lcnf_manifest),
+                generated_core_sha256: generated_core_sha,
+                cargo_name: application.cargo_name().clone(),
+                cargo_version: application.cargo_version().clone(),
+                cargo_crate_sha256: sha256(&crate_bytes),
+                view_model_id,
+                browser_projection_sha256: browser_projection_sha,
+            },
+            basis: sdk_basis(repository_root),
         },
-        basis: sdk_basis(repository_root),
-    })?;
+    )?;
 
     let mut artifacts = vec![
         (

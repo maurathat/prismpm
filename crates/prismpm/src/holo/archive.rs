@@ -511,7 +511,7 @@ pub fn attach_attestations(bytes: &[u8], bundles: &[Vec<u8>]) -> Result<Vec<u8>,
     if !v5::is_uorc(bytes) {
         return Err(PrismError::new(
             "PP3001",
-            "a physical-v4 holo is read-only; rebuild it as a holo v5 before signing (ADR-017)",
+            "a physical-v4 holo is read-only; rebuild it as a holo v5 or v6 before signing (ADR-017, ADR-018)",
         ));
     }
     let parsed = parse_application(bytes)?;
@@ -534,7 +534,9 @@ pub fn attach_attestations(bytes: &[u8], bundles: &[Vec<u8>]) -> Result<Vec<u8>,
         lines.push(line.clone());
     }
     objects.push(attestation::join_lines(&lines));
-    let signed = v5::write_objects(&objects);
+    // Signing keeps the holo's format: a v6 stays sealed by BLAKE3 (ADR-018).
+    let format = v5::format_of(bytes).unwrap_or(v5::Format::V5);
+    let signed = v5::write_objects_as(format, &objects);
     validate_application(&signed)?;
     Ok(signed)
 }
@@ -547,7 +549,10 @@ pub fn strip_attestations(bytes: &[u8]) -> Result<Vec<u8>, PrismError> {
     if v5::is_uorc(bytes) {
         return match split_v5(bytes)? {
             (_, None) => Ok(bytes.to_vec()),
-            (objects, Some(_)) => Ok(v5::write_objects(&objects)),
+            (objects, Some(_)) => Ok(v5::write_objects_as(
+                v5::format_of(bytes).unwrap_or(v5::Format::V5),
+                &objects,
+            )),
         };
     }
     validate_application(bytes)?;

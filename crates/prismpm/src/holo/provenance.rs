@@ -228,7 +228,13 @@ pub fn statement(holo: &[u8], lock: &[u8], max: Option<&MaxDetails>) -> Result<V
             .blobs
             .get(*label)
             .ok_or_else(|| refused(format!("{label} is not a content blob of this archive")))?;
-        subject.push(json!({"name": name, "digest": kappa_digest(content)}));
+        // A v6 object is named by blake3 and sha256 over the same bytes (ADR-018 §4).
+        let digest = if label.starts_with("blake3:") {
+            json!({ "blake3": blake3::hash(content).to_hex().to_string(), "sha256": format!("{:x}", Sha256::digest(content)) })
+        } else {
+            kappa_digest(content)
+        };
+        subject.push(json!({"name": name, "digest": digest}));
     }
     let model = subject[2]["digest"].clone();
 
