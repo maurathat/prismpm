@@ -556,7 +556,7 @@ try {
       let said;
       try { said = await HOST.replace(built.holo.bytes); } catch (error) { said = { replaced: false, reason: String(error?.code ?? error?.message ?? error) }; }
       state.replaced = { replaced: said?.replaced === true, kept: said?.kept ?? null, reason: said?.reason ?? null, address: said?.address ?? null, judged: said?.judged ?? null };
-      const WHY = { 'proof.unjudged': 'its holospace cannot yet check the proof itself, and does not take this page's word for it', 'replace.unbuilt': 'its holospace judged the build and cannot replace a running app yet' };
+      const WHY = { 'proof.unjudged': "its holospace cannot yet check the proof itself, and does not take this page's word for it", 'replace.unbuilt': 'its holospace judged the build and cannot replace a running app yet' };
       took.append(said?.replaced === true
         ? ` The running app was replaced${said.kept === 'restarted' ? `, and restarted: ${said.reason ?? 'no reason given'}` : ', and kept its state'}.`
         : ` The running app was not replaced: ${WHY[said?.reason] ?? said?.reason ?? 'no reason given'}.`);
