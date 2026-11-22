@@ -158,7 +158,12 @@ jobs:
             const have = kappa(readFileSync(`${site}/${path}`));
             if (have !== listing.files[path].kappa) throw new Error(`${path} is ${have}, and offline.json names ${listing.files[path].kappa}`);
           }
-          if (paths.includes('sw.js') || paths.includes('offline.json')) throw new Error('the worker and its listing must not list themselves');
+          if (paths.includes('sw.js') || paths.includes('offline.json') || paths.includes('ide.json')) throw new Error('the worker, its listing and the label must not be listed');
+          // The one label of the site is the label of the listing as published.
+          const label = JSON.parse(readFileSync(`${site}/ide.json`, 'utf8'));
+          const listed = kappa(new Uint8Array(readFileSync(`${site}/offline.json`)));
+          if (label.kappa !== listed) throw new Error(`ide.json names ${label.kappa}, and offline.json is ${listed}`);
+          if (label.entry !== 'edit/ide/index.html') throw new Error('ide.json does not name the page the IDE starts at');
           console.log(`${paths.length} files listed, each the bytes its label names`);
           JS
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
