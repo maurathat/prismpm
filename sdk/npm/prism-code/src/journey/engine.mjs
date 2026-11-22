@@ -161,11 +161,24 @@ async function proveModel(dir, session, { log, frontend, snapshot, gaps, kernel,
   return modelReport(dir, session, result, { started, semanticId: model.semantic_id ? `sha256:${model.semantic_id}` : null, via: null });
 }
 
+/** The project's `module_prefix`, from its lexlean.toml, or null. */
+function modulePrefix(dir) {
+  try {
+    return /^module_prefix\s*=\s*"([^"]+)"/m.exec(readFileSync(join(dir, 'lexlean.toml'), 'utf8'))?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** What a model proof says to the user, the same for either way it was planned. */
 function modelReport(dir, session, result, { started, semanticId, via }) {
   const seconds = Math.round((Date.now() - started) / 100) / 10;
   const short = (name) => name.slice(name.lastIndexOf('.') + 1);
-  const theorems = result.theorems.map((t) => ({ theorem: short(t.name), proof: t.proof, status: t.status, axioms: t.axioms, ...(t.setAside ? { setAside: t.setAside } : {}) }));
+  // `qualified` is Module.theorem: the kernel's name without the project's module_prefix, so the same theorem reads
+  // the same whatever the project is called. The template contract's rows name theorems this way (contract.mjs).
+  const prefix = modulePrefix(dir);
+  const qualified = (name) => (prefix && name.startsWith(`${prefix}.`) ? name.slice(prefix.length + 1) : name);
+  const theorems = result.theorems.map((t) => ({ theorem: short(t.name), qualified: qualified(t.name), proof: t.proof, status: t.status, axioms: t.axioms, ...(t.setAside ? { setAside: t.setAside } : {}) }));
   if (result.refusal) return { ok: false, where: 'kernel', seconds, theorems, message: `The model could not be put to Lean's kernel: ${result.refusal}. This is a limit of this prover, not a verdict on the app.` };
   const missed = result.theorems.filter((t) => !t.status.startsWith('proved'));
   if (missed.length) return { ok: false, where: 'kernel', seconds, theorems, message: `${missed.length} of ${result.theorems.length} theorems are not proved: ${missed.slice(0, 3).map((t) => `${short(t.name)} (${t.status.replace(/^not proved: /, '')})`).join('; ')}.` };
@@ -309,6 +322,9 @@ async function buildModelApp(dir, session, { log, env, snapshot, gaps, kernel, w
     bytes: built.bytes.length,
     theorems: provedNow.theorems,
     vectors: { passed: acceptance.passed, total: acceptance.total },
+    // The vectors the built holo just answered as the model states, as bytes, for a caller that judges them further
+    // (the template contract's R5 looks for a refusal among them). Empty unless every vector passed.
+    replayed: ok ? app.vectors.map((v) => ({ request: v.request, response: v.response })) : [],
     compared: built.compared,
     message: ok
       ? `Built in ${seconds} s with nothing compiled: the holo ${relative(process.cwd(), path) || path}, ${built.bytes.length} bytes, named ${built.label}, for the model sha256:${built.semanticId}. Proved: Lean's kernel accepted every one of the model's ${provedNow.theorems.length} theorems. Tested, not proved: the holo's guest is the evaluator guest running the model's program, and it answers ${acceptance.passed} of ${acceptance.total} acceptance vectors and ${built.compared.agreed} of ${built.compared.total} requests made from them as the model's own definitions do.`
