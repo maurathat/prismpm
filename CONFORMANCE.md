@@ -242,6 +242,7 @@ The three honesty levels:
 | `RP-10` | `build` | All generated documentation is regenerated and validated against model registers. |
 | `RP-11` | `build` | License metadata and files conform to dual MIT/Apache-2.0 requirements. |
 | `RP-12` | `build` | Release artifacts are refused unless all release criteria and verifications hold. |
+| `RP-13` | `build` | The portable SDK passive-README classifier refuses unsupported Git changes and malformed documentation references, and its planted fixture inventory executes without skips. |
 
 ## sdk
 
