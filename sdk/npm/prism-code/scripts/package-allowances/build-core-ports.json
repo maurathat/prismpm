@@ -1,0 +1,4 @@
+{
+  "kib": 18,
+  "reason": "The build of a text application with no disk of its own, so a browser worker runs what prism_build runs (canonical-serverless-build, interface 1 of the completion plan): the build src/journey/build-core.mjs, about 10.7 KiB; LexLean run on files in memory, lexlean-core.mjs, about 3.6 KiB; the toolchain admitted through a store and a fetch, toolchain.mjs, about 5.0 KiB; less about 1.9 KiB that left engine.mjs and lexlean-wasm.mjs for them."
+}

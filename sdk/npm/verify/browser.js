@@ -328,8 +328,8 @@ const __vendor_spec = (() => {
    */
   const FORMAT_REVISIONS = freeze({
     '2026-10-23': freeze({
-      /** The holo versions that carry this revision: v4 (Holo/1) and v5 (UORC, ADR-017). */
-      holoVersions: freeze([4, 5]),
+      /** The holo versions that carry this revision: v4 (Holo/1), v5 (UORC, ADR-017) and v6 (UORC sealed by BLAKE3, ADR-018). */
+      holoVersions: freeze([4, 5, 6]),
       physicalVersion: PHYSICAL_VERSION,
       flags: FLAGS,
       sectionOrder: SECTION_ORDER,
@@ -356,8 +356,8 @@ const __vendor_spec = (() => {
      * the first revision an archive matches, so those keep their date.
      */
     '2026-11-18': freeze({
-      /** Holo v5 only: a v4 application manifest is a fixed 356-byte suffix naming @1 and holo_run. */
-      holoVersions: freeze([5]),
+      /** Holo v5 and v6 only: a v4 application manifest is a fixed 356-byte suffix naming @1 and holo_run. */
+      holoVersions: freeze([5, 6]),
       physicalVersion: PHYSICAL_VERSION,
       flags: FLAGS,
       sectionOrder: SECTION_ORDER,
@@ -391,6 +391,22 @@ const __vendor_spec = (() => {
     ROLES: freeze(['manifest', 'source-manifest', 'provenance', 'capabilities', 'guest', 'view', 'model']),
     ROLE_ATTESTATIONS: 'attestations',
     KAPPA_PREFIX: 'sha256:',
+  });
+
+  /**
+   * Holo v6 (ADR-018): holo v5's objects and roles in a UORC archive of profile 2,
+   * sealed by plain BLAKE3 of every byte before the seal. Every identity is a
+   * κ-label, `blake3:` and the hex unkeyed BLAKE3 of the bytes it names; the κ of
+   * the file is its address. Its OCI layer digest is still the file's sha256.
+   */
+  const HOLO_V6 = freeze({
+    /** "UORC", format 2, profile 2, scope 0 (self-contained), representation 0 (raw). */
+    MAGIC_HEX: '554f52430202',
+    MANIFEST_SCHEMA: 'prism/holo/6',
+    PROVENANCE_SCHEMA: 'prismpm/model-provenance/3',
+    ROLES: HOLO_V5.ROLES,
+    ROLE_ATTESTATIONS: 'attestations',
+    KAPPA_PREFIX: 'blake3:',
   });
   /**
    * Build provenance of a holo, issue #268 (docs/proposals/268-build-provenance.md). The predicate is SLSA
@@ -462,6 +478,7 @@ const __vendor_spec = (() => {
     "prismpm/model-document/9": "schemas/documents/model-document-v9.schema.json",
     "prismpm/model-provenance/1": "schemas/documents/model-provenance-v1.schema.json",
     "prismpm/model-provenance/2": "schemas/documents/model-provenance-v2.schema.json",
+    "prismpm/model-provenance/3": "schemas/documents/model-provenance-v3.schema.json",
   });
 
   /** The holo sections this reader checks. The spec's HOLO_SCHEMAS lists every section schema. */
@@ -471,7 +488,7 @@ const __vendor_spec = (() => {
     "SOURCE_MANIFEST": "schemas/holo/source-manifest.schema.json",
     "APPLICATION_DIRECTORY": "schemas/holo/application-directory.schema.json",
   });
-  return Object.freeze({ FORMAT_REVISION, MAGIC, PHYSICAL_VERSION, FLAGS, HEADER_LENGTH, TABLE_ENTRY_LENGTH, SECTION_COUNT, BODY_OFFSET, FOOTER_LENGTH, SECTION_KIND, SECTION_ORDER, LABEL_PREFIX, LABEL_LENGTH, APP_MANIFEST, CAPABILITY_SET, EXTENSION, CORE_WASM, CORE_WASM_SESSION, CORE_WASM_CHECKPOINT, WORLDS, HOLOVIEW, ATTESTATION, ATTESTATION_BUNDLE, OCI, FORMAT_REVISIONS, HOLO_V5, PROVENANCE, POLICY, ASSURANCE, SCHEMAS, HOLO_SCHEMAS });
+  return Object.freeze({ FORMAT_REVISION, MAGIC, PHYSICAL_VERSION, FLAGS, HEADER_LENGTH, TABLE_ENTRY_LENGTH, SECTION_COUNT, BODY_OFFSET, FOOTER_LENGTH, SECTION_KIND, SECTION_ORDER, LABEL_PREFIX, LABEL_LENGTH, APP_MANIFEST, CAPABILITY_SET, EXTENSION, CORE_WASM, CORE_WASM_SESSION, CORE_WASM_CHECKPOINT, WORLDS, HOLOVIEW, ATTESTATION, ATTESTATION_BUNDLE, OCI, FORMAT_REVISIONS, HOLO_V5, HOLO_V6, PROVENANCE, POLICY, ASSURANCE, SCHEMAS, HOLO_SCHEMAS });
 })();
 
 // src/vendor/blake3.mjs
@@ -485,202 +502,214 @@ const __vendor_blake3 = (() => {
    *
    * Hologram kappas, blob labels and the `.holo` footer are BLAKE3, which Node's
    * `crypto` does not provide, so the package carries its own.
+   *
+   * It is written for speed, because a page re-derives the label of every byte
+   * it keeps: the state of a compression is sixteen local numbers, a block is
+   * read from the input where it lies, and nothing is allocated for a block.
    */
 
   const IV = new Uint32Array([
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
   ]);
   const MSG_PERMUTATION = [2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
+  // Which message word each of a round's sixteen places reads, for the seven rounds: the permutation, applied round
+  // after round, written out once.
+  const SCHEDULE = (() => {
+    const rows = [[...Array(16).keys()]];
+    for (let round = 1; round < 7; round++) rows.push(MSG_PERMUTATION.map((from) => rows[round - 1][from]));
+    return Uint8Array.from(rows.flat());
+  })();
 
   const BLOCK_LEN = 64;
-  const CHUNK_LEN = 1024;
+  const BLOCKS_IN_CHUNK = 16;
   const CHUNK_START = 1;
   const CHUNK_END = 2;
   const PARENT = 4;
   const ROOT = 8;
+  const TWO_32 = 4294967296;
 
-  function rotr(x, n) {
-    return (x >>> n) | (x << (32 - n));
+  /**
+   * The compression function. Reads the chaining value at `cv[cvAt..]` and the sixteen message words in `m`, and
+   * writes the new chaining value to `out[outAt..outAt + 8]`; with `wide`, the other eight words of the output too.
+   * `out` may be `cv`: the chaining value is read whole before anything is written.
+   */
+  function compress(cv, cvAt, m, counterLow, counterHigh, blockLen, flags, out, outAt, wide) {
+    let s0 = cv[cvAt + 0] | 0;
+    let s1 = cv[cvAt + 1] | 0;
+    let s2 = cv[cvAt + 2] | 0;
+    let s3 = cv[cvAt + 3] | 0;
+    let s4 = cv[cvAt + 4] | 0;
+    let s5 = cv[cvAt + 5] | 0;
+    let s6 = cv[cvAt + 6] | 0;
+    let s7 = cv[cvAt + 7] | 0;
+    let s8 = IV[0] | 0;
+    let s9 = IV[1] | 0;
+    let s10 = IV[2] | 0;
+    let s11 = IV[3] | 0;
+    let s12 = counterLow | 0;
+    let s13 = counterHigh | 0;
+    let s14 = blockLen | 0;
+    let s15 = flags | 0;
+    for (let at = 0; at < 112; at += 16) {
+      s0 = (s0 + s4 + m[SCHEDULE[at + 0]]) | 0; s12 ^= s0; s12 = (s12 >>> 16) | (s12 << 16);
+      s8 = (s8 + s12) | 0; s4 ^= s8; s4 = (s4 >>> 12) | (s4 << 20);
+      s0 = (s0 + s4 + m[SCHEDULE[at + 1]]) | 0; s12 ^= s0; s12 = (s12 >>> 8) | (s12 << 24);
+      s8 = (s8 + s12) | 0; s4 ^= s8; s4 = (s4 >>> 7) | (s4 << 25);
+      s1 = (s1 + s5 + m[SCHEDULE[at + 2]]) | 0; s13 ^= s1; s13 = (s13 >>> 16) | (s13 << 16);
+      s9 = (s9 + s13) | 0; s5 ^= s9; s5 = (s5 >>> 12) | (s5 << 20);
+      s1 = (s1 + s5 + m[SCHEDULE[at + 3]]) | 0; s13 ^= s1; s13 = (s13 >>> 8) | (s13 << 24);
+      s9 = (s9 + s13) | 0; s5 ^= s9; s5 = (s5 >>> 7) | (s5 << 25);
+      s2 = (s2 + s6 + m[SCHEDULE[at + 4]]) | 0; s14 ^= s2; s14 = (s14 >>> 16) | (s14 << 16);
+      s10 = (s10 + s14) | 0; s6 ^= s10; s6 = (s6 >>> 12) | (s6 << 20);
+      s2 = (s2 + s6 + m[SCHEDULE[at + 5]]) | 0; s14 ^= s2; s14 = (s14 >>> 8) | (s14 << 24);
+      s10 = (s10 + s14) | 0; s6 ^= s10; s6 = (s6 >>> 7) | (s6 << 25);
+      s3 = (s3 + s7 + m[SCHEDULE[at + 6]]) | 0; s15 ^= s3; s15 = (s15 >>> 16) | (s15 << 16);
+      s11 = (s11 + s15) | 0; s7 ^= s11; s7 = (s7 >>> 12) | (s7 << 20);
+      s3 = (s3 + s7 + m[SCHEDULE[at + 7]]) | 0; s15 ^= s3; s15 = (s15 >>> 8) | (s15 << 24);
+      s11 = (s11 + s15) | 0; s7 ^= s11; s7 = (s7 >>> 7) | (s7 << 25);
+      s0 = (s0 + s5 + m[SCHEDULE[at + 8]]) | 0; s15 ^= s0; s15 = (s15 >>> 16) | (s15 << 16);
+      s10 = (s10 + s15) | 0; s5 ^= s10; s5 = (s5 >>> 12) | (s5 << 20);
+      s0 = (s0 + s5 + m[SCHEDULE[at + 9]]) | 0; s15 ^= s0; s15 = (s15 >>> 8) | (s15 << 24);
+      s10 = (s10 + s15) | 0; s5 ^= s10; s5 = (s5 >>> 7) | (s5 << 25);
+      s1 = (s1 + s6 + m[SCHEDULE[at + 10]]) | 0; s12 ^= s1; s12 = (s12 >>> 16) | (s12 << 16);
+      s11 = (s11 + s12) | 0; s6 ^= s11; s6 = (s6 >>> 12) | (s6 << 20);
+      s1 = (s1 + s6 + m[SCHEDULE[at + 11]]) | 0; s12 ^= s1; s12 = (s12 >>> 8) | (s12 << 24);
+      s11 = (s11 + s12) | 0; s6 ^= s11; s6 = (s6 >>> 7) | (s6 << 25);
+      s2 = (s2 + s7 + m[SCHEDULE[at + 12]]) | 0; s13 ^= s2; s13 = (s13 >>> 16) | (s13 << 16);
+      s8 = (s8 + s13) | 0; s7 ^= s8; s7 = (s7 >>> 12) | (s7 << 20);
+      s2 = (s2 + s7 + m[SCHEDULE[at + 13]]) | 0; s13 ^= s2; s13 = (s13 >>> 8) | (s13 << 24);
+      s8 = (s8 + s13) | 0; s7 ^= s8; s7 = (s7 >>> 7) | (s7 << 25);
+      s3 = (s3 + s4 + m[SCHEDULE[at + 14]]) | 0; s14 ^= s3; s14 = (s14 >>> 16) | (s14 << 16);
+      s9 = (s9 + s14) | 0; s4 ^= s9; s4 = (s4 >>> 12) | (s4 << 20);
+      s3 = (s3 + s4 + m[SCHEDULE[at + 15]]) | 0; s14 ^= s3; s14 = (s14 >>> 8) | (s14 << 24);
+      s9 = (s9 + s14) | 0; s4 ^= s9; s4 = (s4 >>> 7) | (s4 << 25);
+    }
+    if (wide) {
+      out[outAt + 8] = s8 ^ cv[cvAt + 0];
+      out[outAt + 9] = s9 ^ cv[cvAt + 1];
+      out[outAt + 10] = s10 ^ cv[cvAt + 2];
+      out[outAt + 11] = s11 ^ cv[cvAt + 3];
+      out[outAt + 12] = s12 ^ cv[cvAt + 4];
+      out[outAt + 13] = s13 ^ cv[cvAt + 5];
+      out[outAt + 14] = s14 ^ cv[cvAt + 6];
+      out[outAt + 15] = s15 ^ cv[cvAt + 7];
+    }
+    out[outAt + 0] = s0 ^ s8;
+    out[outAt + 1] = s1 ^ s9;
+    out[outAt + 2] = s2 ^ s10;
+    out[outAt + 3] = s3 ^ s11;
+    out[outAt + 4] = s4 ^ s12;
+    out[outAt + 5] = s5 ^ s13;
+    out[outAt + 6] = s6 ^ s14;
+    out[outAt + 7] = s7 ^ s15;
   }
 
-  function g(s, a, b, c, d, mx, my) {
-    s[a] = (s[a] + s[b] + mx) >>> 0;
-    s[d] = rotr(s[d] ^ s[a], 16);
-    s[c] = (s[c] + s[d]) >>> 0;
-    s[b] = rotr(s[b] ^ s[c], 12);
-    s[a] = (s[a] + s[b] + my) >>> 0;
-    s[d] = rotr(s[d] ^ s[a], 8);
-    s[c] = (s[c] + s[d]) >>> 0;
-    s[b] = rotr(s[b] ^ s[c], 7);
-  }
-
-  function round(s, m) {
-    g(s, 0, 4, 8, 12, m[0], m[1]);
-    g(s, 1, 5, 9, 13, m[2], m[3]);
-    g(s, 2, 6, 10, 14, m[4], m[5]);
-    g(s, 3, 7, 11, 15, m[6], m[7]);
-    g(s, 0, 5, 10, 15, m[8], m[9]);
-    g(s, 1, 6, 11, 12, m[10], m[11]);
-    g(s, 2, 7, 8, 13, m[12], m[13]);
-    g(s, 3, 4, 9, 14, m[14], m[15]);
-  }
-
-  function permute(m) {
-    const out = new Uint32Array(16);
-    for (let i = 0; i < 16; i++) out[i] = m[MSG_PERMUTATION[i]];
-    return out;
-  }
-
-  /** The compression function: returns the 16-word output state. */
-  function compress(cv, blockWords, counter, blockLen, flags) {
-    const s = new Uint32Array(16);
-    s.set(cv.subarray(0, 8), 0);
-    s.set(IV.subarray(0, 4), 8);
-    s[12] = Number(BigInt.asUintN(32, BigInt(counter)));
-    s[13] = Number(BigInt(counter) >> 32n);
-    s[14] = blockLen;
-    s[15] = flags;
-    let m = Uint32Array.from(blockWords);
-    for (let i = 0; i < 7; i++) {
-      round(s, m);
-      if (i < 6) m = permute(m);
-    }
-    for (let i = 0; i < 8; i++) {
-      s[i] ^= s[i + 8];
-      s[i + 8] ^= cv[i];
-    }
-    return s;
-  }
-
-  function wordsFromBlock(block, len) {
-    const words = new Uint32Array(16);
-    for (let i = 0; i < 16; i++) {
-      const o = i * 4;
-      words[i] =
-        (o < len ? block[o] : 0) |
-        ((o + 1 < len ? block[o + 1] : 0) << 8) |
-        ((o + 2 < len ? block[o + 2] : 0) << 16) |
-        ((o + 3 < len ? block[o + 3] : 0) << 24);
-    }
-    return words;
-  }
-
-  class Output {
-    constructor(inputCv, blockWords, counter, blockLen, flags) {
-      this.inputCv = inputCv;
-      this.blockWords = blockWords;
-      this.counter = counter;
-      this.blockLen = blockLen;
-      this.flags = flags;
-    }
-
-    chainingValue() {
-      return compress(this.inputCv, this.blockWords, this.counter, this.blockLen, this.flags).slice(0, 8);
-    }
-
-    rootBytes(length) {
-      const out = new Uint8Array(length);
-      let written = 0;
-      let outputCounter = 0;
-      while (written < length) {
-        const words = compress(this.inputCv, this.blockWords, outputCounter, this.blockLen, this.flags | ROOT);
-        for (let i = 0; i < 16 && written < length; i++) {
-          const w = words[i];
-          for (let b = 0; b < 4 && written < length; b++) out[written++] = (w >>> (8 * b)) & 0xff;
-        }
-        outputCounter++;
-      }
-      return out;
-    }
-  }
-
-  class ChunkState {
-    constructor(key, chunkCounter) {
-      this.cv = Uint32Array.from(key);
-      this.chunkCounter = chunkCounter;
-      this.block = new Uint8Array(BLOCK_LEN);
-      this.blockLen = 0;
-      this.blocksCompressed = 0;
-    }
-
-    length() {
-      return BLOCK_LEN * this.blocksCompressed + this.blockLen;
-    }
-
-    startFlag() {
-      return this.blocksCompressed === 0 ? CHUNK_START : 0;
-    }
-
-    update(input) {
-      let offset = 0;
-      while (offset < input.length) {
-        if (this.blockLen === BLOCK_LEN) {
-          const words = wordsFromBlock(this.block, BLOCK_LEN);
-          this.cv = compress(this.cv, words, this.chunkCounter, BLOCK_LEN, this.startFlag()).slice(0, 8);
-          this.blocksCompressed++;
-          this.block.fill(0);
-          this.blockLen = 0;
-        }
-        const take = Math.min(BLOCK_LEN - this.blockLen, input.length - offset);
-        this.block.set(input.subarray(offset, offset + take), this.blockLen);
-        this.blockLen += take;
-        offset += take;
-      }
-    }
-
-    output() {
-      const words = wordsFromBlock(this.block, this.blockLen);
-      return new Output(this.cv, words, this.chunkCounter, this.blockLen, this.startFlag() | CHUNK_END);
-    }
-  }
-
-  function parentOutput(left, right, key) {
-    const words = new Uint32Array(16);
-    words.set(left, 0);
-    words.set(right, 8);
-    return new Output(key, words, 0, BLOCK_LEN, PARENT);
+  /** The sixteen little-endian words of the 64 bytes at `bytes[at..]`, into `m`. */
+  function loadBlock(m, bytes, at) {
+    for (let i = 0, o = at; i < 16; i++, o += 4) m[i] = bytes[o] | (bytes[o + 1] << 8) | (bytes[o + 2] << 16) | (bytes[o + 3] << 24);
   }
 
   class Blake3 {
     constructor() {
-      this.key = IV;
-      this.chunk = new ChunkState(this.key, 0);
-      this.stack = [];
+      // The chunk being read: its chaining value, how many of its blocks are compressed, and which chunk it is.
+      this.cv = Uint32Array.from(IV);
+      this.blocks = 0;
+      this.chunks = 0;
+      // The bytes not yet compressed: at most one block. The last block of a chunk, and of the input, waits here,
+      // because its flags are known only when it is known what follows.
+      this.block = new Uint8Array(BLOCK_LEN);
+      this.blockLen = 0;
+      // The chaining values of the subtrees to the left, deepest last: one for each set bit of the chunk count.
+      this.stack = new Uint32Array(8 * 54);
+      this.depth = 0;
+      this.m = new Uint32Array(16);
+      this.pair = new Uint32Array(16);
+      this.top = new Uint32Array(8);
     }
 
-    pushChunkCv(cv, totalChunks) {
-      let newCv = cv;
-      let n = totalChunks;
-      while ((n & 1) === 0) {
-        newCv = parentOutput(this.stack.pop(), newCv, this.key).chainingValue();
-        n = Math.floor(n / 2);
+    /** Compress the block at `bytes[at..]`, which more input follows. */
+    full(bytes, at) {
+      const m = this.m;
+      loadBlock(m, bytes, at);
+      const low = this.chunks >>> 0;
+      const high = (this.chunks / TWO_32) >>> 0;
+      const start = this.blocks === 0 ? CHUNK_START : 0;
+      if (this.blocks < BLOCKS_IN_CHUNK - 1) {
+        compress(this.cv, 0, m, low, high, BLOCK_LEN, start, this.cv, 0, false);
+        this.blocks++;
+        return;
       }
-      this.stack.push(newCv);
+      // The chunk's last block, and not the input's: the chunk is whole. Its chaining value joins the tree, merging
+      // with each subtree to its left that is now as large as it.
+      const top = this.top;
+      compress(this.cv, 0, m, low, high, BLOCK_LEN, start | CHUNK_END, top, 0, false);
+      const pair = this.pair;
+      for (let total = this.chunks + 1; total % 2 === 0; total /= 2) {
+        this.depth--;
+        pair.set(this.stack.subarray(this.depth * 8, this.depth * 8 + 8), 0);
+        pair.set(top, 8);
+        compress(IV, 0, pair, 0, 0, BLOCK_LEN, PARENT, top, 0, false);
+      }
+      this.stack.set(top, this.depth * 8);
+      this.depth++;
+      this.cv.set(IV);
+      this.blocks = 0;
+      this.chunks++;
     }
 
     update(input) {
       const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-      let offset = 0;
-      while (offset < bytes.length) {
-        if (this.chunk.length() === CHUNK_LEN) {
-          const cv = this.chunk.output().chainingValue();
-          const totalChunks = this.chunk.chunkCounter + 1;
-          this.pushChunkCv(cv, totalChunks);
-          this.chunk = new ChunkState(this.key, totalChunks);
+      const end = bytes.length;
+      let at = 0;
+      while (at < end) {
+        if (this.blockLen === BLOCK_LEN) {
+          this.full(this.block, 0);
+          this.blockLen = 0;
         }
-        const take = Math.min(CHUNK_LEN - this.chunk.length(), bytes.length - offset);
-        this.chunk.update(bytes.subarray(offset, offset + take));
-        offset += take;
+        // Whole blocks that more input follows are read where they lie.
+        if (this.blockLen === 0) for (; end - at > BLOCK_LEN; at += BLOCK_LEN) this.full(bytes, at);
+        const take = Math.min(BLOCK_LEN - this.blockLen, end - at);
+        this.block.set(bytes.subarray(at, at + take), this.blockLen);
+        this.blockLen += take;
+        at += take;
       }
       return this;
     }
 
+    /** The digest of what was read so far. Reading may go on after it. */
     digest(length = 32) {
-      let output = this.chunk.output();
-      for (let i = this.stack.length - 1; i >= 0; i--) {
-        output = parentOutput(this.stack[i], output.chainingValue(), this.key);
+      // The waiting block ends its chunk; bytes past its length are zero.
+      const last = new Uint8Array(BLOCK_LEN);
+      last.set(this.block.subarray(0, this.blockLen));
+      const m = new Uint32Array(16);
+      loadBlock(m, last, 0);
+      let cv = Uint32Array.from(this.cv);
+      let low = this.chunks >>> 0;
+      let high = (this.chunks / TWO_32) >>> 0;
+      let blockLen = this.blockLen;
+      let flags = (this.blocks === 0 ? CHUNK_START : 0) | CHUNK_END;
+      // Each subtree to the left becomes the left half of a parent, up to the root.
+      for (let d = this.depth - 1; d >= 0; d--) {
+        const right = new Uint32Array(8);
+        compress(cv, 0, m, low, high, blockLen, flags, right, 0, false);
+        m.set(this.stack.subarray(d * 8, d * 8 + 8), 0);
+        m.set(right, 8);
+        cv = IV;
+        low = 0;
+        high = 0;
+        blockLen = BLOCK_LEN;
+        flags = PARENT;
       }
-      return output.rootBytes(length);
+      const out = new Uint8Array(length);
+      const words = new Uint32Array(16);
+      for (let written = 0, block = 0; written < length; block++) {
+        compress(cv, 0, m, block >>> 0, (block / TWO_32) >>> 0, blockLen, flags | ROOT, words, 0, true);
+        for (let i = 0; i < 16 && written < length; i++) {
+          const w = words[i];
+          for (let b = 0; b < 4 && written < length; b++) out[written++] = (w >>> (8 * b)) & 0xff;
+        }
+      }
+      return out;
     }
   }
 
@@ -689,9 +718,11 @@ const __vendor_blake3 = (() => {
     return new Blake3().update(bytes).digest(length);
   }
 
+  const HEX = Array.from({ length: 256 }, (_, b) => b.toString(16).padStart(2, '0'));
+
   function toHex(bytes) {
     let s = '';
-    for (const b of bytes) s += b.toString(16).padStart(2, '0');
+    for (const b of bytes) s += HEX[b];
     return s;
   }
 
@@ -897,6 +928,7 @@ const __vendor_schemas = (() => {
     "schemas/documents/model-document-v9.schema.json": {"$id":"prismpm/model-document/9","$schema":"https://json-schema.org/draft/2020-12/schema","title":"BinaryApplicationModelDocument","type":"object","additionalProperties":false,"properties":{"application":{"$ref":"#/$defs/application"},"architecture":{"$ref":"#/$defs/architecture"},"provenance":{"$ref":"#/$defs/provenance"},"quality":{"$ref":"#/$defs/quality"},"schema":{"const":"prismpm/model-document/9"},"security":{"$ref":"#/$defs/security"},"standards_profile":{"oneOf":[{"const":[]},{"const":["ISO-25010-2023","ISO-27005-2022","ISO-27034-1-2011","ISO-27034-5-2017","ISO-42010-2022"]}]}},"required":["application","architecture","provenance","quality","schema","security","standards_profile"],"$defs":{"application":{"type":"object","additionalProperties":false,"properties":{"profile":{"const":"prismpm/binary-application/1"},"name":{"type":"string","minLength":1,"maxLength":128,"pattern":"^[A-Za-z0-9](?:[A-Za-z0-9_. -]*[A-Za-z0-9_-])?$"},"cargo_name":{"pattern":"^[a-z][a-z0-9_-]{0,63}$","type":"string"},"cargo_version":{"pattern":"^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$","type":"string"},"cargo_description":{"minLength":1,"type":"string"},"cargo_repository":{"format":"uri","pattern":"^https://","type":"string"},"cargo_homepage":{"format":"uri","pattern":"^https://","type":"string"},"library_roots":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","pattern":"^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$"}},"entry_root":{"type":"string","pattern":"^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$"},"core_contract":{"enum":["hologram:guest/core-wasm@1","hologram:guest/core-wasm@2","hologram:guest/core-wasm@3"]},"request_maximum":{"maximum":67108864,"minimum":1,"type":"integer"},"response_maximum":{"maximum":67108864,"minimum":1,"type":"integer"},"input_count_maximum":{"maximum":64,"minimum":0,"type":"integer"},"input_maximum":{"maximum":1073741824,"minimum":0,"type":"integer"},"input_total_maximum":{"maximum":1073741824,"minimum":0,"type":"integer"},"core_memory_pages":{"maximum":32767,"minimum":1,"type":"integer"},"core_stack_bytes":{"maximum":4294967295,"minimum":16,"multipleOf":16,"type":"integer"},"session":{"$ref":"#/$defs/binary_session"},"acceptance_vectors":{"items":{"$ref":"#/$defs/binary_acceptance_vector"},"type":"array"},"acceptance_sessions":{"items":{"items":{"$ref":"#/$defs/binary_acceptance_step"},"minItems":1,"type":"array"},"type":"array"},"acceptance_inputs":{"items":{"items":{"maximum":255,"minimum":0,"type":"integer"},"type":"array","maxItems":1048576},"type":"array"},"capabilities_empty":{"const":true},"fat_archive":{"const":true},"primary_layer":{"const":0},"view_layer":{"const":1}},"required":["acceptance_inputs","acceptance_sessions","acceptance_vectors","capabilities_empty","cargo_description","cargo_homepage","cargo_name","cargo_repository","cargo_version","core_contract","core_memory_pages","core_stack_bytes","entry_root","fat_archive","input_count_maximum","input_maximum","input_total_maximum","library_roots","name","primary_layer","profile","request_maximum","response_maximum","session","view_layer"],"oneOf":[{"properties":{"core_contract":{"const":"hologram:guest/core-wasm@1"},"session":{"type":"null"},"acceptance_vectors":{"minItems":1},"acceptance_sessions":{"maxItems":0}}},{"properties":{"core_contract":{"enum":["hologram:guest/core-wasm@2","hologram:guest/core-wasm@3"]},"session":{"type":"object"},"acceptance_vectors":{"maxItems":0},"acceptance_sessions":{"minItems":1}}}]},"provenance":{"additionalProperties":false,"properties":{"compiler_semantics_id":{"$ref":"#/$defs/sha256"},"emitter_semantics_id":{"$ref":"#/$defs/sha256"},"facet_packages":{"items":{"$ref":"#/$defs/facet"},"maxItems":3,"type":"array"},"semantic_id":{"$ref":"#/$defs/sha256"},"snapshot_id":{"$ref":"#/$defs/sha256"},"source_id":{"$ref":"#/$defs/sha256"}},"required":["compiler_semantics_id","emitter_semantics_id","facet_packages","semantic_id","snapshot_id","source_id"],"type":"object"},"sha256":{"pattern":"^[0-9a-f]{64}$","type":"string"},"activity":{"additionalProperties":false,"properties":{"control_index":{"$ref":"#/$defs/index"},"id":{"$ref":"#/$defs/qualified_entity"},"index":{"$ref":"#/$defs/index"}},"required":["control_index","id","index"],"type":"object"},"architecture":{"additionalProperties":false,"properties":{"component_kinds":{"items":{"$ref":"#/$defs/catalog"},"type":"array"},"components":{"items":{"$ref":"#/$defs/component"},"type":"array"},"concerns":{"items":{"$ref":"#/$defs/described"},"type":"array"},"edge_kinds":{"items":{"$ref":"#/$defs/catalog"},"type":"array"},"edges":{"items":{"$ref":"#/$defs/edge"},"type":"array"},"model_kinds":{"items":{"$ref":"#/$defs/catalog"},"type":"array"},"stakeholders":{"items":{"$ref":"#/$defs/described"},"type":"array"},"viewpoints":{"items":{"$ref":"#/$defs/viewpoint"},"type":"array"},"views":{"items":{"$ref":"#/$defs/view"},"type":"array"}},"required":["component_kinds","components","concerns","edge_kinds","edges","model_kinds","stakeholders","viewpoints","views"],"type":"object"},"asset":{"additionalProperties":false,"properties":{"component_index":{"$ref":"#/$defs/index"},"id":{"$ref":"#/$defs/qualified_entity"},"index":{"$ref":"#/$defs/index"}},"required":["component_index","id","index"],"type":"object"},"catalog":{"additionalProperties":false,"properties":{"id":{"$ref":"#/$defs/qualified_catalog"},"index":{"$ref":"#/$defs/index"}},"required":["id","index"],"type":"object"},"component":{"additionalProperties":false,"properties":{"id":{"$ref":"#/$defs/qualified_entity"},"index":{"$ref":"#/$defs/index"},"kind_id":{"$ref":"#/$defs/qualified_catalog"},"name":{"type":"string","maxLength":256,"pattern":"^[^\\u0000-\\u001f\\u007f-\\u009f]*$"},"text":{"type":"string","maxLength":4096,"pattern":"^[^\\u0000-\\u0009\\u000b-\\u001f\\u007f-\\u009f]*$"}},"required":["id","index","kind_id"],"type":"object"},"control":{"additionalProperties":false,"properties":{"id":{"$ref":"#/$defs/qualified_entity"},"index":{"$ref":"#/$defs/index"},"risk_index":{"$ref":"#/$defs/index"}},"required":["id","index","risk_index"],"type":"object"},"described":{"type":"object","additionalProperties":false,"properties":{"id":{"$ref":"#/$defs/qualified_entity"},"index":{"$ref":"#/$defs/index"},"name":{"type":"string","maxLength":256,"pattern":"^[^\\u0000-\\u001f\\u007f-\\u009f]*$"},"text":{"type":"string","maxLength":4096,"pattern":"^[^\\u0000-\\u0009\\u000b-\\u001f\\u007f-\\u009f]*$"}},"required":["id","index"]},"edge":{"additionalProperties":false,"properties":{"from_index":{"$ref":"#/$defs/index"},"id":{"$ref":"#/$defs/qualified_entity"},"index":{"$ref":"#/$defs/index"},"kind_id":{"$ref":"#/$defs/qualified_catalog"},"to_index":{"$ref":"#/$defs/index"}},"required":["from_index","id","index","kind_id","to_index"],"type":"object"},"facet":{"additionalProperties":false,"properties":{"content_id":{"$ref":"#/$defs/sha256"},"package":{"enum":["prism.arch","prism.qual","prism.sec"]},"version":{"const":"1.0.0"}},"required":["content_id","package","version"],"type":"object"},"index":{"maximum":18446744073709552000,"minimum":0,"type":"integer"},"indexed":{"additionalProperties":false,"properties":{"id":{"$ref":"#/$defs/qualified_entity"},"index":{"$ref":"#/$defs/index"}},"required":["id","index"],"type":"object"},"measure":{"additionalProperties":false,"properties":{"id":{"$ref":"#/$defs/qualified_entity"},"index":{"$ref":"#/$defs/index"},"requirement_index":{"$ref":"#/$defs/index"},"threshold":{"$ref":"#/$defs/index"}},"required":["id","index","requirement_index","threshold"],"type":"object"},"measurement":{"additionalProperties":false,"properties":{"control_index":{"$ref":"#/$defs/index"},"id":{"$ref":"#/$defs/qualified_entity"},"index":{"$ref":"#/$defs/index"},"passed":{"type":"boolean"}},"required":["control_index","id","index","passed"],"type":"object"},"qualified_catalog":{"pattern":"^prism\\.(arch|qual|sec)@1\\.0\\.0::[A-Za-z][A-Za-z0-9_]*\\.[A-Za-z][A-Za-z0-9_]*$","type":"string"},"qualified_entity":{"pattern":"^[A-Za-z][A-Za-z0-9_.]*::[A-Za-z][A-Za-z0-9_]*$","type":"string"},"quality":{"additionalProperties":false,"properties":{"characteristics":{"items":{"$ref":"#/$defs/indexed"},"type":"array"},"measures":{"items":{"$ref":"#/$defs/measure"},"type":"array"},"requirements":{"items":{"$ref":"#/$defs/requirement"},"type":"array"},"subcharacteristics":{"items":{"$ref":"#/$defs/subcharacteristic"},"type":"array"}},"required":["characteristics","measures","requirements","subcharacteristics"],"type":"object"},"requirement":{"additionalProperties":false,"properties":{"id":{"$ref":"#/$defs/qualified_entity"},"index":{"$ref":"#/$defs/index"},"subcharacteristic_index":{"$ref":"#/$defs/index"}},"required":["id","index","subcharacteristic_index"],"type":"object"},"risk":{"additionalProperties":false,"properties":{"asset_index":{"$ref":"#/$defs/index"},"id":{"$ref":"#/$defs/qualified_entity"},"impact_id":{"$ref":"#/$defs/qualified_catalog"},"index":{"$ref":"#/$defs/index"},"likelihood_id":{"$ref":"#/$defs/qualified_catalog"},"threat_index":{"$ref":"#/$defs/index"}},"required":["asset_index","id","impact_id","index","likelihood_id","threat_index"],"type":"object"},"security":{"additionalProperties":false,"properties":{"activities":{"items":{"$ref":"#/$defs/activity"},"type":"array"},"assets":{"items":{"$ref":"#/$defs/asset"},"type":"array"},"controls":{"items":{"$ref":"#/$defs/control"},"type":"array"},"impacts":{"items":{"$ref":"#/$defs/catalog"},"type":"array"},"likelihoods":{"items":{"$ref":"#/$defs/catalog"},"type":"array"},"measurements":{"items":{"$ref":"#/$defs/measurement"},"type":"array"},"risks":{"items":{"$ref":"#/$defs/risk"},"type":"array"},"threats":{"items":{"$ref":"#/$defs/indexed"},"type":"array"}},"required":["activities","assets","controls","impacts","likelihoods","measurements","risks","threats"],"type":"object"},"subcharacteristic":{"additionalProperties":false,"properties":{"characteristic_index":{"$ref":"#/$defs/index"},"id":{"$ref":"#/$defs/qualified_entity"},"index":{"$ref":"#/$defs/index"}},"required":["characteristic_index","id","index"],"type":"object"},"view":{"additionalProperties":false,"properties":{"id":{"$ref":"#/$defs/qualified_entity"},"index":{"$ref":"#/$defs/index"},"model_kind_index":{"$ref":"#/$defs/index"},"viewpoint_index":{"$ref":"#/$defs/index"}},"required":["id","index","model_kind_index","viewpoint_index"],"type":"object"},"viewpoint":{"additionalProperties":false,"properties":{"concern_index":{"$ref":"#/$defs/index"},"id":{"$ref":"#/$defs/qualified_entity"},"index":{"$ref":"#/$defs/index"},"model_kind_index":{"$ref":"#/$defs/index"},"stakeholder_index":{"$ref":"#/$defs/index"}},"required":["concern_index","id","index","model_kind_index","stakeholder_index"],"type":"object"},"binary_input_digests":{"items":{"items":{"maximum":255,"minimum":0,"type":"integer"},"type":"array","minItems":32,"maxItems":32},"maxItems":64,"type":"array","description":"The BLAKE3 digests of the inputs a request names, in order."},"binary_acceptance_vector":{"additionalProperties":false,"type":"object","properties":{"request":{"items":{"maximum":255,"minimum":0,"type":"integer"},"type":"array"},"inputs":{"$ref":"#/$defs/binary_input_digests"},"response":{"items":{"maximum":255,"minimum":0,"type":"integer"},"type":"array"}},"required":["inputs","request","response"]},"binary_acceptance_step":{"additionalProperties":false,"type":"object","properties":{"request":{"items":{"maximum":255,"minimum":0,"type":"integer"},"type":"array"},"inputs":{"$ref":"#/$defs/binary_input_digests"},"responses":{"items":{"items":{"maximum":255,"minimum":0,"type":"integer"},"type":"array"},"type":"array"}},"required":["inputs","request","responses"]},"binary_session":{"oneOf":[{"type":"null","description":"No session: the guest is the stateless world @1."},{"additionalProperties":false,"type":"object","description":"The session bounds of the session world @2 or the checkpoint world @3 (#629, HO-47).","properties":{"state_maximum":{"maximum":4294967295,"minimum":0,"type":"integer"},"response_count_maximum":{"maximum":65535,"minimum":1,"type":"integer"}},"required":["response_count_maximum","state_maximum"]}]}}},
     "schemas/documents/model-provenance-v1.schema.json": {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://schemas.uor.foundation/prismpm/model-provenance/1","title":"ModelProvenance","description":"The payload of the https://uor.foundation/extension/prismpm-model/v1 extension, section row 3 (Foundation.Holo.V1.PrismExtension.ModelProvenance, ModelProvenanceV1 in crates/prismpm/src/holo/archive.rs).","type":"object","additionalProperties":false,"required":["application_kappa","cargo_crate_sha256","cargo_name","cargo_version","compiler_semantics_id","core_wasm_contract","generated_core_sha256","guest_content_kappa","hologram_live_commit","lcnf_manifest_sha256","lean4_prod_commit","lean_manifest_sha256","lexlean_commit","lexlean_package_sha256","model_content_kappa","model_id","prism_stdlib_crate_sha256","schema","semantic_id","snapshot_id","source_id","stdlib_semantics_id","target_profile_id","uor_hologram_commit","view_binding"],"properties":{"application_kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"cargo_crate_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"cargo_name":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,64}$"},"cargo_version":{"type":"string","minLength":1,"maxLength":128},"compiler_semantics_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"core_wasm_contract":{"const":"hologram:guest/core-wasm@1"},"generated_core_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"guest_content_kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"hologram_live_commit":{"type":"string","pattern":"^[0-9a-f]{40}$"},"lcnf_manifest_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"lean4_prod_commit":{"type":"string","pattern":"^[0-9a-f]{40}$"},"lean_manifest_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"lexlean_commit":{"type":"string","pattern":"^[0-9a-f]{40}$"},"lexlean_package_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"model_content_kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"model_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"prism_stdlib_crate_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"schema":{"const":"prismpm/model-provenance/1"},"semantic_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"snapshot_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"source_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"stdlib_semantics_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"target_profile_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"uor_hologram_commit":{"type":"string","pattern":"^[0-9a-f]{40}$"},"view_binding":{"description":"PrismPM requires the present form, with a present browser projection, for a portable view application.","oneOf":[{"type":"object","additionalProperties":false,"required":["tag"],"properties":{"tag":{"const":"none"}}},{"type":"object","additionalProperties":false,"required":["tag","browser_projection","view_content_kappa","view_model_id"],"properties":{"tag":{"const":"present"},"browser_projection":{"oneOf":[{"type":"object","additionalProperties":false,"required":["tag"],"properties":{"tag":{"const":"none"}}},{"type":"object","additionalProperties":false,"required":["tag","sha256"],"properties":{"tag":{"const":"present"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}}]},"view_content_kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"view_model_id":{"type":"string","pattern":"^[0-9a-f]{64}$"}}}]}}},
     "schemas/documents/model-provenance-v2.schema.json": {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://schemas.uor.foundation/prismpm/model-provenance/2","title":"ModelProvenance","description":"Object 2 of a holo v5 (ADR-017): the model provenance, ModelProvenanceV1 in crates/prismpm/src/holo/archive.rs with every kappa a κ-label, sha256: and the hex SHA-256 of the bytes it names.","type":"object","additionalProperties":false,"required":["application_kappa","cargo_crate_sha256","cargo_name","cargo_version","compiler_semantics_id","core_wasm_contract","generated_core_sha256","guest_content_kappa","hologram_live_commit","lcnf_manifest_sha256","lean4_prod_commit","lean_manifest_sha256","lexlean_commit","lexlean_package_sha256","model_content_kappa","model_id","prism_stdlib_crate_sha256","schema","semantic_id","snapshot_id","source_id","stdlib_semantics_id","target_profile_id","uor_hologram_commit","view_binding"],"properties":{"application_kappa":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"cargo_crate_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"cargo_name":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,64}$"},"cargo_version":{"type":"string","minLength":1,"maxLength":128},"compiler_semantics_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"core_wasm_contract":{"description":"The guest contract, as the manifest's wasm layer names it: the stateless world, or from format revision 2026-11-18 the session or checkpoint world (HO-49).","enum":["hologram:guest/core-wasm@1","hologram:guest/core-wasm@2","hologram:guest/core-wasm@3"]},"generated_core_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"guest_content_kappa":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"hologram_live_commit":{"type":"string","pattern":"^[0-9a-f]{40}$"},"lcnf_manifest_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"lean4_prod_commit":{"type":"string","pattern":"^[0-9a-f]{40}$"},"lean_manifest_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"lexlean_commit":{"type":"string","pattern":"^[0-9a-f]{40}$"},"lexlean_package_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"model_content_kappa":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"model_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"prism_stdlib_crate_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"schema":{"const":"prismpm/model-provenance/2"},"semantic_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"snapshot_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"source_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"stdlib_semantics_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"target_profile_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"uor_hologram_commit":{"type":"string","pattern":"^[0-9a-f]{40}$"},"view_binding":{"description":"PrismPM requires the present form, with a present browser projection, for a portable view application.","oneOf":[{"type":"object","additionalProperties":false,"required":["tag"],"properties":{"tag":{"const":"none"}}},{"type":"object","additionalProperties":false,"required":["tag","browser_projection","view_content_kappa","view_model_id"],"properties":{"tag":{"const":"present"},"browser_projection":{"oneOf":[{"type":"object","additionalProperties":false,"required":["tag"],"properties":{"tag":{"const":"none"}}},{"type":"object","additionalProperties":false,"required":["tag","sha256"],"properties":{"tag":{"const":"present"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}}]},"view_content_kappa":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"view_model_id":{"type":"string","pattern":"^[0-9a-f]{64}$"}}}]}}},
+    "schemas/documents/model-provenance-v3.schema.json": {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://schemas.uor.foundation/prismpm/model-provenance/3","title":"ModelProvenance","description":"Object 2 of a holo v6 (ADR-018): the model provenance of a holo v5 (prismpm/model-provenance/2) with every kappa a κ-label, blake3: and the hex unkeyed BLAKE3 of the bytes it names. The build's *_sha256 fields and LexLean's ids are kept as they are.","type":"object","additionalProperties":false,"required":["application_kappa","cargo_crate_sha256","cargo_name","cargo_version","compiler_semantics_id","core_wasm_contract","generated_core_sha256","guest_content_kappa","hologram_live_commit","lcnf_manifest_sha256","lean4_prod_commit","lean_manifest_sha256","lexlean_commit","lexlean_package_sha256","model_content_kappa","model_id","prism_stdlib_crate_sha256","schema","semantic_id","snapshot_id","source_id","stdlib_semantics_id","target_profile_id","uor_hologram_commit","view_binding"],"properties":{"application_kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"cargo_crate_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"cargo_name":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,64}$"},"cargo_version":{"type":"string","minLength":1,"maxLength":128},"compiler_semantics_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"core_wasm_contract":{"description":"The guest contract, as the manifest's wasm layer names it: the stateless world, or from format revision 2026-11-18 the session or checkpoint world (HO-49).","enum":["hologram:guest/core-wasm@1","hologram:guest/core-wasm@2","hologram:guest/core-wasm@3"]},"generated_core_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"guest_content_kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"hologram_live_commit":{"type":"string","pattern":"^[0-9a-f]{40}$"},"lcnf_manifest_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"lean4_prod_commit":{"type":"string","pattern":"^[0-9a-f]{40}$"},"lean_manifest_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"lexlean_commit":{"type":"string","pattern":"^[0-9a-f]{40}$"},"lexlean_package_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"model_content_kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"model_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"prism_stdlib_crate_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"schema":{"const":"prismpm/model-provenance/3"},"semantic_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"snapshot_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"source_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"stdlib_semantics_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"target_profile_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"uor_hologram_commit":{"type":"string","pattern":"^[0-9a-f]{40}$"},"view_binding":{"description":"PrismPM requires the present form, with a present browser projection, for a portable view application.","oneOf":[{"type":"object","additionalProperties":false,"required":["tag"],"properties":{"tag":{"const":"none"}}},{"type":"object","additionalProperties":false,"required":["tag","browser_projection","view_content_kappa","view_model_id"],"properties":{"tag":{"const":"present"},"browser_projection":{"oneOf":[{"type":"object","additionalProperties":false,"required":["tag"],"properties":{"tag":{"const":"none"}}},{"type":"object","additionalProperties":false,"required":["tag","sha256"],"properties":{"tag":{"const":"present"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}}]},"view_content_kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"view_model_id":{"type":"string","pattern":"^[0-9a-f]{64}$"}}}]}}},
     "schemas/holo/app-manifest.schema.json": {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://schemas.uor.foundation/prism/holo/app-manifest/1","title":"HoloAppManifest","description":"The decoded 356-byte application manifest, section kind 15 (Foundation.Holo.V1.Wire.validAppManifest).","type":"object","additionalProperties":false,"required":["uri","labels","suffix"],"properties":{"uri":{"const":"https://hologram.foundation/realization/app-manifest"},"labels":{"description":"The capability set, the Core-Wasm guest and the HOLOVIEW bundle, in that order.","type":"array","minItems":3,"maxItems":3,"prefixItems":[{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"}],"items":false},"suffix":{"description":"The fixed 86-byte layer suffix as lowercase hex (wireManifestSuffix).","const":"5200000000000000020000000008000000686f6c6f5f72756e1a000000686f6c6f6772616d3a67756573742f636f72652d7761736d4031030a000000696e6465782e68746d6c08000000706f727461626c6500000000"}}},
     "schemas/holo/application-directory.schema.json": {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://schemas.uor.foundation/prism/holo/application-directory/1","title":"HoloApplicationDirectory","description":"The application-directory/v1 extension payload, section row 2, as PrismPM writes it (Directory in crates/prismpm/src/holo/archive.rs). Hologram owns the extension. Blobs are sorted by kappa.","type":"object","additionalProperties":false,"required":["schema_version","primary_layer","requires_kappa","layers","children","blobs"],"properties":{"schema_version":{"const":1},"primary_layer":{"const":0},"requires_kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"layers":{"type":"array","minItems":2,"maxItems":2,"prefixItems":[{"type":"object","additionalProperties":false,"required":["position","kind","content_kappa","entry","contract","architecture","surface","engine"],"properties":{"position":{"const":0},"kind":{"const":"wasm"},"content_kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"entry":{"const":"holo_run"},"contract":{"const":"hologram:guest/core-wasm@1"},"architecture":{"const":null},"surface":{"const":null},"engine":{"const":null}}},{"type":"object","additionalProperties":false,"required":["position","kind","content_kappa","entry","contract","architecture","surface","engine"],"properties":{"position":{"const":1},"kind":{"const":"view"},"content_kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"entry":{"const":"index.html"},"contract":{"const":null},"architecture":{"const":null},"surface":{"const":"portable"},"engine":{"const":null}}}],"items":false},"children":{"type":"array","maxItems":0},"blobs":{"type":"array","minItems":4,"maxItems":4,"uniqueItems":true,"items":{"type":"object","additionalProperties":false,"required":["kappa","byte_length"],"properties":{"kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"byte_length":{"type":"integer","minimum":0,"maximum":9007199254740991}}}}}},
     "schemas/holo/archive.schema.json": {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://schemas.uor.foundation/prism/holo/archive/1","title":"HoloArchive","description":"The decoded header, section table and footer of a holo, format revision 2026-10-23 (Foundation.Holo.V1.Wire). Sections are contiguous from offset 202 and end 32 bytes before the end of the file; JSON Schema cannot state that, so readers check it.","type":"object","additionalProperties":false,"required":["magic","version","flags","sections","footer"],"properties":{"magic":{"const":"HOLO"},"version":{"const":4},"flags":{"const":0},"sections":{"type":"array","minItems":8,"maxItems":8,"prefixItems":[{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":15},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991,"const":202},"length":{"type":"integer","minimum":0,"maximum":9007199254740991,"const":356}}},{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":8},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"length":{"type":"integer","minimum":0,"maximum":9007199254740991}}},{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":14},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"length":{"type":"integer","minimum":0,"maximum":9007199254740991}}},{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":14},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"length":{"type":"integer","minimum":0,"maximum":9007199254740991}}},{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":16},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"length":{"type":"integer","minimum":71,"maximum":9007199254740991}}},{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":16},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"length":{"type":"integer","minimum":71,"maximum":9007199254740991}}},{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":16},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"length":{"type":"integer","minimum":71,"maximum":9007199254740991}}},{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":16},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"length":{"type":"integer","minimum":71,"maximum":9007199254740991}}}],"items":false},"footer":{"type":"string","pattern":"^[0-9a-f]{64}$","description":"The 32-byte BLAKE3 footer as lowercase hex: the archive fingerprint."}}},
@@ -1161,8 +1193,9 @@ const __reader = (() => {
 // src/holo5.mjs
 const __holo5 = (() => {
   const { sha256Hex } = __sha256;
+  const { blake3Hex } = __vendor_blake3;
   /**
-   * The checks of a holo v5 (ADR-017): a raw self-contained UORC archive
+   * The checks of a holo v5 (ADR-017) and v6 (ADR-018). A holo v5 is a raw self-contained UORC archive
    * (`"UORC" 02 01 00 00`, ULEB128 count and lengths, the objects, then the
    * UORC-SHA256-CHAIN-v1 seal of every byte before it) whose ordered objects are
    * the manifest, the source manifest, the provenance, the capability set, the
@@ -1173,23 +1206,40 @@ const __holo5 = (() => {
    * reach the same level for the same reasons. The Rust twin is
    * crates/prismpm/src/inspect/verdict_v5.rs. Every identity is a κ-label,
    * `sha256:` and the hex SHA-256 of the bytes it names.
+   *
+   * A holo v6 is the same archive with profile 2 (`"UORC" 02 02 00 00`), sealed by
+   * plain BLAKE3 of every byte before the seal, and every κ-label is `blake3:` and
+   * the hex BLAKE3 of the bytes it names. Its documents are v5's under
+   * `prism/holo/6` and `prismpm/model-provenance/3`.
    */
 
   const MANIFEST_SCHEMA = 'prism/holo/5';
   const PROVENANCE_SCHEMA = 'prismpm/model-provenance/2';
+  /** What differs between holo v5 and v6, by holo version. */
+  const FORMATS = Object.freeze({
+    5: Object.freeze({ profile: 1, manifest: MANIFEST_SCHEMA, provenance: PROVENANCE_SCHEMA, kappa: /^sha256:[0-9a-f]{64}$/, prefix: 'sha256:', hash: sha256Hex, seal: 'UORC-SHA256-CHAIN-v1' }),
+    6: Object.freeze({ profile: 2, manifest: 'prism/holo/6', provenance: 'prismpm/model-provenance/3', kappa: /^blake3:[0-9a-f]{64}$/, prefix: 'blake3:', hash: blake3Hex, seal: 'BLAKE3' }),
+  });
   const ROLES = Object.freeze(['manifest', 'source-manifest', 'provenance', 'capabilities', 'guest', 'view', 'model']);
   const ROLE_ATTESTATIONS = 'attestations';
   const CONTENT = Object.freeze({ capabilities: 3, guest: 4, view: 5, model: 6 });
   const BUDGET = Object.freeze({ objects: 16, bytes: 2 ** 30 });
   const SEAL_LENGTH = 32;
-  const KAPPA = /^sha256:[0-9a-f]{64}$/;
   const TAG = Uint8Array.from('UORC-SHA256-CHAIN-v1\0', (c) => c.charCodeAt(0));
   const utf8 = new TextDecoder('utf-8', { fatal: true });
 
   /** Whether `bytes` start like a UORC archive. */
   const isUorc = (bytes) => bytes.length >= 4 && bytes[0] === 0x55 && bytes[1] === 0x4f && bytes[2] === 0x52 && bytes[3] === 0x43;
 
-  const kappa = (bytes) => `sha256:${sha256Hex(bytes)}`;
+  /** The κ-label of `bytes` in holo `version` 5 (`sha256:`, the default) or 6 (`blake3:`). */
+  const kappa = (bytes, version = 5) => `${FORMATS[version].prefix}${FORMATS[version].hash(bytes)}`;
+
+  /** The holo version a UORC archive's magic names, 5 or 6, or null. */
+  function versionOf(bytes) {
+    if (bytes.length < 6 || bytes[4] !== 2) return null;
+    if (bytes[5] === 1) return 5;
+    return bytes[5] === 2 ? 6 : null;
+  }
 
   const fromHex = (hex) => Uint8Array.from(hex.match(/../g), (pair) => parseInt(pair, 16));
   function concat(parts) {
@@ -1225,13 +1275,14 @@ const __holo5 = (() => {
   }
 
   /**
-   * The framing of a raw self-contained UORC archive: `{ objects, seal, sealed }`
+   * The framing of a raw self-contained UORC archive: `{ version, objects, seal, sealed }`
    * with each object `{ index, offset, length, bytes }`, or `{ problem, check }`
    * when its header cannot be read. The seal is reported, not enforced.
    */
   function readArchive(bytes) {
     const refuse = (problem, check = 'archive.table') => ({ problem, check });
-    if (bytes.length < 6 || bytes[4] !== 2 || bytes[5] !== 1) return refuse('a holo v5 file is a UORC archive (format 2, profile 1)', 'archive.version');
+    const version = versionOf(bytes);
+    if (version === null) return refuse('a holo v5 or v6 file is a UORC archive (format 2, profile 1 or 2)', 'archive.version');
     if (bytes.length < 8 + SEAL_LENGTH) return refuse('the UORC archive is truncated');
     const preimage = bytes.subarray(0, bytes.length - SEAL_LENGTH);
     const seal = Array.from(bytes.subarray(bytes.length - SEAL_LENGTH), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -1260,7 +1311,7 @@ const __holo5 = (() => {
       offset += length;
       return object;
     });
-    return { objects, seal, sealed: chainHex(preimage) === seal };
+    return { version, objects, seal, sealed: (version === 6 ? blake3Hex(preimage) : chainHex(preimage)) === seal };
   }
 
   /** JSON as the canonical form of a holo document: keys sorted, no whitespace. */
@@ -1297,7 +1348,11 @@ const __holo5 = (() => {
      * contract is one some revision admits (@1, or a session world of 2026-11-18),
      * and the wasm layer is entered where that contract's world says.
      */
-    const admitted = new Set(Object.values(spec.FORMAT_REVISIONS).filter((r) => r.holoVersions.includes(5)).flatMap((r) => r.coreWasmContracts));
+    // An unreadable header is refused below as for v5, so it is read as v5 here.
+    const version = versionOf(bytes) ?? 5;
+    const format = FORMATS[version];
+    const KAPPA = format.kappa;
+    const admitted = new Set(Object.values(spec.FORMAT_REVISIONS).filter((r) => r.holoVersions.includes(version)).flatMap((r) => r.coreWasmContracts));
     // The session worlds are entered at holo_step, the stateless world at holo_run.
     const entryOf = (contract) => (contract === spec.CORE_WASM_SESSION.CONTRACT || contract === spec.CORE_WASM_CHECKPOINT.CONTRACT ? spec.CORE_WASM_SESSION.ENTRY : spec.CORE_WASM.ENTRY);
     const layersOf = (guest, view, contract = spec.CORE_WASM.CONTRACT) => [
@@ -1305,7 +1360,8 @@ const __holo5 = (() => {
       { entry: spec.HOLOVIEW.ENTRY, kappa: view, kind: 'view', surface: 'portable' },
     ];
     const checks = [{ id: 'archive.magic', level: 'archive', status: 'pass', detail: 'magic UORC' }];
-    const facts = { v5: true, structure: { ok: false }, sections: [], documents: {}, roles: {}, revision: null, layoutRevision: null, footer: null, fingerprint: null, newestDifferences: [] };
+    // `v5` marks the UORC family (v5 and v6); `holoVersion` says which.
+    const facts = { v5: true, holoVersion: version, structure: { ok: false }, sections: [], documents: {}, roles: {}, revision: null, layoutRevision: null, footer: null, fingerprint: null, newestDifferences: [] };
     const add = (level, id, ok, detail) => checks.push({ id, level, status: ok ? 'pass' : 'fail', detail });
     const skip = (level, id, detail) => checks.push({ id, level, status: 'skip', detail });
 
@@ -1313,23 +1369,23 @@ const __holo5 = (() => {
     if (archive.problem) {
       for (const id of context.structureIds.slice(1)) {
         if (id === archive.check) add('archive', id, false, archive.problem);
-        else if (!checks.some((c) => c.id === archive.check)) add('archive', id, true, 'UORC format 2, profile 1');
+        else if (!checks.some((c) => c.id === archive.check)) add('archive', id, true, `UORC format 2, profile ${format.profile}`);
       }
       for (const id of context.archiveIds) if (!checks.some((c) => c.id === id)) skip('archive', id, `not checked: ${archive.check} failed`);
       for (const id of context.documentIds) skip('documents', id, `not checked: ${archive.check} failed`);
       return { checks, facts };
     }
-    add('archive', 'archive.version', true, 'UORC format 2, profile 1');
+    add('archive', 'archive.version', true, `UORC format 2, profile ${format.profile}`);
     add('archive', 'archive.flags', true, 'a self-contained archive, objects stored raw');
     add('archive', 'archive.table', true, `${archive.objects.length} objects, contiguous, ending at the seal`);
     facts.structure.ok = true;
     facts.footer = { stored: archive.seal, computed: archive.sealed ? archive.seal : null, matches: archive.sealed };
-    facts.fingerprint = kappa(bytes);
+    facts.fingerprint = kappa(bytes, version);
     add(
       'archive',
       'archive.footer',
       archive.sealed,
-      archive.sealed ? `the seal is the UORC-SHA256-CHAIN-v1 of the archive, ${archive.seal}` : `the seal ${archive.seal} is not the UORC-SHA256-CHAIN-v1 of the archive: the archive was altered`,
+      archive.sealed ? `the seal is the ${format.seal} of the archive, ${archive.seal}` : `the seal ${archive.seal} is not the ${format.seal} of the archive: the archive was altered`,
     );
 
     const known = archive.objects.length === ROLES.length || archive.objects.length === ROLES.length + 1;
@@ -1338,15 +1394,16 @@ const __holo5 = (() => {
       const role = ROLES[object.index] ?? ROLE_ATTESTATIONS;
       const section = { index: object.index, kind: null, kindName: role, role, offset: object.offset, length: object.length, payload: object.bytes };
       if (contentRoles.has(object.index)) {
-        section.label = kappa(object.bytes);
+        section.label = kappa(object.bytes, version);
         section.content = object.bytes;
-        section.digests = { sha256: section.label.slice('sha256:'.length) };
+        // A v6 object's κ is its blake3; its sha256 is kept beside it, as a v4 blob's is (ADR-018 §4).
+        section.digests = version === 6 ? { sha256: sha256Hex(object.bytes), blake3: section.label.slice(format.prefix.length) } : { sha256: section.label.slice(format.prefix.length) };
         section.labelMatches = true;
       }
       return section;
     });
     const at = (index) => (known ? facts.sections[index] : undefined);
-    const labelOf = (index) => at(index)?.label ?? (at(index) ? kappa(at(index).payload) : undefined);
+    const labelOf = (index) => at(index)?.label ?? (at(index) ? kappa(at(index).payload, version) : undefined);
 
     // manifest.wire and blob.labels: the manifest names every object by its κ.
     {
@@ -1355,7 +1412,7 @@ const __holo5 = (() => {
       const manifest = decoded.value;
       if (decoded.error) problems.push(`the holo manifest ${decoded.error}`);
       else {
-        if (manifest.schema !== MANIFEST_SCHEMA) problems.push(`the manifest names schema ${JSON.stringify(manifest.schema)}`);
+        if (manifest.schema !== format.manifest) problems.push(`the manifest names schema ${JSON.stringify(manifest.schema)}`);
         if (typeof manifest.name !== 'string' || manifest.name.length === 0) problems.push('the manifest names no application');
         if (manifest.basis !== undefined && !KAPPA.test(manifest.basis)) problems.push('the manifest basis is not a κ-label');
         if (!KAPPA.test(manifest.requires)) problems.push('the manifest requires no κ-label');
@@ -1366,7 +1423,7 @@ const __holo5 = (() => {
         if (canonical(manifest) !== utf8.decode(at(0).payload)) problems.push('the manifest is not canonical JSON');
       }
       if (problems.length === 0) facts.documents.manifest = manifest;
-      add('documents', 'manifest.wire', problems.length === 0, problems.length === 0 ? `the holo manifest is canonical ${MANIFEST_SCHEMA}` : problems.join('; '));
+      add('documents', 'manifest.wire', problems.length === 0, problems.length === 0 ? `the holo manifest is canonical ${format.manifest}` : problems.join('; '));
       if (manifest && problems.length === 0) {
         // The provenance names the manifest, so the manifest lists every object but the provenance.
         const expected = [1, 3, 4, 5, 6].map((i) => ({ kappa: labelOf(i), length: at(i).length, role: ROLES[i] }));
@@ -1390,12 +1447,12 @@ const __holo5 = (() => {
     const modelSchemas = new Set(revisions.flatMap((r) => r.modelDocumentSchemas));
 
     documentCheck('metadata.schema', 'the source manifest', at(1), spec.HOLO_SCHEMAS.SOURCE_MANIFEST, 'sourceManifest');
-    skip('documents', 'directory.schema', 'not checked: a holo v5 names its layers in the manifest');
+    skip('documents', 'directory.schema', `not checked: a holo v${version} names its layers in the manifest`);
     documentCheck(
       'provenance.schema',
       'the model provenance',
       at(2),
-      (v) => (v?.schema === PROVENANCE_SCHEMA ? spec.SCHEMAS[PROVENANCE_SCHEMA] : null),
+      (v) => (v?.schema === format.provenance ? spec.SCHEMAS[format.provenance] : null),
       'provenance',
       (v) => (canonical(v) === utf8.decode(at(2).payload) ? '' : 'it is not canonical JSON'),
     );
@@ -1466,7 +1523,7 @@ const __holo5 = (() => {
       };
       let matched = null;
       let differences = [];
-      for (const [date, revision] of Object.entries(spec.FORMAT_REVISIONS).filter(([, r]) => r.holoVersions.includes(5))) {
+      for (const [date, revision] of Object.entries(spec.FORMAT_REVISIONS).filter(([, r]) => r.holoVersions.includes(version))) {
         const found = differencesFrom(revision);
         if (found.length === 0) {
           matched = date;
@@ -1481,13 +1538,13 @@ const __holo5 = (() => {
         differences = [];
       }
       facts.newestDifferences = differences;
-      add('documents', 'format.revision', matched !== null, matched !== null ? `holo v5, format revision ${matched}` : `the archive matches no format revision this package knows (holo v5): ${differences.join('; ')}`);
+      add('documents', 'format.revision', matched !== null, matched !== null ? `holo v${version}, format revision ${matched}` : `the archive matches no format revision this package knows (holo v${version}): ${differences.join('; ')}`);
     }
 
     checks.sort((a, b) => context.order.indexOf(a.id) - context.order.indexOf(b.id));
     return { checks, facts };
   }
-  return Object.freeze({ MANIFEST_SCHEMA, PROVENANCE_SCHEMA, ROLES, ROLE_ATTESTATIONS, isUorc, kappa, chainHex, readArchive, analyzeV5 });
+  return Object.freeze({ MANIFEST_SCHEMA, PROVENANCE_SCHEMA, ROLES, ROLE_ATTESTATIONS, isUorc, kappa, versionOf, chainHex, readArchive, analyzeV5 });
 })();
 
 // src/asn1.mjs
@@ -4265,8 +4322,8 @@ const __index = (() => {
     return { sha256: sha256Hex(bytes), blake3: blake3Hex(bytes) };
   }
 
-  /** The digest set of the whole file: its κ alone for a holo v5 (ADR-017), both digests for v4. */
-  const archiveDigests = (bytes, facts) => (facts.v5 ? { sha256: sha256Hex(bytes) } : digestsOf(bytes));
+  /** The digest set of the whole file: its κ alone for a holo v5 (ADR-017), both digests for v4 and v6 (ADR-018 §4). */
+  const archiveDigests = (bytes, facts) => (facts.v5 && facts.holoVersion !== 6 ? { sha256: sha256Hex(bytes) } : digestsOf(bytes));
 
   function isLabel(bytes) {
     if (bytes.length !== spec.LABEL_LENGTH) return false;
@@ -4789,7 +4846,10 @@ const __index = (() => {
    */
   function inspectionOfV5(bytes, facts, checks) {
     const status = (id) => checks.find((c) => c.id === id)?.status === 'pass';
-    const kappaOf = (payload) => ({ sha256: sha256Hex(payload) });
+    // A holo v6 names its objects by blake3, with sha256 beside it (ADR-018 §4); a v5 by sha256 alone.
+    const v6 = facts.holoVersion === 6;
+    const kappaOf = (payload) => (v6 ? digestsOf(payload) : { sha256: sha256Hex(payload) });
+    const labelFor = (payload) => (v6 ? `blake3:${blake3Hex(payload)}` : `sha256:${sha256Hex(payload)}`);
     const objectOf = (role) => facts.sections.find((s) => s.role === role);
     const sections = facts.sections.map((s) => ({
       index: s.index,
@@ -4799,11 +4859,11 @@ const __index = (() => {
       offset: s.offset,
       length: s.length,
       digest: kappaOf(s.payload),
-      label: `sha256:${sha256Hex(s.payload)}`,
+      label: labelFor(s.payload),
     }));
     const { manifest, provenance, modelDocument } = facts.documents;
     const application = modelDocument?.application ?? {};
-    const labelOf = (role) => orNull(objectOf(role) && `sha256:${sha256Hex(objectOf(role).payload)}`);
+    const labelOf = (role) => orNull(objectOf(role) && labelFor(objectOf(role).payload));
     const capabilities = objectOf('capabilities');
     const guest = objectOf('guest');
     const model = objectOf('model');
@@ -4813,7 +4873,7 @@ const __index = (() => {
       schema: INSPECTION_SCHEMA,
       name: application.name ?? manifest?.name ?? null,
       revision: facts.revision,
-      physical_version: 5,
+      physical_version: facts.holoVersion,
       flags: 0,
       size: bytes.length,
       digest: kappaOf(bytes),

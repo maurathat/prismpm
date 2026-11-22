@@ -3,11 +3,23 @@
  * system, laid out as `kappa-store.mjs` lays out a disk, so a page keeps what
  * it has already fetched and proved and does not do it again on the next visit.
  *
- * Every read re-derives the κ-label, so bytes that are not what their name says
- * are not returned, and reuse is decided by `kappa-rules.mjs` alone. What is
- * stored is what this origin's own pages wrote: the store is trusted no further
- * than the origin that serves the page's code.
+ * Bytes are kept under their BLAKE3 label (`blake3:` and 64 hex digits, the
+ * label kappa-registry and Hologram's store use), and every read re-derives
+ * it, so bytes that are not what their name says are not returned. The SHA-256
+ * κ-label that prism-code's records and reuse rules name things by is kept as
+ * a checked field: it leads to the BLAKE3 label, and bytes asked for by it are
+ * returned only when they re-derive to both. Reuse is decided by
+ * `kappa-rules.mjs` alone. What is stored is what this origin's own pages
+ * wrote: the store is trusted no further than the origin that serves the
+ * page's code.
+ *
+ * Layout under `prism-kappa/`: `blake3/` holds bytes by BLAKE3 label,
+ * `sha256/` holds, per κ-label, the BLAKE3 label of those bytes, and
+ * `derived/` holds, per derivation key, the BLAKE3 label of the result. A
+ * store written before this layout (`bytes/`, by SHA-256) is removed on open:
+ * nothing in it is read.
  */
+import { kappa as blake3Label } from '../blake3.mjs';
 import { sha256Hex } from '../sha256.mjs';
 import { isKappa } from '../uorc.mjs';
 import { proofFacts, proofRealization } from './kappa-rules.mjs';
@@ -15,11 +27,15 @@ import { imageFacts, imageRealization } from './kernel-image.mjs';
 
 const enc = new TextEncoder();
 const label = async (bytes) => `sha256:${await sha256Hex(bytes)}`;
+const dec = new TextDecoder();
+/** Whether `name` is a BLAKE3 label, as this store addresses bytes. */
+export const isBlake3 = (name) => typeof name === 'string' && /^blake3:[0-9a-f]{64}$/.test(name);
 
 /**
  * The store, or one that keeps nothing where the browser has no origin-private file system or refuses it
- * (a private window, a blocked site). Every method resolves; none throws. `get` resolves bytes only when
- * they re-derive to the label asked for.
+ * (a private window, a blocked site). Every method resolves; none throws. `put` resolves the bytes' κ-label,
+ * as the reuse rules name them; `address` resolves the BLAKE3 label they are kept under. `get` takes either
+ * and resolves bytes only when they re-derive to the label asked for.
  */
 export async function opfsStore({ root = null } = {}) {
   let top = root;
@@ -29,6 +45,8 @@ export async function opfsStore({ root = null } = {}) {
     top = null;
   }
   const off = top === null;
+  // The layout before BLAKE3. Its names are not this store's, so nothing in it could be found again.
+  try { await top?.removeEntry?.('bytes', { recursive: true }); } catch { /* absent, or not removable: it is only unused */ }
   const dirOf = async (kind, name, create) => {
     const k = await top.getDirectoryHandle(kind, { create });
     return k.getDirectoryHandle(name.slice(7, 9), { create });
@@ -52,27 +70,41 @@ export async function opfsStore({ root = null } = {}) {
       // A store that cannot keep something has not kept it; the next visit does the work again.
     }
   };
+  /** The BLAKE3 label kept under `name` in `kind`, or null. */
+  const pointer = async (kind, name) => {
+    const bytes = await read(kind, name);
+    const address = bytes ? dec.decode(bytes) : '';
+    return isBlake3(address) ? address : null;
+  };
+  /** The BLAKE3 label a name leads to: itself, or what the κ-label was kept under. */
+  const address = async (name) => (off ? null : isBlake3(name) ? name : isKappa(name) ? pointer('sha256', name) : null);
   return {
     off,
+    address,
     async put(bytes) {
       const name = await label(bytes);
-      if (!off) await write('bytes', name, bytes);
+      if (!off) {
+        const at = blake3Label(bytes);
+        await write('blake3', at, bytes);
+        await write('sha256', name, enc.encode(at));
+      }
       return name;
     },
     async get(name) {
-      if (off || !isKappa(name)) return null;
-      const bytes = await read('bytes', name);
+      const at = await address(name);
+      const bytes = at ? await read('blake3', at) : null;
       // The universal check under every stored byte: bytes that are not what their name says are not there.
-      return bytes && (await label(bytes)) === name ? bytes : null;
+      if (!bytes || blake3Label(bytes) !== at) return null;
+      // Asked for by κ-label, the bytes must be that too: what led here is checked, not believed.
+      return at === name || (await label(bytes)) === name ? bytes : null;
     },
     async bind(key, name) {
-      if (!off) await write('derived', key, enc.encode(name));
+      const at = await address(name);
+      if (at) await write('derived', key, enc.encode(at));
     },
     async bound(key) {
       if (off || !isKappa(key)) return null;
-      const bytes = await read('derived', key);
-      const name = bytes ? new TextDecoder().decode(bytes) : '';
-      return isKappa(name) ? name : null;
+      return pointer('derived', key);
     },
   };
 }

@@ -151,7 +151,7 @@ test('an image stands in for loading the library only under the same key, kernel
   assert.equal(reuseAdmits((await findImage(store, { key, kernel: k('5'), library })).facts), false);
   assert.equal(reuseAdmits((await findImage(store, { key, kernel, library: k('6') })).facts), false);
   // Planted defect: image bytes altered under their old name are not reused.
-  const label = JSON.parse(new TextDecoder().decode(await store.get(await store.bound(key)))).image;
-  root.dirs.get('bytes').dirs.get(label.slice(7, 9)).files.set(label.slice(9), Uint8Array.of(1, 2, 3));
+  const label = await store.address(JSON.parse(new TextDecoder().decode(await store.get(await store.bound(key)))).image);
+  root.dirs.get('blake3').dirs.get(label.slice(7, 9)).files.set(label.slice(9), Uint8Array.of(1, 2, 3));
   assert.equal(reuseAdmits((await findImage(store, { key, kernel, library })).facts), false);
 });

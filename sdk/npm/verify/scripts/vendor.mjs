@@ -44,6 +44,7 @@ function documentNames(spec) {
     for (const name of revision.modelDocumentSchemas) names.add(name);
   }
   names.add(spec.HOLO_V5.PROVENANCE_SCHEMA);
+  names.add(spec.HOLO_V6.PROVENANCE_SCHEMA);
   return [...names].sort();
 }
 

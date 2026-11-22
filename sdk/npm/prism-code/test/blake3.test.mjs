@@ -27,6 +27,29 @@ test('BLAKE3 is independent of how the input is split', () => {
   }
 });
 
+test('a digest taken midway is the digest of what was read, and does not disturb what follows', () => {
+  // Every official length is reached by reading on from the one before, with a digest taken at each.
+  const lengths = vectors.cases.map((c) => c.input_len).sort((a, b) => a - b);
+  const bytes = input(lengths.at(-1));
+  const hasher = new Blake3();
+  let at = 0;
+  for (const { input_len, hash } of [...vectors.cases].sort((a, b) => a.input_len - b.input_len)) {
+    hasher.update(bytes.subarray(at, input_len));
+    at = input_len;
+    assert.equal(Buffer.from(hasher.digest()).toString('hex'), hash, `read up to ${input_len}`);
+    assert.equal(Buffer.from(hasher.digest()).toString('hex'), hash, `asked twice at ${input_len}`);
+  }
+});
+
+test('bytes given as an ArrayBuffer, or inside a larger buffer, are the same bytes', () => {
+  const bytes = input(3000);
+  const whole = blake3Hex(bytes);
+  assert.equal(Buffer.from(new Blake3().update(bytes.slice().buffer).digest()).toString('hex'), whole);
+  const wide = new Uint8Array(5000).fill(9);
+  wide.set(bytes, 1001);
+  assert.equal(blake3Hex(wide.subarray(1001, 4001)), whole);
+});
+
 test('a kappa label is blake3: and 64 hex characters, 71 bytes', () => {
   const label = kappa(new Uint8Array(0));
   assert.equal(label, 'blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262');
