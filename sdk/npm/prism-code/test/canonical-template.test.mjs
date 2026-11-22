@@ -1,4 +1,4 @@
-// DK-50: every Prism app starts from one canonical template, UOR-Foundation/template, pinned at one commit with every
+// DK-51: every Prism app starts from one canonical template, UOR-Foundation/template, pinned at one commit with every
 // file's SHA-256; prism_init writes it only when every fetched file has its pinned bytes, never over other bytes, and
 // aligns the app's LexLean project to the LexLean this prism-code runs. The network is never reached here.
 import { test } from 'node:test';

@@ -4,7 +4,7 @@
 beside it, selected through this fixture's LexLean configuration (which also
 declares the `prism.arch` lexicon the stdlib modules title themselves from).
 Both models and manifests bind
-`sha256:d8f3554cb0d5704362b3be3d398d4aceba85b77940bd51649e8f676509f10a03`.
+`sha256:4abf3927060a4fc777a184d610a81750381d98246a8638e0fb6ca40847ef34d8`.
 
 The installed SDK reported this digest in a genuine PP2101 refusal when the
 installed product check first assembled this fixture with its own Calculator

@@ -860,7 +860,7 @@ pub fn run_at(root: &Path, id: &str) {
         "DK-43" => node_suite::verify_exact(
             root,
             id,
-            &[("sdk/npm/prism-code/test/containers.test.mjs", 44)],
+            &[("sdk/npm/prism-code/test/containers.test.mjs", 45)],
             "600000",
         ),
         // The `system` module and the client of #440.
@@ -876,7 +876,7 @@ pub fn run_at(root: &Path, id: &str) {
             id,
             &[
                 ("sdk/npm/prism-code/test/canonical-build-model.test.mjs", 6),
-                ("sdk/npm/prism-code/test/serverless-boundary.test.mjs", 6),
+                ("sdk/npm/prism-code/test/serverless-boundary.test.mjs", 7),
             ],
             "600000",
         ),
@@ -908,11 +908,25 @@ pub fn run_at(root: &Path, id: &str) {
             &[("sdk/npm/prism-code/test/agent-tools.test.mjs", 8)],
             "600000",
         ),
+        // A text application's holo built with nothing compiled: the evaluator guest and the model's program.
         // Every app from one canonical template, pinned by commit and SHA-256 (prism_init).
-        "DK-50" => node_suite::verify_exact(
+        "DK-51" => node_suite::verify_exact(
             root,
             id,
             &[("sdk/npm/prism-code/test/canonical-template.test.mjs", 4)],
+            "600000",
+        ),
+        "DK-50" => node_suite::verify_exact(
+            root,
+            id,
+            &[
+                ("sdk/npm/prism-code/test/model-eval.test.mjs", 9),
+                ("sdk/npm/prism-code/test/model-guest.test.mjs", 10),
+                ("sdk/npm/prism-code/test/model-guest-primitives.test.mjs", 13),
+                ("sdk/npm/prism-code/test/model-holo.test.mjs", 10),
+                ("sdk/npm/prism-code/test/model-bundle.test.mjs", 4),
+                ("sdk/npm/prism-code/test/model-site.test.mjs", 2),
+            ],
             "600000",
         ),
         // The `prism-code system` and `auth` command groups of #446 and #447.
@@ -3169,7 +3183,7 @@ fn verify_template(root: &Path, id: &str) {
                 &[
                     ("action/entrypoint.test.mjs", 19),
                     ("action/publish-pages.test.mjs", 14),
-                    ("scripts/ci-capacity.test.mjs", 12),
+                    ("scripts/ci-capacity.test.mjs", 13),
                 ],
                 "120000",
             );

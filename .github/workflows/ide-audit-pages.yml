@@ -104,7 +104,7 @@ jobs:
           set -euo pipefail
           site="$RUNNER_TEMP/audit-site"
           for f in audit/index.html edit/index.html edit/edit.mjs edit/app-match.mjs edit/lexlean-worker.mjs edit/prove-worker.mjs edit/pin.json edit/lexlean.wasm.gz                    edit/kernel/manifest.json edit/project.json edit/project/lexlean.toml edit/prism-code/journey/rule-table.mjs                    edit/prism-code/journey/wasi-memory.mjs edit/ide/index.html edit/site.json \
-                   edit/terminal/terminal.mjs edit/terminal/session.mjs edit/terminal/programs.mjs edit/terminal/kappa-space.mjs edit/terminal/effects.mjs edit/terminal/pins.json edit/terminal/tables.json \
+                   edit/terminal/terminal.mjs edit/terminal/session.mjs edit/terminal/shell.mjs edit/terminal/line-editor.mjs edit/terminal/programs.mjs edit/terminal/kappa-space.mjs edit/terminal/effects.mjs edit/terminal/pins.json edit/terminal/tables.json \
                    edit/vendor/xterm/xterm.mjs edit/vendor/xterm/xterm.css edit/vendor/xterm/addon-fit.mjs edit/vendor/xterm/addon-webgl.mjs edit/vendor/xterm/addon-web-links.mjs edit/vendor/xterm/addon-search.mjs edit/vendor/xterm/addon-unicode11.mjs; do
             test -s "$site/$f" || { echo "missing: $f"; exit 1; }
           done

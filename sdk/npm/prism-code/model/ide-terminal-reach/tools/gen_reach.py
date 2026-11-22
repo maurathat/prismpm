@@ -5,16 +5,20 @@ path = sys.argv[1]
 src = open(path, encoding="utf-8").read()
 head = src[: src.index("definition{name: title")]
 
-# The same words as ../ide-terminal-commands. A builtin is the page's own code; a program is a pinned executable.
+# The same words as ../ide-terminal-commands, in the same order. A builtin is the page's own code; a program is a
+# pinned executable. The order puts each group of commands side by side, so a rule or a guarantee names a group as
+# one run of the list.
 BUILTINS = ["help", "clear", "ls", "cat", "kappa"]
 PROGRAMS = ["check", "snapshot", "prove", "audit"]
-READS_MODEL = ["ls", "cat", "kappa"] + PROGRAMS
+MORE = ["echo", "pwd", "set", "unset", "env", "history", "sessions", "restore", "save",
+        "grep", "head", "tail", "wc", "sort", "uniq", "diff", "cd", "append", "mv", "cp", "write", "touch", "rm"]
+LISTED = BUILTINS + PROGRAMS + MORE
 # command: the command that is running. resource: what it asks its host for.
 #   screen: write to the terminal.          readmodel, writemodel: the open model's files.
 #   readstore, writestore: the content-addressed store, by BLAKE3 label.
 #   network: any request to any address.    clipboard: read or write the clipboard.
 #   process: start another program, worker or frame.
-FIELDS = [("command", ["other"] + BUILTINS + PROGRAMS),
+FIELDS = [("command", ["other"] + LISTED),
           ("resource", ["screen", "readmodel", "writemodel", "readstore", "writestore", "network", "clipboard", "process"])]
 F = {n: i for i, (n, _) in enumerate(FIELDS)}
 ANSWERS = ["deny", "allow"]
@@ -29,19 +33,41 @@ def c(field, op, value):
     return (F[field], op, v)
 
 
-# First match decides. Nothing names writemodel, network, clipboard or process, so they fall to "deny".
+WORDS = dict(FIELDS)["command"]
+N = {w: i for i, w in enumerate(WORDS)}
+
+
+def run_of(first, last, resource):
+    """The commands from `first` to `last` in the list, asking for `resource`, as conditions."""
+    return [c("command", GE, N[first]), c("command", LE, N[last]), c("resource", EQ, resource)]
+
+
+# Who may use what. Each is one or two runs of the list; everything else is denied.
+#   the model is read by ls, cat, kappa and the programs, and by grep to cp
+#   the model is changed by append, mv, cp, write, touch and rm, and by nothing else
+#   the store is read by the programs and by sessions, restore and save; written by the programs and by save
+ALLOWED = [("ls", "audit", "readmodel"), ("grep", "cp", "readmodel"), ("append", "rm", "writemodel"),
+           ("check", "audit", "readstore"), ("sessions", "save", "readstore"),
+           ("check", "audit", "writestore"), ("save", "save", "writestore")]
+DENIED = [("other", "clear", "readmodel"), ("echo", "save", "readmodel"), ("write", "rm", "readmodel"),
+          ("other", "cd", "writemodel"),
+          ("other", "kappa", "readstore"), ("echo", "history", "readstore"), ("grep", "rm", "readstore"),
+          ("other", "kappa", "writestore"), ("echo", "restore", "writestore"), ("grep", "rm", "writestore")]
+# The two lists leave no command out, for any of the four resources.
+for resource in ("readmodel", "writemodel", "readstore", "writestore"):
+    covered = sorted(i for first, last, r in ALLOWED + DENIED if r == resource for i in range(N[first], N[last] + 1))
+    assert covered == list(range(len(WORDS))), resource
+
+# First match decides. Nothing names network, clipboard or process, so they fall to "deny".
 RULES = [([c("command", EQ, "other")], "deny")]
 RULES += [([c("resource", EQ, "screen")], "allow")]
-RULES += [([c("command", EQ, w), c("resource", EQ, "readmodel")], "allow") for w in READS_MODEL]
-RULES += [([c("command", EQ, w), c("resource", EQ, r)], "allow") for w in PROGRAMS for r in ("readstore", "writestore")]
-# (always?, conditions, answer). Each is stated with "is" alone: the kernel route does not settle "is not".
-GUARANTEES = [(1, [c("resource", EQ, r)], "deny") for r in ("network", "clipboard", "process", "writemodel")]
+RULES += [(run_of(*group), "allow") for group in ALLOWED]
+# (always?, conditions, answer). No guarantee is stated with "is not": the kernel route does not settle it.
+GUARANTEES = [(1, [c("resource", EQ, r)], "deny") for r in ("network", "clipboard", "process")]
 GUARANTEES += [(1, [c("command", EQ, "other")], "deny")]
-GUARANTEES += [(0, [c("command", EQ, w), c("resource", EQ, "readmodel")], "allow") for w in ("help", "clear")]
-GUARANTEES += [(0, [c("command", EQ, w), c("resource", EQ, "readstore")], "allow") for w in BUILTINS]
-GUARANTEES += [(0, [c("command", EQ, w), c("resource", EQ, "writestore")], "allow") for w in BUILTINS]
-GUARANTEES += [(1, [c("command", EQ, w), c("resource", EQ, "screen")], "allow") for w in BUILTINS + PROGRAMS]
-GUARANTEES += [(1, [c("command", EQ, w), c("resource", EQ, "readmodel")], "allow") for w in READS_MODEL]
+GUARANTEES += [(1, run_of(*group), "deny") for group in DENIED]
+GUARANTEES += [(1, run_of(*group), "allow") for group in ALLOWED]
+GUARANTEES += [(1, run_of("help", "rm", "screen"), "allow")]
 EXAMPLES = [
     ("other screen", "deny"),
     ("other network", "deny"),
@@ -55,7 +81,7 @@ EXAMPLES = [
     ("kappa readmodel", "allow"),
     ("kappa writestore", "deny"),
     ("check readmodel", "allow"),
-    ("check writemodel", "deny"),       # the terminal changes no file of the model; the editor does
+    ("check writemodel", "deny"),       # a program changes no file of the model
     ("check network", "deny"),          # no command is handed the network
     ("check readstore", "allow"),
     ("snapshot writestore", "allow"),
@@ -64,6 +90,18 @@ EXAMPLES = [
     ("prove process", "deny"),
     ("audit readstore", "allow"),
     ("audit network", "deny"),
+    ("write writemodel", "allow"),      # six commands change the model, and only those
+    ("write network", "deny"),
+    ("rm writemodel", "allow"),
+    ("rm readstore", "deny"),
+    ("grep readmodel", "allow"),
+    ("grep writemodel", "deny"),
+    ("echo readmodel", "deny"),
+    ("save writestore", "allow"),
+    ("save writemodel", "deny"),
+    ("restore readstore", "allow"),
+    ("restore writestore", "deny"),
+    ("mv process", "deny"),
 ]
 
 

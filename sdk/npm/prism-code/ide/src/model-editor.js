@@ -66,7 +66,26 @@ const asked = new URLSearchParams(location.search).get('project');
 const PROJECT = asked ? new URL(asked.replace(/\/?$/, '/'), location.href).href : null;
 const files = {};
 let listing, pin;
-try {
+// ?model=blake3:<label>&registry=<address>&namespace=<name> opens a model by its content: the archive "Download
+// model" makes, fetched from a kappa-registry under its BLAKE3 label and taken only if its bytes are that label.
+const wanted = new URLSearchParams(location.search);
+const BY_LABEL = wanted.get('model') ? { label: wanted.get('model'), registry: wanted.get('registry') ?? '', namespace: wanted.get('namespace') ?? '' } : null;
+if (BY_LABEL) {
+  try {
+    const [{ fetchBlob }, { readModelTar }] = await Promise.all([import(/* @vite-ignore */ EDIT + 'kappa-registry.mjs'), import(/* @vite-ignore */ EDIT + 'model-tar.mjs')]);
+    pin = await json(EDIT + 'pin.json');
+    const blob = await fetchBlob(BY_LABEL.registry, BY_LABEL.namespace, BY_LABEL.label);
+    const read = readModelTar(blob.bytes);
+    for (const [path, text] of Object.entries(read.files)) files['/' + path] = text;
+    listing = { files: Object.keys(read.files).sort(), entry: read.entry };
+    state.source = { kind: 'registry', label: BY_LABEL.label, address: blob.address, bytes: blob.bytes.length, files: listing.files.length };
+  } catch (error) {
+    state.error = String(error?.message ?? error);
+    state.source = { kind: 'registry', label: BY_LABEL.label, refused: error?.code ?? 'unreadable' };
+    say(`The model ${BY_LABEL.label} could not be opened: ${state.error}`, 'bad');
+    throw error;
+  }
+} else try {
   [listing, pin] = await Promise.all([json(PROJECT ? PROJECT + 'project.json' : EDIT + 'project.json'), json(EDIT + 'pin.json')]);
   await Promise.all(listing.files.map(async (path) => {
     const response = await fetch((PROJECT ?? EDIT + 'project/') + path, { cache: 'no-store' });
@@ -84,10 +103,31 @@ const { ruleTable, tableWords, tableShape, counterexample, OPS } = await import(
 // The app this model was published with, if any: its record says what the app runs.
 const { appRecord, tableFacts, differences, verdict } = await import(/* @vite-ignore */ EDIT + 'app-match.mjs');
 const beside = await appRecord(PROJECT);
+// A holo app has another record: the label of its holo and the identity of the model it was built from.
+const { holoAppRecord, holoVerdict } = await import(/* @vite-ignore */ EDIT + 'holo-match.mjs');
+const holoBeside = beside ? null : await holoAppRecord(PROJECT);
 const original = files[entry];
 const matchLine = document.getElementById('match');
 function compare(table, edited) {
+  if (BY_LABEL) {
+    // A model opened by its label is compared with no app; what is known is where it came from and that it is those bytes.
+    state.app = null;
+    matchLine.textContent = edited
+      ? `Opened as ${BY_LABEL.label} from ${state.source.address}. You have changed it since: "Download model" gives the label of what is in the editor now.`
+      : `This is the model ${BY_LABEL.label}: ${state.source.bytes} bytes fetched from ${state.source.address}, which derive to that label. It is compared with no app.`;
+    matchLine.dataset.state = edited ? 'changed' : 'same';
+    matchLine.hidden = false;
+    return;
+  }
   if (!PROJECT) { matchLine.hidden = true; state.app = null; return; }
+  if (holoBeside) {
+    const said = holoVerdict(holoBeside, state.last?.semanticId, edited);
+    state.app = { found: true, kind: 'holo', state: said.state, holo: holoBeside.holo };
+    matchLine.textContent = said.text;
+    matchLine.dataset.state = said.state;
+    matchLine.hidden = false;
+    return;
+  }
   const differs = beside && table ? differences(tableFacts(table, { tableWords, tableShape }), beside.record) : [];
   const said = !beside ? verdict(null, [], false) : !table ? { state: 'unread', text: `This model is not read as a rule table here, so it is not compared with the app at ${beside.app}.` } : verdict(beside, differs, edited);
   state.app = { found: !!beside, state: said.state, differs };
@@ -144,6 +184,9 @@ const kernel = channel(EDIT + 'prove-worker.mjs', noted('kernel'));
 // The terminal panel's command line: the one the plain edit page uses, from the files published beside it.
 // `projectNow` is the model as it is in the editor, once the editor has opened it.
 let projectNow = () => files;
+// How a terminal command changes a file of the model, once the editor has opened it.
+let changeNow = null;
+const changing = (how) => (...args) => { if (!changeNow) throw new Error('the editor is still opening'); return changeNow[how](...args); };
 const terminals = [];
 async function commandLine(io) {
   const at = (path) => import(/* @vite-ignore */ EDIT + path);
@@ -156,7 +199,7 @@ async function commandLine(io) {
     check: (project) => lexlean.ask({ files: project }), snapshotOf: (project) => lexlean.ask({ files: project, snapshot: true }),
     prove: (words, guarantees) => kernel.ask({ words, guarantees }),
     held: async () => ({ lexlean: await settled.lexlean, kernel: await settled.kernel }),
-    pin, manifest, kept: createKeptIn(await openStore({ kappa })), ...io,
+    pin, manifest, kept: createKeptIn(await openStore({ kappa })), change: { write: changing('write'), remove: changing('remove') }, ...io,
   });
 }
 
@@ -170,7 +213,12 @@ try {
   const provider = new RegisteredFileSystemProvider(false);
   const uriOf = (path) => URI.file('/workspace' + path);
   // A file the reader changed on an earlier visit opens as they left it; `files` stays the model as fetched.
-  for (const [path, text] of Object.entries(files)) provider.registerFile(new RegisteredMemoryFile(uriOf(path), restored[path] ?? text));
+  // Each file's registration, so a file a terminal command removes or replaces can be taken out again.
+  const registered = {};
+  const register = (path, text) => { registered[path]?.dispose(); registered[path] = provider.registerFile(new RegisteredMemoryFile(uriOf(path), text)); };
+  for (const [path, text] of Object.entries(files)) register(path, restored[path] ?? text);
+  // A file made on an earlier visit, by a terminal command, comes back with the rest of the draft.
+  for (const [path, text] of Object.entries(restored)) if (!(path in files)) register(path, text);
   registerFileSystemOverlay(1, provider);
   // LexLean's colours reach the editor as semantic tokens, so they are on whatever the theme would choose.
   // ?theme=<a theme's name> opens the page in that theme; without it, the workbench's own choice stands.
@@ -229,10 +277,13 @@ try {
   // opened and changed keeps its change after its editor is closed, for as long as the tab is open.
   const current = { ...restored };
   // What the terminal's commands read: every file as the reader has it now.
-  projectNow = () => ({ ...files, ...current, [entry]: model.getValue() });
+  // Files a terminal command removed, until the page is loaded again.
+  const removed = new Set();
+  const whole = () => { const all = { ...files, ...current, [entry]: model.getValue() }; for (const path of removed) delete all[path]; return all; };
+  projectNow = whole;
   sayDraft(Object.keys(current).filter((path) => current[path] !== files[path]).sort());
   // The model as it stands in the editor, as one archive. The same model gives the same bytes, so the label names it.
-  window.prismModel.archive = () => modelTar({ ...files, ...current });
+  window.prismModel.archive = () => { const all = { ...files, ...current }; for (const path of removed) delete all[path]; return modelTar(all); };
   const took = document.getElementById('took');
   document.getElementById('download').addEventListener('click', () => {
     try {
@@ -270,7 +321,7 @@ try {
   let latest = 0;
   async function run() {
     const mine = ++latest;
-    const project = { ...files, ...current, [entry]: model.getValue() };
+    const project = whole();
     const text = project[entry];
     const edited = Object.keys(project).some((path) => project[path] !== files[path]);
     say('Checking…');
@@ -343,12 +394,32 @@ try {
   let timer = null;
   const watch = (m) => {
     const path = pathOf(m.uri);
-    if (path === null || !(path in files)) return;
+    if (path === null) return;
     if (m.getLanguageId() !== LEXLEAN && path.endsWith('.lex.tex')) monaco.editor.setModelLanguage(m, LEXLEAN);
     m.onDidChangeContent(() => { current[path] = m.getValue(); keep(); clearTimeout(timer); timer = setTimeout(run, PAUSE_MS); });
   };
   monaco.editor.getModels().forEach(watch);
   monaco.editor.onDidCreateModel(watch);
+  // The terminal's six commands that change a file. An open file changes in its editor, so the change can be
+  // undone there; a file that is not open changes where the workbench reads it from. Either way it is kept with
+  // the draft and the model is checked again. A removed file is back when the page is loaded again.
+  const changedByTerminal = () => { keep(); clearTimeout(timer); timer = setTimeout(run, PAUSE_MS); };
+  changeNow = {
+    write(path, text) {
+      removed.delete(path);
+      const open = monaco.editor.getModel(uriOf(path));
+      if (open && path in registered) { if (open.getValue() !== text) open.setValue(text); current[path] = text; } else { register(path, text); current[path] = text; }
+      changedByTerminal();
+    },
+    remove(path) {
+      if (path === entry) throw new Error(listing.entry + " is the model's entry; it stays");
+      registered[path]?.dispose();
+      delete registered[path];
+      delete current[path];
+      removed.add(path);
+      changedByTerminal();
+    },
+  };
   await run();
 } catch (e) {
   state.error = String(e?.stack ?? e);

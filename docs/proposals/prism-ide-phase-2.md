@@ -1,6 +1,6 @@
 # Prism IDE, phase 2: open any Prism app to audit it and edit it, in any browser
 
-Status: proposed, and partly built. Since this was written, `main` has gained the audit page, the edit pages, the model in the VS Code workbench, LexLean colouring, a published model and the check that a model is the one its app runs, all live at https://uor-foundation.github.io/prismpm/ (`audit/`, `edit/`, `edit/ide/`). The table below was read before that work; the rows the terminal phase depends on are corrected, the rest are as written. Phase 2f is built: the terminal is in the plain edit page and in the workbench's terminal panel. Phases 2d and 2e are not built.
+Status: proposed, and partly built. Since this was written, `main` has gained the audit page, the edit pages, the model in the VS Code workbench, LexLean colouring, a published model and the check that a model is the one its app runs, all live at https://uor-foundation.github.io/prismpm/ (`audit/`, `edit/`, `edit/ide/`). The table below was read before that work; the rows the terminal phase depends on are corrected, the rest are as written. Phase 2f is built: the terminal is in the plain edit page and in the workbench's terminal panel. Phase 2d is built but for one part awaiting review (below). Phase 2e is written and in review, in two repositories (below).
 
 ## Why
 
@@ -81,6 +81,13 @@ Gates: a second visit to the audit view of an app makes no network request. One 
 
 Budgets: warm audit view within 1 s with the network off.
 
+Built (2026-11-21), with what is not:
+
+- Offline, by content. The site lists every file by its BLAKE3 label (`offline.json`), and a service worker serves each only as the bytes its label names. Live.
+- The kappa-registry client, read only, and a model opened by its label (`edit/ide/?registry=…&namespace=…&model=blake3:…`). Live. The gate was met against kappa-registry itself, built from its `main` and run on a development machine: a model pushed under its `blake3:` label was fetched, verified and opened by the page, served from that machine. The published page could not reach it: a browser does not let an https page read from `http://127.0.0.1`. No https registry was tried. `ide/edit/README.md` has the table.
+- `kappa-opfs` under BLAKE3 labels, with the SHA-256 label as a checked field: written, in review, not merged. Its keys are still derived with SHA-256, because the reuse rules are shared with Node and a holo's own label is SHA-256. prism-code's BLAKE3 is plain JavaScript and measured 46 MB/s on a development machine; what that costs a returning visit in a browser is not measured.
+- Not built: installing an extension from Open VSX by content label. The terminal's kept output is in its own store, not `kappa-opfs`.
+
 ### Phase 2e: the entry point
 
 Work: **Open in IDE** in the frame, shown when the app publishes the three things above. `prism-code` writes them at build. Conformance ids, a scenario and a package allowance for what the build now writes.
@@ -89,9 +96,24 @@ Gates: an app built from the template shows the control and opens its own audit 
 
 Budgets: the frame grows by under 2 KiB. An app's page pays nothing until the control is used.
 
+Not built (2026-11-21). What was found on reading `UOR-Foundation/template` at `3fa228d`:
+
+- No build publishes a holo app's model. The template's Pages workflow copies the holo and renders `spec.html`; it writes no `model/`, no `model/project.json` and no `app.holo.json`. prism-code writes a model beside a rule app's page only.
+- The prism-code the template vendors for its page is 0.2.0, which has neither `model-files.mjs` nor the holo app record.
+- The frame is published on every push to the template's `main` and every app loads it on its next visit. A control added there reaches every Prism app at once.
+- The frame already has a `status` slot an app's page fills. A link put there by the app's own page would need no change to the frame; the proposal asks for a control in the frame itself.
+
+So this phase needs three changes in order: prism-code writes the model and the record for a holo app; the template's build calls it and publishes them; the frame, or the page, shows the control when they are there. The first is in this repository. The other two are the template's, and are items 2 and 3 of "Ask first".
+
+Since then (2026-11-21), in draft:
+
+- The first change is `prism-code publish-model <app.holo> --project <dir> --out <dir>`: it writes `model/`, `model/project.json` and `app.holo.json`, taking the model's identity from the holo's own provenance.
+- The other two are a draft in the template (UOR-Foundation/template#108): the page's build says where the model opens, and the frame shows the control, in the frame itself as was chosen. Tried on the template's fixture page: the control opens the audit view of that app. It was first written with the publishing inside the template, which that repository's own gate refuses: nothing but LexLean may be added there, and what is not LexLean may only shrink. So the publishing moved here, and the template's part waits on a prism-code release that has this command.
+- Found on the way: Prism IDE's LexLean accepts only Lean 4.32.2, and the template's app is on 4.32.1. The audit view works for such an app; the editor opens its files and cannot check them.
+
 ### Phase 2f: the terminal
 
-What the user gets: a terminal panel in the edit page and in the workbench, where `check`, `snapshot`, `prove`, `audit`, `ls`, `cat` and `kappa` run on the open model with real output, in the tab, with nothing sent anywhere.
+What the user gets: a terminal panel in the edit page and in the workbench, where `check`, `snapshot`, `prove` and `audit` run on the open model with real output, beside 28 builtins for the model's files and for text (`ls`, `cat`, `grep`, `diff`, `write`, `rm` and the rest), joined on a line by pipes, `;`, `&&`, `||` and redirection, in the tab, with nothing sent anywhere.
 
 What it is, said plainly. The terminal is xterm.js itself (`@xterm/xterm` 6.0.0, MIT), not a rewrite: the same emulator VS Code's own terminal panel is built on, depended on by version and lockfile, never copied into this repository. xterm.js draws what a program writes and reports keys. It runs nothing. A browser tab has no operating system, no PTY and no shell, so there is no bash, no native program and no SSH here, and no phase of a serverless IDE can add them. What answers the keys is a small interpreter in the page with a fixed list of commands, each one something that already runs in a tab as WebAssembly. It is a command line for the model, not a shell, and the page says so in its first line.
 
@@ -104,15 +126,15 @@ Work:
 - The workbench panel, through `@codingame/monaco-vscode-terminal-service-override`, which takes a backend with `start`, `input`, `resize` and `shutdown`. The same interpreter is that backend.
 - BLAKE3. One pin file names every executable the terminal can start by its `blake3:` label, and `prove` moves from the SHA-256 its manifest names to a label. `site.json` records a `blake3:` label for every published file as the primary name, the xterm.js bundle and each addon among them, with SHA-256 kept as a checked field. A program's output is kept under the derivation key of its program label and its input label and shown again by the reuse rule `reuseAdmits`, which is already proved in `model/rule-app`; a warm `check` of an unchanged model starts no executable. A saved session is a list of labels of output pieces, itself named by its label, so the same output is stored once and a saved session re-derives or is not shown. All of this goes through `kappa-opfs`, not a second store, and so it waits on phase 2d moving that store's labels to BLAKE3.
 
-Proved: four rule tables, by Lean's kernel in process, 82 guarantees in all. `ide-terminal-commands` (27): an unlisted command is refused; nothing runs unless its bytes hash to the pinned label; nothing is reused without the reuse rule's word. `ide-terminal-reach` (33): no command is ever handed the network, the clipboard, a process or a write to the model. `ide-terminal-effects` (17): clipboard sequences, notifications, transfers and window operations are ignored; no link opens without a click and a question; output alone can never raise a question. `ide-terminal-flow` (5): at the high mark a command is always held. Each has a planted defect in CI that must be refused by name.
+Proved: four rule tables, by Lean's kernel in process, 63 guarantees in all. `ide-terminal-commands` (19): an unlisted command is refused; a path outside the model is refused to every command; nothing runs unless its bytes hash to the pinned label; nothing is reused without the reuse rule's word; a file that is not there can be named only by the five commands that make one. `ide-terminal-reach` (22): no command is ever handed the network, the clipboard or a process; six commands may change a file of the model and no other may; the store is read and written only by the programs and the session commands. `ide-terminal-effects` (17): clipboard sequences, notifications, transfers and window operations are ignored; no link opens without a click and a question; output alone can never raise a question. `ide-terminal-flow` (5): at the high mark a command is always held. Each has a planted defect in CI that must be refused by name. The first two tables were restated on 2026-11-21 for 32 commands: their guarantees are over runs of the command list, because one guarantee for each command would be 105 and 152 of them at about five seconds each in Lean's kernel.
 
 Tested only: that the page asks the tables and obeys them; that the worker a program runs in really has no network (a content security policy limiting connections to the page's own origin, and a test that tries); xterm.js itself, which is used as published and not modelled; the programs' output being the same for the same input, which reuse rests on.
 
 Gates: in the published page, `check` on the shipped model prints LexLean's own result; with one byte of the executable changed, `check` is refused and nothing runs; a file holding an OSC 52 sequence, printed with `cat`, leaves the clipboard as it was; a second `check` of the same model is answered from the store with the network off.
 
-Built (2026-11-21): one command line behind two terminals, the plain edit page's on xterm.js 6.0.0 and the workbench's own terminal panel. The four tables are asked before every line, every use of a resource and every piece of output, and in the plain page before every outside effect; in the workbench panel the emulator is VS Code's, so there the defence is that every command's output is written as text. xterm.js is held to BLAKE3 pins in the plain page. Output is kept between visits in a store laid out as Hologram's browser store, and shown again only when `reuseAdmits` admits it. The four finite tables are answered from lookup tables computed once and named by label. Not built: saved sessions, and pausing a program mid-run. `ide/edit/README.md` has the detail and the figures.
+Built (2026-11-21): one command line behind two terminals, the plain edit page's on xterm.js 6.0.0 and the workbench's own terminal panel. The four tables are asked before every line, every use of a resource and every piece of output, and in the plain page before every outside effect; in the workbench panel the emulator is VS Code's, so there the defence is that every command's output is written as text. xterm.js is held to BLAKE3 pins in the plain page. Output is kept between visits in a store laid out as Hologram's browser store, and shown again only when `reuseAdmits` admits it. The four finite tables are answered from lookup tables computed once and named by label. Added the same day: a command language (pipes, `;`, `&&`, `||`, redirection to files of the model, quoting, variables, patterns), 23 more builtins, six of which change a file of the model in the editor, completion of file names, a history search, and transcripts kept by label when asked. Not built: pausing a program mid-run. `ide/edit/README.md` has the detail and the figures.
 
-Budgets. These are targets. The first figures are in `ide/edit/README.md`: one development machine, the page served from localhost, not the CI runner. On that machine the key, write, prompt and memory figures were inside the targets, except that 3 of 1000 keys took over 50 ms; a cold first check was not timed. The phase is not done until each is measured in Chrome on the CI runner and the figure written here.
+Budgets. These are targets. The figures are in `ide/edit/README.md`: one development machine, headless Chrome at 60 frames a second, the page served from localhost, not the CI runner. On that machine, in both pages, every one of 1000 keys was drawn in the frame after it arrived (worst 17.5 ms in the plain page, 23.4 ms in the workbench panel); during a 10 MB write the 95th percentile was under 20 ms; a large write ran at 8 MB/s; the first prompt came 0.9 s after the terminal was asked to start the first time and about 0.1 s later. The median key figure is one whole frame, 16.7 ms, because the test sends each key just after a frame; it is over the 16 ms target by that much and cannot be under a frame for a key that arrives then. The phase is not done until each is measured in Chrome on the CI runner and the figure written here.
 
 | What | Target | How it is measured |
 |---|---|---|
@@ -123,7 +145,7 @@ Budgets. These are targets. The first figures are in `ide/edit/README.md`: one d
 | Throughput of a large write | 5 MB/s | 10 MB of text, first write to last callback; xterm.js states 5 to 35 MB/s |
 | Memory with a full scrollback | 50 MB for 10000 lines of 120 columns | the tab's heap before and after, from the browser's own tooling |
 
-Not done: a shell, pipes, redirection, scripts, environment variables. Native programs, package managers, git, SSH, or a connection to any machine. Writing files from the terminal. A WASI shell with core utilities on files held in the browser is a later phase with its own proposal; a container in the browser is a different project. Extension-contributed terminals are untried.
+Not done: a shell that runs programs. Native programs, package managers, git, SSH, or a connection to any machine. Scripts, loops, functions, command substitution and background commands. A WASI shell with core utilities on files held in the browser is a later phase with its own proposal; a container in the browser is a different project. Extension-contributed terminals are untried.
 
 ## The goal, stated so it can be checked
 
@@ -147,7 +169,7 @@ The workbench is not an imitation. `ide/` runs `@codingame/monaco-vscode-api`, w
 | Search across files | Same code, over files held in the browser | Not built | Phase 3 |
 | Source control (git) | git in the browser, speaking to the host the user names | Not built | Phase 3 |
 | Open a GitHub or Azure repository by address | vscode.dev does this with a closed Microsoft extension. Here: git over HTTPS to that host, which is the user's server, not Prism's | Not built | Phase 3 |
-| Terminal | The same emulator, xterm.js. No shell exists in a browser, and vscode.dev has none either without a tunnel to a machine. Here: a command line for the open model (check, snapshot, prove, audit, list, print, label), every program admitted by its BLAKE3 label, with a proved rule for what it may run, touch and do outside its grid. vscode.dev has no equivalent of those rules | Built in the plain edit page and in the workbench's terminal panel; four rule tables, 82 guarantees proved | Phase 2f. A WASI shell is after phase 2, with no promise |
+| Terminal | The same emulator, xterm.js. No shell exists in a browser, and vscode.dev has none either without a tunnel to a machine. Here: a command line for the open model (check, snapshot, prove, audit, and 28 builtins for its files and for text, with pipes and redirection), every program admitted by its BLAKE3 label, with a proved rule for what it may run, touch and do outside its grid. vscode.dev has no equivalent of those rules | Built in the plain edit page and in the workbench's terminal panel; four rule tables, 63 guarantees proved | Phase 2f. A WASI shell is after phase 2, with no promise |
 | Debugging | Only for what can run in the browser | Not built | After phase 3 |
 | Settings Sync | Prism ID: the same id on every device, sealed to it | The id works on one device; linking and sync are untested | Phase 3 |
 | Sign in | None needed: Prism ID is made on first use | Tried | |
@@ -162,7 +184,7 @@ Serverless means no server of Prism's own. Three things still reach a network, e
 
 - Saving an edit back to a repository. That needs git and write access in the browser.
 - Building a holo in the browser. A changed holo app is checked and proved in the tab; building it still needs the SDK image or GitHub Actions.
-- A shell. Phase 2f is a terminal with a fixed list of commands; it runs no native program and reaches no machine.
+- A shell that runs programs. Phase 2f is a terminal with a fixed list of commands and a command language over them; it runs no native program and reaches no machine.
 - Search across files, and extensions that need Node.
 - Running the proved scope kernel in the page. `ide/src/scope.js` stays a tested copy until a holo of it is built.
 
@@ -173,7 +195,7 @@ Serverless means no server of Prism's own. Three things still reach a network, e
 3. **Publishing model sources with every app.** Today a rule app's page ships its numbers, not its `.lex.tex`. Phase 2 publishes the source. That is the point of an audit, and it is a change in what an app makes public.
 4. **The order.** 2a is useful alone and touches nothing shipped. If only one phase is wanted first, it is 2a.
 5. **xterm.js itself, not a rewrite.** "An exact clone" is met by using the real emulator, pinned and recorded by label, as the workbench is. A rewrite would be neither exact nor complete for a long time. It adds a dependency to `ide/`, not to the npm package.
-6. **Where the terminal stops.** Phase 2f is a command line over what already runs in a tab. It is not a shell and will not be called one. A WASI shell is the next step up and is not in phase 2.
+6. **Where the terminal stops.** Phase 2f is a command line over what already runs in a tab. Decided on 2026-11-21 ("feature complete"): it has pipes, redirection, variables and the usual text and file commands, and its file commands change the model in the editor. It still starts no program that is not on its list, and it is not called a shell. A WASI shell is the next step up and is not in phase 2.
 7. **Which xterm.js the workbench panel gets.** The terminal override for the workbench carries its own xterm.js, a 6.1.0 beta at version 40 of the workbench packages, and `ide/` is on version 39. The plain edit page can use stable 6.0.0 now; the workbench panel means moving the workbench to the version whose override is used, and taking the xterm.js it pins. Whether a version 39 override exists was not checked.
 8. **Saving sessions.** A transcript can hold what was typed. The proposal saves nothing unless the user asks, and then only in this browser.
 9. **The site's listing moves to BLAKE3.** `site.json` gains a `blake3:` label per file as the primary name. Anything reading its `sha256` field keeps working, but it is a change to a published format.

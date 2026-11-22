@@ -6,6 +6,11 @@
 
 **Turn a software model into an application you can build, check, and share.**
 
+[Why it exists](#why-prismpm-exists) · [What it provides](#what-this-repository-provides) · [Calculator quick start](#calculator-getting-started) · [Verification scope](#verification-scope) · [Development](#development-and-acceptance) · [Reference docs](#key-documents)
+
+[![Conformance gate](https://github.com/UOR-Foundation/prismpm/actions/workflows/conformance-gate.yml/badge.svg?branch=main)](https://github.com/UOR-Foundation/prismpm/actions/workflows/conformance-gate.yml) [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-718096)](LICENSE-MIT)
+
+
 ## Why PrismPM exists
 
 Software teams often have two versions of the truth: what their design says

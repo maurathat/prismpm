@@ -67,3 +67,48 @@ export function modelTar(files, { folder = 'model' } = {}) {
   for (const part of parts) { bytes.set(part, at); at += part.length; }
   return { bytes, label: kappa(bytes) };
 }
+
+const strict = new TextDecoder('utf-8', { fatal: true });
+const textAt = (block, at, length) => { let end = at; while (end < at + length && block[end] !== 0) end++; return strict.decode(block.subarray(at, end)); };
+
+/**
+ * A model read back from an archive: `{ folder, files: { path: text }, entry }`, the paths relative to the model's
+ * folder and without a leading slash, `entry` the file its lexlean.toml names first. The archive is read strictly,
+ * since it may come from anywhere: every entry must be a regular file of text under one folder, with a header whose
+ * checksum holds and a path that stays inside the folder. Anything else is refused, and nothing is returned.
+ */
+export function readModelTar(bytes, { limit = 32 * 1024 * 1024 } = {}) {
+  if (!(bytes instanceof Uint8Array) || bytes.length % BLOCK !== 0) throw new Error('not a tar archive: its length is not whole blocks');
+  if (bytes.length > limit) throw new Error(`the archive is ${bytes.length} bytes, more than the ${limit} read here`);
+  const files = {};
+  let folder = null;
+  let at = 0;
+  while (at + BLOCK <= bytes.length) {
+    const block = bytes.subarray(at, at + BLOCK);
+    if (block.every((byte) => byte === 0)) break; // the end of the archive
+    const stated = parseInt(textAt(block, 148, 8).trim() || 'x', 8);
+    let sum = 0;
+    for (let i = 0; i < BLOCK; i++) sum += i >= 148 && i < 156 ? 0x20 : block[i];
+    if (stated !== sum) throw new Error('not a tar archive this page reads: a header does not add up');
+    const kind = block[156];
+    if (kind !== 0x30 && kind !== 0) throw new Error('the archive holds something other than plain files, which a model does not');
+    const prefix = textAt(block, 345, 155);
+    const full = (prefix ? prefix + '/' : '') + textAt(block, 0, 100);
+    const size = parseInt(textAt(block, 124, 12).trim() || 'x', 8);
+    if (!Number.isInteger(size) || size < 0 || at + BLOCK + size > bytes.length) throw new Error(`${JSON.stringify(full)} has a size the archive cannot hold`);
+    const parts = full.split('/');
+    if (parts.length < 2 || parts.some((part) => part === '' || part === '.' || part === '..') || full.includes('\\')) throw new Error(`${JSON.stringify(full)} is not a path inside a model's folder`);
+    folder ??= parts[0];
+    if (parts[0] !== folder) throw new Error('the archive holds more than one folder');
+    const path = parts.slice(1).join('/');
+    if (path in files) throw new Error(`${JSON.stringify(path)} is in the archive twice`);
+    let text;
+    try { text = strict.decode(bytes.subarray(at + BLOCK, at + BLOCK + size)); } catch { throw new Error(`${JSON.stringify(path)} is not text`); }
+    files[path] = text;
+    at += BLOCK + Math.ceil(size / BLOCK) * BLOCK;
+  }
+  if (folder === null) throw new Error('the archive is empty');
+  const entry = /entrypoints\s*=\s*\[\s*"([^"]+)"/.exec(files['lexlean.toml'] ?? '')?.[1];
+  if (!entry || !(entry in files)) throw new Error('the archive is not a LexLean project: its lexlean.toml names no file that is in it');
+  return { folder, files, entry };
+}

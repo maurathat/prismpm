@@ -74,8 +74,19 @@ const { ruleTable, tableWords, tableShape, counterexample, OPS } = await import(
 // The app this model was published with, if any: its record says what the app runs.
 const { appRecord, tableFacts, differences, verdict } = await import('./app-match.mjs');
 const beside = await appRecord(PROJECT);
+// A holo app has another record: the label of its holo and the identity of the model it was built from.
+const { holoAppRecord, holoVerdict } = await import('./holo-match.mjs');
+const holoBeside = beside ? null : await holoAppRecord(PROJECT);
 function compare(table, text) {
   if (!PROJECT) { $('appMatch').hidden = true; state.app = null; return; }
+  if (holoBeside) {
+    const said = holoVerdict(holoBeside, state.last?.semanticId, text !== original);
+    state.app = { found: true, kind: 'holo', state: said.state, holo: holoBeside.holo };
+    $('appMatch').textContent = said.text;
+    $('appMatch').dataset.state = said.state;
+    $('appMatch').hidden = false;
+    return;
+  }
   const differs = beside && table ? differences(tableFacts(table, { tableWords, tableShape }), beside.record) : [];
   const said = !beside ? verdict(null, [], false) : !table ? { state: 'unread', text: `This model is not read as a rule table here, so it is not compared with the app at ${beside.app}.` } : verdict(beside, differs, text !== original);
   state.app = { found: !!beside, state: said.state, differs };
@@ -220,4 +231,10 @@ import('./terminal/terminal.mjs').then(({ startTerminal }) => startTerminal($('t
   pin: LEXLEAN_WASM,
   setTitle: (text) => { $('terminalTitle').textContent = text; },
   find: $('terminalFind'),
+  // The six commands that change a file change what this page holds: the open file in the editor, the others in
+  // memory. As with typing, nothing is saved anywhere, and the model is checked again.
+  change: {
+    write: (path, text) => { if (path === entry) $('source').value = text; else files[path] = text; clearTimeout(timer); run(); },
+    remove: (path) => { if (path === entry) throw new Error(listing.entry + ' is the file open in the editor; it stays'); delete files[path]; clearTimeout(timer); run(); },
+  },
 })).catch((error) => { $('terminal').textContent = 'The terminal could not start: ' + (error?.message ?? error); });
