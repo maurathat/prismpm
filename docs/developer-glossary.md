@@ -32,7 +32,7 @@ A Docker word is used only for its Docker meaning. Where Docker has a behaviour 
 
 Docker's own verbs and the terms that are new with Prism (verify, proof, replay, world) keep their names.
 
-`attest`, `auth`, `axioms`, `build`, `check`, `conformance`, `connect`, `containers`, `create`, `dev`, `df`, `disconnect`, `dispatch`, `errors`, `events`, `export`, `export-browser`, `fromKey`, `generate`, `get`, `identities`, `images`, `info`, `init`, `inspect`, `keyless`, `list`, `lock`, `login`, `logout`, `manifest`, `mcp`, `networks`, `open`, `providers`, `prune`, `pull`, `push`, `remove`, `replay`, `setup`, `skill`, `start`, `stores`, `system`, `template`, `usage`, `vectors`, `verify`, `verify-attestation`, `version`, `volumes`
+`attest`, `auth`, `axioms`, `build`, `check`, `conformance`, `connect`, `containers`, `create`, `dev`, `df`, `disconnect`, `dispatch`, `errors`, `events`, `export`, `export-browser`, `fromKey`, `generate`, `get`, `identities`, `images`, `info`, `init`, `inspect`, `keyless`, `list`, `lock`, `login`, `logout`, `manifest`, `mcp`, `networks`, `open`, `providers`, `prune`, `publish-model`, `pull`, `push`, `remove`, `replay`, `setup`, `skill`, `start`, `stores`, `system`, `template`, `usage`, `vectors`, `verify`, `verify-attestation`, `version`, `volumes`
 
 ## Deprecated aliases
 
