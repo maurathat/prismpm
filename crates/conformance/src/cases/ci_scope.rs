@@ -6,7 +6,16 @@ use std::process::Command;
 pub(super) fn verify(root: &Path) {
     let interpreter = if cfg!(windows) { "python" } else { "python3" };
     let result = Command::new(interpreter)
-        .args(["-m", "unittest", "discover", "-s", "sdk/ci", "-p", "test_passive_readme_scope.py", "-v"])
+        .args([
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "sdk/ci",
+            "-p",
+            "test_passive_readme_scope.py",
+            "-v",
+        ])
         .current_dir(root)
         .output()
         .expect("Python runtime required for portable SDK classifier conformance");
@@ -54,13 +63,22 @@ pub(super) fn verify(root: &Path) {
         "test_rejects_asset_alone_or_delete",
         "test_rejects_newly_injected_policy_marker",
     ];
-    assert!(result.status.success(), "RP-13 refused:\n{transcript}");
-    assert!(transcript.contains(&format!("Ran {} tests", EXPECTED.len())),
-        "RP-13 fixture inventory incomplete:\n{transcript}");
-    assert!(!transcript.contains("skipped") && !transcript.contains("expected failure"),
-        "RP-13 must not accept skipped or suppressed cases:\n{transcript}");
+    assert!(
+        result.status.success(),
+        "RP-13 refused:\\n{transcript}"
+    );
+    assert!(
+        transcript.contains(&format!("Ran {} tests", EXPECTED.len())),
+        "RP-13 fixture inventory incomplete:\\n{transcript}"
+    );
+    assert!(
+        !transcript.contains("skipped") && !transcript.contains("expected failure"),
+        "RP-13 must not accept skipped or suppressed cases:\\n{transcript}"
+    );
     for case in EXPECTED {
-        assert!(transcript.contains(&format!("{case} (")),
-            "RP-13 missing required fixture {case}:\n{transcript}");
+        assert!(
+            transcript.contains(&format!("{case} (")),
+            "RP-13 missing required fixture {case}:\\n{transcript}"
+        );
     }
 }
