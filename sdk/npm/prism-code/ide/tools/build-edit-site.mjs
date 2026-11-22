@@ -26,6 +26,7 @@ import { LEXLEAN_WASM, ensureLexleanWasm, lexleanWasmFile } from '../../src/jour
 import { ensureKernel, hasKernel, readKernelFile } from '../../src/journey/kernel-store.mjs';
 import { pinnedFile } from '../../src/journey/kappa-store.mjs';
 import { MODEL_KERNEL_FILES, ensureModelKernel } from '../../src/journey/model-prove.mjs';
+import { EVALUATOR_GUEST } from '../../src/journey/model-guest.mjs';
 import { projectListing } from './edit-project.mjs';
 import { kappa } from '../../src/blake3.mjs';
 import { terminalTables, vendorFiles } from './terminal-site.mjs';
@@ -42,6 +43,9 @@ mkdirSync(site, { recursive: true });
 cpSync(join(ide, 'edit'), site, { recursive: true, filter: (p) => !/README\.md$/.test(p) });
 // Only code: the page imports modules, never the studio's pages or anything else under src.
 cpSync(join(pkg, 'src'), join(site, 'prism-code'), { recursive: true, filter: (p) => statSync(p).isDirectory() || /\.(mjs|js)$/.test(p) });
+// And the one file a build in the page needs that is not code: the evaluator guest a holo is made from. The worker
+// admits it by the label model-guest.mjs pins.
+cpSync(join(pkg, 'src', 'journey', EVALUATOR_GUEST.file), join(site, 'prism-code', 'journey', EVALUATOR_GUEST.file));
 
 writeFileSync(join(site, 'pin.json'), JSON.stringify({ commit: LEXLEAN_WASM.commit, kappa: LEXLEAN_WASM.kappa, encoding: LEXLEAN_WASM.encoding }) + '\n');
 cpSync(lexleanWasmFile() ?? await ensureLexleanWasm(), join(site, 'lexlean.wasm.gz'));

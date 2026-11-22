@@ -10,19 +10,36 @@
 // page that never needs it never fetches it. The kernel is laid back to its just-loaded state before every run, so
 // what one edit declared cannot stand in for the next.
 //
+// It also builds: `{ build: true }` runs the package's whole build (build-core.mjs, `buildFromFiles`), the functions
+// `prism_build` runs: LexLean checks the model, this kernel judges its theorems, and the holo is made with nothing
+// compiled, from the evaluator guest this package pins. A holo is given only when every theorem was proved, the
+// holo reads back verified and every acceptance vector passes through it.
+//
 // Messages in:  { start: { lexlean: { url, pin: { kappa, encoding } }, kernel: '<address of model-kernel/pins.json>' } }
 //               { id, files: { '/path': 'text', ... } }
+//               { id, build: true, files }
 // Messages out: { ready: true, ms, openMs } once, or { failed: 'why', reason: 'mismatch' | 'absent' };
 //               { id, result: { ok, theorems: [{ theorem, name, status, detail, axioms, ms }], via, message }, ms }
 //               or { id, error }. `status` is `proved`, `not proved` or `not settled`.
+//               For a build: { stage: 'check' | 'prove' | 'build', of: id } as each begins, then
+//               { id, built: <the result of buildFromFiles, its theorems as above>, ms }, the holo's bytes transferred.
 
 import { compileAdmitted } from './prism-code/journey/toolchain.mjs';
 import { lexleanSnapshot } from './prism-code/journey/lexlean-core.mjs';
 import { kernelProver, openKernelFrom } from './prism-code/journey/prove-core.mjs';
+import { buildFromFiles } from './prism-code/journey/build-core.mjs';
+import { EVALUATOR_GUEST, admitEvaluator } from './prism-code/journey/model-guest.mjs';
 
 const enc = new TextEncoder();
 
 let opened = null;
+// The evaluator guest, fetched once and admitted by the label the package pins: bytes that are not it build nothing.
+let evaluator = null;
+const guest = () => (evaluator ??= (async () => {
+  const response = await fetch(new URL(`./prism-code/journey/${EVALUATOR_GUEST.file}`, import.meta.url));
+  if (!response.ok) throw new Error(`the evaluator guest is not published beside this page (${response.status})`);
+  return admitEvaluator(new Uint8Array(await response.arrayBuffer()));
+})());
 async function open({ lexlean, kernel }) {
   const started = performance.now();
   const pins = await (await fetch(kernel, { cache: 'no-store' })).json();
@@ -51,6 +68,12 @@ onmessage = async ({ data }) => {
     const { module, k, prove } = await opened;
     const started = performance.now();
     const files = new Map(Object.entries(data.files).map(([path, text]) => [path, typeof text === 'string' ? enc.encode(text) : text]));
+    if (data.build) {
+      k.reset();
+      const built = await buildFromFiles({ files, lexlean: module, evaluator: await guest(), prove, onStage: (stage) => postMessage({ stage, of: data.id }) });
+      postMessage({ id: data.id, built, ms: Math.round(performance.now() - started) }, built.holo ? [built.holo.bytes.buffer] : []);
+      return;
+    }
     const taken = await lexleanSnapshot(module, files);
     if (!taken.ok) {
       postMessage({ id: data.id, result: { ok: false, theorems: [], via: null, message: 'LexLean refused the model, so there is nothing to put to the kernel.' }, ms: Math.round(performance.now() - started) });

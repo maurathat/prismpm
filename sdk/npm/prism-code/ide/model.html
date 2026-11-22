@@ -9,7 +9,7 @@
   body { display: flex; flex-direction: column; font: 13px/1.4 system-ui, sans-serif; background: #1e1e1e; color: #ddd; }
   #top { display: flex; align-items: center; border-bottom: 1px solid #333; }
   #strip { padding: .35rem .75rem; flex: 1; }
-  #download { font: inherit; color: #ddd; background: none; border: 1px solid #555; border-radius: 3px; padding: .1rem .5rem; margin-right: .5rem; cursor: pointer; white-space: nowrap; }
+  #download, #build { font: inherit; color: #ddd; background: none; border: 1px solid #555; border-radius: 3px; padding: .1rem .5rem; margin-right: .5rem; cursor: pointer; white-space: nowrap; }
   #took { padding: .35rem .75rem; border-bottom: 1px solid #333; overflow-wrap: anywhere; }
   #strip[data-state="ok"] { color: #6fcf8f; } #strip[data-state="bad"] { color: #ff8a8a; }
   #match { padding: .35rem .75rem; border-bottom: 1px solid #333; }
@@ -20,7 +20,7 @@
 </style>
 </head>
 <body>
-<div id="top"><div id="strip" role="status">Starting…</div><button id="download" type="button" title="The model as it stands in the editor, as one tar archive">Download model</button></div>
+<div id="top"><div id="strip" role="status">Starting…</div><button id="build" type="button" title="Check, prove and build this model into a holo, here in this tab">Build</button><button id="download" type="button" title="The model as it stands in the editor, as one tar archive">Download model</button></div>
 <div id="took" role="status" hidden></div>
 <div id="match" role="status" hidden></div>
 <div id="draft" role="status" hidden><span id="draftText"></span> <button id="draftDiscard" type="button" hidden>Discard my changes</button></div>

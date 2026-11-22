@@ -225,6 +225,27 @@ Tried by hand in one browser, on the assembled site served from one machine:
 | In it, let a booking pass 12 seats | "8 of 10 theorems proved … 2 not": `bookKeepsBounds` and `inv001KeptByBook`, each "not settled", marked at lines 70 and 97 of `DinnerSeatsProofs.lex.tex` |
 | Undo, then the same again | 10 of 10, then 8 of 10, then 10 of 10 |
 
+### Build, in the tab
+
+**Build**, beside "Download model", runs the package's whole build in the worker that holds LexLean and Lean's kernel: `buildFromFiles` (`build-core.mjs`), the functions `prism_build` runs. LexLean checks the model, the kernel judges its theorems, and the holo is made with nothing compiled, from the evaluator guest prism-code pins, which the worker admits by its BLAKE3 label. A holo is given only when every theorem was proved, the holo reads back verified and every acceptance vector passes through it. Then the page names it by its label and offers it to save; `window.prismModel.holo()` gives its bytes to whatever runs it next.
+
+Tried by hand in one browser (Chromium), on the assembled site served from one machine, one run each:
+
+| Step | Shown |
+|---|---|
+| Build the stateful starter | "Built in this tab in 2322 ms, with nothing compiled: Dinner seats.holo, 69734 bytes, blake3:2ce8cb52…. Proved: Lean's kernel accepted all 10 of its theorems. Tested: 59 of 59 examples give their recorded answer through it." |
+| Let a booking pass 12 seats, build (planted defect) | "Not built (stopped at prove): 2 of 10 theorems are not proved"; no holo is kept |
+| Undo, build | the same holo again: the same 69734 bytes under the same label |
+| Build the decision starter | Parking fee tier.holo, 41686 bytes; 3 of 3 theorems; 25 of 25 examples; 924 ms |
+| Build the rule-app starter | "The holo is not built: the model declares 0 text applications". A rule app is built another way, and this does not build one |
+
+Limits of the build:
+
+- It builds text applications. A rule table is proved in the page and not built here.
+- The holo is format v5, as the package's builder writes it.
+- Nothing runs the holo yet, and it is kept only in the page: a reload loses it.
+- For a theorem with no proof the reason shown can be "no proof found (process is not defined)". The verdict is right, nothing is called proved; the reason is the proof finder (`src/vendor/kernel-path/emit.mjs`) reading `process.env`, which a browser does not have. Whether that also hides a proof Node would find is not known.
+
 Limits of the workbench page:
 
 - Opening by label is read only: the page pushes nothing to a registry. A model gets there by `curl`, as the registry's README shows, or by a tool that can push.
