@@ -125,7 +125,7 @@ function compare(table, edited) {
   if (!PROJECT) { matchLine.hidden = true; state.app = null; return; }
   if (holoBeside) {
     const said = holoVerdict(holoBeside, state.last?.semanticId, edited);
-    state.app = { found: true, kind: 'holo', state: said.state, holo: holoBeside.holo };
+    state.app = { found: true, kind: 'holo', state: said.state, holo: holoBeside.holo, ...APP_FACTS };
     matchLine.textContent = said.text;
     matchLine.dataset.state = said.state;
     matchLine.hidden = false;
@@ -133,7 +133,7 @@ function compare(table, edited) {
   }
   const differs = beside && table ? differences(tableFacts(table, { tableWords, tableShape }), beside.record) : [];
   const said = !beside ? verdict(null, [], false) : !table ? { state: 'unread', text: `This model is not read as a rule table here, so it is not compared with the app at ${beside.app}.` } : verdict(beside, differs, edited);
-  state.app = { found: !!beside, state: said.state, differs };
+  state.app = { found: !!beside, state: said.state, differs, ...(APP_FACTS ?? {}) };
   matchLine.textContent = said.text;
   matchLine.dataset.state = said.state;
   matchLine.hidden = false;
@@ -149,8 +149,25 @@ const library = () => (holospace ??= holospaceModule().then((m) => m.openHolospa
 // the workbench through Holospace's own file provider. The first visit puts the model there as fetched, in one
 // step; later visits open what was saved. Without it the files are held in memory and changes are kept as a draft.
 const WORKSPACE = (() => { const name = new URLSearchParams(location.search).get('workspace'); return name !== null && /^[a-z0-9][a-z0-9._-]{0,62}$/.test(name) ? name : null; })();
+// An app opened from its own link (?project=<app>/model/) has a holospace of its own, named by Holospace from the
+// BLAKE3 label of the holo the app publishes: the same on every visit and for every rebuild of that app, and apart
+// from every other app's. The label is the one the app's record names, taken only because the published holo's
+// bytes derive to it (holo-match.mjs). A library that gives an app no holospace leaves the page as it was.
+const APP_ADDRESS = !WORKSPACE && holoBeside?.holo === 'same' ? holoBeside.record.holo : null;
+// What the page read of the app, kept with what is later said of the model against it (state.app).
+const APP_FACTS = holoBeside ? { address: holoBeside.holo === 'same' ? holoBeside.record.holo : null, from: holoBeside.app, id: null, space: null }
+  : beside ? { address: null, from: PROJECT ? new URL('../', PROJECT).href : null, id: null, space: null } : null;
 let stored = null;
 let storedBench = null;
+let space = null;
+// The store, for what it says of this tab: whether it may write, and when that changes.
+let store = null;
+const PLACE = () => (space ? "This app's own holospace" : `Workspace "${WORKSPACE}"`);
+const READ_ONLY = 'This workspace is open for editing in another tab; this one is read-only until that tab closes. ';
+// Measured in Chromium with the library at ea96397: when the writing tab closes, this tab is told it may write, but
+// a save from the workbench already open here still does not reach the store. After a reload it does. So the page
+// asks for the reload instead of saying it can save.
+const RELOAD = 'The tab that was editing this workspace has closed. Reload this tab to edit it here. ';
 // Files of the model that a saved workspace no longer has: they were removed there on an earlier visit.
 const goneFromWorkspace = [];
 // The reader's changes from an earlier visit, kept in this browser under BLAKE3 labels for exactly this model.
@@ -159,10 +176,13 @@ const drafts = await openDrafts();
 const base = baseLabel(listing.entry, files);
 let kept = { restored: {}, dropped: [] };
 let restored = {};
-if (WORKSPACE) {
+if (WORKSPACE || APP_ADDRESS) {
   try {
     const [h, { walk }] = await Promise.all([library(), holospaceModule()]);
-    stored = h.workspace(WORKSPACE);
+    if (!WORKSPACE && typeof h.app !== 'function') throw Object.assign(new Error('the library this site pins gives an app no holospace of its own yet'), { quiet: true });
+    if (!WORKSPACE) { space = await h.app({ address: APP_ADDRESS }); APP_FACTS.id = space.id ?? null; }
+    stored = space ? space.workspace : h.workspace(WORKSPACE);
+    store = h.store ?? null;
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
     const there = (await walk(stored, { path: '/', limit: 5000 })).filter((e) => !e.dir);
@@ -174,12 +194,15 @@ if (WORKSPACE) {
       for (const path of Object.keys(files)) if (!names.has(path)) goneFromWorkspace.push(path);
     }
     storedBench = h.workbench(stored);
-    state.workspace = { name: WORKSPACE, made: there.length === 0, label: await stored.label(), changed: Object.keys(restored).sort(), gone: [...goneFromWorkspace] };
+    // Only one tab writes a store. Another is told so, reads what the first saves, and takes over when it closes.
+    state.workspace = { name: WORKSPACE, app: space ? APP_ADDRESS : null, made: there.length === 0, label: await stored.label(), changed: Object.keys(restored).sort(), gone: [...goneFromWorkspace], writable: store?.writable ?? 'unknown' };
   } catch (error) {
     // A browser that gives no store, or a library that did not open: the page says so and goes on in memory.
-    state.workspace = { name: WORKSPACE, error: String(error?.message ?? error) };
+    if (error?.quiet) APP_FACTS.space = error.message; else state.workspace = { name: WORKSPACE, app: APP_ADDRESS, error: String(error?.message ?? error) };
     stored = null;
     storedBench = null;
+    space = null;
+    store = null;
     restored = {};
   }
 }
@@ -191,12 +214,14 @@ if (!stored) {
 const draftLine = document.getElementById('draft');
 const draftText = document.getElementById('draftText');
 state.draft = { base, off: drafts.off, restored: Object.keys(restored), dropped: kept.dropped, kept: Object.keys(restored) };
+// When the tab that was writing closes, the line says so.
+store?.onWritable?.((writable) => { if (state.workspace) { state.workspace.writable = writable && state.workspace.writable === false ? 'after a reload' : writable; sayDraft(state.draft?.kept ?? []); } });
 function sayDraft(paths) {
   if (stored) {
     // In a workspace the files are saved by the workbench into the store; there is no draft apart from them.
     state.draft.kept = paths;
     draftLine.hidden = false;
-    draftText.textContent = `Workspace "${WORKSPACE}", kept in this browser's store. ` + (paths.length === 0 ? 'Its files are the model as fetched.' : `Changed from the model as fetched: ${paths.map((path) => path.replace(/^\//, '')).join(', ')}.`);
+    draftText.textContent = (state.workspace?.writable === false ? READ_ONLY : state.workspace?.writable === 'after a reload' ? RELOAD : '') + `${PLACE()}, kept in this browser's store. ` + (paths.length === 0 ? 'Its files are the model as fetched.' : `Changed from the model as fetched: ${paths.map((path) => path.replace(/^\//, '')).join(', ')}.`);
     document.getElementById('draftDiscard').hidden = true;
     return;
   }

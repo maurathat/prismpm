@@ -1,13 +1,13 @@
 {
  "schema": "prism-ide/holospace-pins/1",
  "note": "The Holospace library the workbench opens and runs a built holo with, and keeps a workspace in. Each file is published beside the page only when its bytes derive to the BLAKE3 label here; nothing of it is fetched from Holospace's site at run time. They are fetched from the release of the commit named, an address whose bytes do not change when Holospace publishes again; a release holds the files flat, under the last part of each path. The labels are those of that release's library.json (schema holospace/library/1), each file fetched and derived again before it was pinned. A newer library is taken by a pull request that changes this file.",
- "from": "https://github.com/Hologram-Technologies/holospace-shell/releases/download/library-0be373dff2d2d2f29807930b4919d887b6e23c9b/",
+ "from": "https://github.com/Hologram-Technologies/holospace-shell/releases/download/library-ea9639719cea3ed99105f34a315c637726f57cd5/",
  "repository": "https://github.com/Hologram-Technologies/holospace-shell",
- "commit": "0be373dff2d2d2f29807930b4919d887b6e23c9b",
+ "commit": "ea9639719cea3ed99105f34a315c637726f57cd5",
  "entry": "holospace.bundle.mjs",
  "storage": { "opfs": "holospace-store", "cache": "holospace-store" },
  "files": [
-  { "path": "holospace.bundle.mjs", "kappa": "blake3:6ac0fb12ffcfec876a39f3a70e021b44aece727ac4950ead6b05689a9a0fdd1e", "bytes": 621650 },
+  { "path": "holospace.bundle.mjs", "kappa": "blake3:bd0d3399fc3b2ecbcb177e6ab2590882d91d8a751bd04b4388322740433af979", "bytes": 629982 },
   { "path": "store-worker.bundle.mjs", "kappa": "blake3:842aa2624615abef863e1e7c8b6e1c530ae9a5edc567950401dafd0a7560427e", "bytes": 7881 },
   { "path": "kernels/kernel.json", "kappa": "blake3:56c7b2beca3db2c7ac6609297d9f89161f1f05285ea64086d6152a0c2df5aea7", "bytes": 300 },
   { "path": "kernels/holospace-kernel.holo", "kappa": "blake3:4852752961dbf141aa0e142b0efc5c15c83f2f504f5a3adb15e85c55a0d00ef2", "bytes": 35782 }
