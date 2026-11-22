@@ -175,6 +175,26 @@ class PassiveReadmeTests(unittest.TestCase):
         self.head = malicious
         self.refuse("not passive")
 
+    def test_rejects_encoded_fragment_delimiter_as_filename(self):
+        self.build(VALID + "\n[Missing](README.md%23section)\n")
+        self.refuse("missing or non-regular link target")
+
+    def test_rejects_encoded_query_delimiter_as_filename(self):
+        self.build(VALID + "\n[Missing](details.md%3Fquery)\n")
+        self.refuse("missing or non-regular link target")
+
+    def test_rejects_unreviewed_raw_query(self):
+        self.build(VALID + "\n[Missing](details.md?query)\n")
+        self.refuse("unsafe or unsupported link")
+
+    def test_rejects_comment_like_html_attribute(self):
+        self.build(VALID + '\n<a title="<!--" href="missing.md">Broken</a><!-- -->\n')
+        self.refuse("HTML comment marker in tag attribute")
+
+    def test_rejects_backtick_inside_fence_info(self):
+        self.build(VALID + "\n\x60\x60\x60lang\x60invalid\n[Broken](missing.md)\n\x60\x60\x60\n")
+        self.refuse("backtick in Markdown fence info")
+
     def test_rejects_traversal(self):
         self.build(VALID.replace("details.md", "../secret.md"))
         self.refuse("escapes repository")
