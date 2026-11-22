@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { ensureModelKernel, modelProve, modelProveDeclared, openModelKernel, MODEL_KERNEL_FILES } from '../src/journey/model-prove.mjs';
 import { gunzipSync } from 'node:zlib';
 import { proverWhere } from '../src/journey/frontend.mjs';
+import { plan } from '../src/vendor/kernel-path/plan.mjs';
 
 const kernelPath = fileURLToPath(new URL('../../lean-prover/kernel-path/', import.meta.url));
 const here = existsSync(join(kernelPath, 'library', 'base.ndjson.gz'));
@@ -77,6 +78,33 @@ test('a false statement is not proved', { skip: !here && 'no lean-prover package
   assert.match(r.theorems.find((t) => t.name.endsWith('.startInBounds')).status, /^not proved/);
   // The other seven are still judged, and proved.
   assert.equal(r.theorems.filter((t) => t.status.startsWith('proved')).length, 7);
+});
+
+test("the canonical template's theorem, proved by simplify, is proved on the axioms it declares", { skip: !here && 'no lean-prover package beside this one' }, async () => {
+  // conformant_decides states a Boolean test equals its proposition. Every digest equation it needs is given by a
+  // hypothesis; before, each was proved again through LexReflect.nat_eq_of, whose proof rests on Quot.sound, so the
+  // theorem was refused for an axiom it does not declare. Snapshot: UOR-Foundation/template at 3fa228d7, app/.
+  const r = await modelProve(snapshot('template-contract'), { kernel: await openModelKernel({ env: { PRISM_MODEL_KERNEL_DIR: kernelDir(), PRISM_KAPPA_DIR: storeDir() } }), fetch: noFetch });
+  const th = r.theorems.find((t) => t.name.endsWith('.conformant_decides'));
+  assert.match(th.status, /^proved/, th.status);
+  assert.deepEqual(th.axioms, ['propext']);
+  assert.equal(r.ok, true);
+});
+
+test('the proof finder finds the same proofs with no process, as in a browser worker', { skip: !here && 'no lean-prover package beside this one' }, async () => {
+  // A worker has no `process`. The finder read process.env for two debugging switches, so there every candidate
+  // proof threw and a theorem Node proves was "not settled" in a page.
+  const k = await openModelKernel({ env: { PRISM_MODEL_KERNEL_DIR: kernelDir(), PRISM_KAPPA_DIR: storeDir() } });
+  const found = (name) => { const p = plan(snapshot(name), k.library); return { status: p.theorems.map((t) => [t.name, t.status]), file: p.file(p.theorems.filter((t) => !t.status).map((t) => t.name)) }; };
+  for (const name of ['template-contract', 'loan', 'seat', 'or']) {
+    const inNode = found(name);
+    const saved = Object.getOwnPropertyDescriptor(globalThis, 'process');
+    Object.defineProperty(globalThis, 'process', { value: undefined, configurable: true, writable: true });
+    let inWorker;
+    try { inWorker = found(name); } finally { Object.defineProperty(globalThis, 'process', saved); }
+    assert.deepEqual(inWorker.status, inNode.status, name);
+    assert.equal(inWorker.file, inNode.file, `${name}: the same proofs, byte for byte`);
+  }
 });
 
 test('a theorem judged once is not judged again, in this app or in another app with the same theorem', { skip: !here && 'no lean-prover package beside this one' }, async () => {

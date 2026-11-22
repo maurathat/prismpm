@@ -103,7 +103,7 @@ export function lower(snap, em, { hash = null } = {}) {
       case "bytes": return { kind: "bytes" };
       case "integer": return { kind: t.representation };
       case "bool": case "and": case "or": case "not": case "beq": case "ble": case "blt": return { kind: "bool" };
-      case "eq": case "le": case "lt": case "iff": return { kind: "prop" };
+      case "eq": case "le": case "lt": case "iff": case "prop_and": case "prop_or": return { kind: "prop" };
       case "if": return typeOf(here, ctx, t.then_value);
       case "let": return typeOf(here, bindSem(ctx, t.binder.name, absType(here, t.binder.type)), t.body);
       case "record": return { kind: "named", member: { name: ref(here, t.type), abs: true }, arguments: [] };
@@ -220,6 +220,8 @@ export function lower(snap, em, { hash = null } = {}) {
       }
       case "eq": return eqAt(type(here, typeOf(here, ctx, t.left)), go(t.left), go(t.right));
       case "iff": return apps(c0("Iff"), go(t.left), go(t.right));
+      case "prop_and": return apps(c0("And"), go(t.left), go(t.right));
+      case "prop_or": return apps(c0("Or"), go(t.left), go(t.right));
       case "le": case "lt": {
         const s = typeOf(here, ctx, t.left);
         if (s.kind !== "nat") fail(`${t.kind} over ${s.kind} is not covered yet`);

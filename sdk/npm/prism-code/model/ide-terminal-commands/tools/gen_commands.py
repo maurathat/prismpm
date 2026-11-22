@@ -39,6 +39,8 @@ MORE = {
     "uniq": "drop a line that repeats the one before",
     "diff": "print the lines in which two files differ",
     "cd": "change the folder paths start from",
+    "run": "enter the lines of a file of the model",
+    "test": "say by its status whether a comparison holds",
     "append": "add what is piped in to the end of a file of the model",
     "mv": "rename a file of the model",
     "cp": "copy a file of the model",
@@ -106,7 +108,7 @@ GUARANTEES = [
     (1, run_of("check", "audit") + [c("target", EQ, "model"), c("bytes", EQ, "pinned"), c("stored", EQ, "no")], "run"),
     (1, run_of("check", "audit") + [c("target", EQ, "model"), c("stored", EQ, "yes")], "reuse"),
     # A path that names no file is refused to every command but the five that make one.
-    (1, run_of("other", "cd") + [c("target", EQ, "new")], "refuse"),
+    (1, run_of("other", "test") + [c("target", EQ, "new")], "refuse"),
     (1, [c("command", EQ, "rm"), c("target", EQ, "new")], "refuse"),
     (1, run_of("append", "touch") + [c("target", EQ, "new")], "builtin"),
     # A builtin whose paths are in the model, or that names none, is always answered.
@@ -147,6 +149,10 @@ EXAMPLES = [
     ("mv new absent no", "builtin"),
     ("cp outside absent no", "refuse"),
     ("save none absent no", "builtin"),
+    ("run model absent no", "builtin"),
+    ("run new absent no", "refuse"),             # a script that is not there is not run
+    ("run outside absent no", "refuse"),
+    ("test none absent no", "builtin"),
     ("other new pinned yes", "refuse"),
 ]
 

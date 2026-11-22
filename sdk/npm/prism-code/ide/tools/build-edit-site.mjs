@@ -8,7 +8,11 @@
 //   <out>/edit/kernel/               Lean's kernel, its loader and its library, with the manifest that names them
 //   <out>/edit/model-kernel/         the kernel a model's own theorems are put to, its loader and its base library,
 //                                    and pins.json naming each by its BLAKE3 label (src/journey/model-prove.mjs)
+//   <out>/edit/holospace/            the Holospace library a built holo is opened and run with, each file the one
+//                                    tools/holospace-pins.json names by its BLAKE3 label
 //   <out>/edit/project/              the model the page opens when it is given no other, and project.json listing it
+//   <out>/edit/starters/<name>/      each starter as `prism-code start` makes it, with its project.json, so the
+//                                    page can open one that builds and runs: ?project=../starters/<name>/
 //   <out>/edit/ide/                  the same loop in the VS Code workbench, when dist-model/ has been built
 //   <out>/edit/vendor/xterm/         xterm.js and its addons, the files npm ships, each the one terminal/pins.json names
 //   <out>/edit/terminal/tables.json  the proved tables the terminal asks, read from model/ide-terminal-* and model/ide-audit
@@ -19,7 +23,8 @@
 // them: LexLean by that label, the kernel by the SHA-256 its manifest names. They are published beside the page because a browser cannot fetch them from where
 // prism-code does: those addresses do not allow another site to read them.
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LEXLEAN_WASM, ensureLexleanWasm, lexleanWasmFile } from '../../src/journey/lexlean-wasm.mjs';
@@ -27,6 +32,7 @@ import { ensureKernel, hasKernel, readKernelFile } from '../../src/journey/kerne
 import { pinnedFile } from '../../src/journey/kappa-store.mjs';
 import { MODEL_KERNEL_FILES, ensureModelKernel } from '../../src/journey/model-prove.mjs';
 import { EVALUATOR_GUEST } from '../../src/journey/model-guest.mjs';
+import { appDir, startApp } from '../../src/journey/project.mjs';
 import { projectListing } from './edit-project.mjs';
 import { kappa } from '../../src/blake3.mjs';
 import { terminalTables, vendorFiles } from './terminal-site.mjs';
@@ -68,6 +74,24 @@ for (const name of Object.keys(MODEL_KERNEL_FILES)) {
 }
 writeFileSync(join(site, 'model-kernel', 'pins.json'), JSON.stringify({ loader: modelPin('lean-kernel.mjs'), kernel: modelPin('lean-kernel.wasm.gz'), library: modelPin('base.ndjson.gz') }) + '\n');
 
+// Holospace's library: fetched once from where it is published, or read from PRISM_HOLOSPACE_DIR, and written
+// beside the page only when each file's bytes derive to its pinned label. At run time nothing is fetched from there.
+const holospace = JSON.parse(readFileSync(join(ide, 'tools', 'holospace-pins.json'), 'utf8'));
+for (const pin of holospace.files) {
+  const local = process.env.PRISM_HOLOSPACE_DIR ? join(process.env.PRISM_HOLOSPACE_DIR, pin.path) : null;
+  let bytes;
+  if (local) bytes = new Uint8Array(readFileSync(local));
+  else {
+    const response = await fetch(new URL(pin.path, holospace.from));
+    if (!response.ok) throw new Error(`${holospace.from}${pin.path} answered HTTP ${response.status}`);
+    bytes = new Uint8Array(await response.arrayBuffer());
+  }
+  const got = kappa(bytes);
+  if (got !== pin.kappa || bytes.length !== pin.bytes) throw new Error(`holospace/${pin.path} is ${got}, ${bytes.length} bytes, not the pinned ${pin.kappa}, ${pin.bytes} bytes`);
+  mkdirSync(dirname(join(site, 'holospace', pin.path)), { recursive: true });
+  writeFileSync(join(site, 'holospace', pin.path), bytes);
+}
+
 // The terminal: xterm.js, refused here when an installed file is not the pinned one, and its tables.
 mkdirSync(join(site, 'vendor', 'xterm'), { recursive: true });
 for (const [name, bytes] of vendorFiles()) writeFileSync(join(site, 'vendor', 'xterm', name), bytes);
@@ -76,6 +100,21 @@ writeFileSync(join(site, 'terminal', 'tables.json'), JSON.stringify(await termin
 const listing = projectListing(project);
 for (const path of listing.files) cpSync(join(project, path), join(site, 'project', path));
 writeFileSync(join(site, 'project.json'), JSON.stringify(listing) + '\n');
+
+// The starters, each started here as `prism-code start` starts an app from it, so what the page opens is what a
+// person with the package would have. The model above need not declare an app; each of these does, and builds.
+const STARTERS = ['stateful-app', 'decision-app', 'rule-app'];
+const started = mkdtempSync(join(tmpdir(), 'prism-starters-'));
+for (const name of STARTERS) {
+  const root = join(started, name);
+  mkdirSync(root);
+  const dir = appDir(root);
+  startApp(dir, name);
+  const starter = projectListing(dir);
+  for (const path of starter.files) cpSync(join(dir, path), join(site, 'starters', name, path));
+  writeFileSync(join(site, 'starters', name, 'project.json'), JSON.stringify(starter) + '\n');
+}
+rmSync(started, { recursive: true, force: true });
 
 // The workbench is built apart (npx vite build -c vite.model.config.js). Without that build the site has the plain page only.
 const workbench = join(ide, 'dist-model');

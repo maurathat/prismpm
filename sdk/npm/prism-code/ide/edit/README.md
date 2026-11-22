@@ -205,7 +205,7 @@ The three starters were started as prism-code starts an app (`startApp`); a star
 
 ### A model's own theorems
 
-A rule table's guarantees go to one kernel (`prove-worker.mjs`). A model that states theorems of its own, as the decision and stateful starters do, goes to another, in a worker of its own (`model-prove-worker.mjs`). Nothing in it is the IDE's: `prove-core.mjs` opens the model kernel from its three files, each admitted by its BLAKE3 label, and `kernelProver` puts the model to it, the functions `prism_build` runs.
+A rule table's guarantees go to one kernel (`prove-worker.mjs`). A model that states theorems of its own, as the decision and stateful starters do, goes to another, in a worker of its own (`model-prove-worker.mjs`). Nothing in it is the IDE's: `prove-core.mjs` opens the model kernel from its three files, each admitted by its BLAKE3 label, and `kernelProver` puts the model to it, the functions `prism-code build` runs.
 
 - A theorem is proved only when this kernel accepted a proof of it in this run, within the axioms it declares. The other two answers are said as they are: "not proved" when the proof rests on axioms the theorem does not declare, and "not settled" when no proof was accepted, which says nothing about whether the statement is true.
 - A theorem that is not proved is marked under Problems at the line that states it, in whichever file of the model that is.
@@ -227,7 +227,7 @@ Tried by hand in one browser, on the assembled site served from one machine:
 
 ### Build, in the tab
 
-**Build**, beside "Download model", runs the package's whole build in the worker that holds LexLean and Lean's kernel: `buildFromFiles` (`build-core.mjs`), the functions `prism_build` runs. LexLean checks the model, the kernel judges its theorems, and the holo is made with nothing compiled, from the evaluator guest prism-code pins, which the worker admits by its BLAKE3 label. A holo is given only when every theorem was proved, the holo reads back verified and every acceptance vector passes through it. Then the page names it by its label and offers it to save; `window.prismModel.holo()` gives its bytes to whatever runs it next.
+**Build**, beside "Download model", runs the package's whole build in the worker that holds LexLean and Lean's kernel: `buildFromFiles` (`build-core.mjs`), the functions `prism-code build` runs. LexLean checks the model, the kernel judges its theorems, and the holo is made with nothing compiled, from the evaluator guest prism-code pins, which the worker admits by its BLAKE3 label. A holo is given only when every theorem was proved, the holo reads back verified and every acceptance vector passes through it. Then the page names it by its label and offers it to save; `window.prismModel.holo()` gives its bytes to whatever runs it next.
 
 Tried by hand in one browser (Chromium), on the assembled site served from one machine, one run each:
 
@@ -239,11 +239,65 @@ Tried by hand in one browser (Chromium), on the assembled site served from one m
 | Build the decision starter | Parking fee tier.holo, 41686 bytes; 3 of 3 theorems; 25 of 25 examples; 924 ms |
 | Build the rule-app starter | "The holo is not built: the model declares 0 text applications". A rule app is built another way, and this does not build one |
 
+### Run, in the tab
+
+When a build gives a holo, a run panel opens under it. The holo is opened and run by Holospace's library (`openHolospace`, `open`, `run`), which is published beside the page: `tools/build-edit-site.mjs` writes its four files into `holospace/` only when each derives to the BLAKE3 label `tools/holospace-pins.json` names, and nothing is fetched from Holospace's site at run time. The library judges the holo again before anything runs, its seal, its members and its examples replayed, and gives nothing to call unless its verdict is "verified".
+
+Each request is one call on a fresh instance. An app that keeps state keeps it in the request, as the stateful starter does: with "send the earlier requests with it" ticked, the page holds the earlier requests and sends each new one after them, joined by a semicolon. "Start over" forgets them.
+
+Tried by hand in the same browser, on the stateful starter, one run:
+
+| Step | Shown |
+|---|---|
+| Build | the run panel: "Ready to run Dinner seats: its holo was judged verified in this tab; 59 of 59 of its examples replayed." |
+| `book 4`, then `book 6`, each alone | "booked booked=4 list=open", then "booked booked=6 list=open": no state is kept between calls |
+| The same with the earlier requests sent | 4, then 10 |
+| `book 3` | "full booked=10 list=open" |
+| `cancel 2`, then `book 3` | "cancelled booked=8 list=open", then "booked booked=11 list=open": the answers the model's own examples record |
+| A request the app does not know | "invalid" |
+
+Limits of the run panel:
+
+- A request the app answers "invalid" is kept among the earlier requests like any other, so one mistyped step spoils the ones after it until "Start over".
+- The semicolon is the stateful starter's own way of carrying its history. Another app may carry its state otherwise, and the page does not know.
+- The app's own View is not shown: only requests and answers as text.
+- A holo that is not judged verified is not run, and the panel says which verdict it got. That path was not tried: every holo the build gives was verified.
+- Holospace's library keeps its store in this origin's private file system, in a folder named `holospace-store`.
+
+### A workspace kept in the store
+
+`edit/ide/?workspace=<name>` keeps the model's files in a workspace of Holospace's store, in this browser, and mounts them in the workbench through Holospace's own file provider (`h.workbench(h.workspace(name))`, given to `registerFileSystemOverlay`). The IDE writes no file provider of its own. A name is lowercase letters, digits, dots, dashes and underscores, 63 at most.
+
+- The first visit puts the model there as fetched, all its files in one step. Later visits open what was saved, and files removed there stay removed.
+- A change is saved by the workbench's own save, which the page asks for a moment after each change: this workbench does not save by itself after a pause. Every save is a new manifest under a new BLAKE3 label, so each saved state of the workspace has a name.
+- In a workspace there is no draft: the line under the strip names the workspace and what differs from the model as fetched.
+- Without `?workspace=` nothing changes: the files are held in memory and changes are kept as a draft, as before.
+
+Tried by hand in the same browser, on the stateful starter, one run:
+
+| Step | Shown |
+|---|---|
+| Open with `?workspace=dinner-2` | the Explorer lists the model from the store; 10 of 10 theorems; "Workspace "dinner-2", kept in this browser's store. Its files are the model as fetched." |
+| Let a booking pass 12 seats | 8 of 10; the workspace's label changes; "Changed from the model as fetched: src/DinnerSeats.lex.tex." |
+| Load the page again | the change is there, 8 of 10 |
+| Undo it | 10 of 10; "Its files are the model as fetched." |
+| Build, then run `book 5` | the same holo as from memory, by its label; "booked booked=5 list=open" |
+| Ctrl+S after typing | the file in the store has the typed text, and the label moved |
+| Open without `?workspace=` | as before: no workspace, a draft |
+
+Limits of a workspace:
+
+- It is in this browser only, in this site's storage. Nothing sends it anywhere.
+- Two tabs on one workspace were not tried. Holospace refuses a save made from a stale view; what the workbench then shows was not looked at.
+- The terminal's commands that change a file write through the same store; that path was not tried in a workspace.
+- The gate is not asked on file requests here: the workspace is opened ungated.
+- The editor's drafts and the terminal's kept output are still in their own stores. Moving them into this one is decided and not done.
+
 Limits of the build:
 
 - It builds text applications. A rule table is proved in the page and not built here.
 - The holo is format v5, as the package's builder writes it.
-- Nothing runs the holo yet, and it is kept only in the page: a reload loses it.
+- The holo is kept only in the page: a reload loses it.
 - For a theorem with no proof the reason shown can be "no proof found (process is not defined)". The verdict is right, nothing is called proved; the reason is the proof finder (`src/vendor/kernel-path/emit.mjs`) reading `process.env`, which a browser does not have. Whether that also hides a proof Node would find is not known.
 
 Limits of the workbench page:
@@ -273,11 +327,13 @@ Both pages have a terminal, and both are answered by one command line (`terminal
 - The plain page: below the guarantees, on xterm.js itself (`@xterm/xterm` 6.0.0, MIT) with the fit, webgl, web-links, search and unicode11 addons, installed by `ide/package-lock.json` and published beside the page as the files npm ships.
 - The workbench page: the workbench's own terminal panel (`@codingame/monaco-vscode-terminal-service-override` 39.0.5, which brings VS Code's terminal and the xterm.js it pins, 6.1.0-beta.327). The panel, its tabs, its find box and its renderer are VS Code's. `src/model-terminal.js` is the "process" behind it.
 
-xterm.js draws and reports keys; a browser tab has no operating system to run anything else. What answers the keys is a command language over a fixed list of 32 commands, each of them the page's own code or a question to one of the page's two workers:
+xterm.js draws and reports keys; a browser tab has no operating system to run anything else. What answers the keys is a command language over a fixed list of 34 commands, each of them the page's own code or a question to one of the page's two workers:
 
 | Commands | What they do |
 |---|---|
 | `help`, `clear`, `history`, `set`, `unset`, `env` | the terminal itself: the commands, the screen, the lines entered, variables |
+| `run file [word…]` | enter the lines of a file of the model, as a script; the words are its `$1`, `$2`, … |
+| `test …`, `[ … ]` | say by its status whether a comparison holds: `=`, `!=`, `-eq`, `-lt`, `-gt`, `-z`, `-n`, `-f`, `-d`, `-e` |
 | `ls [-l]`, `cd`, `pwd`, `cat`, `kappa` | the model's files: list, move about, print, print a `blake3:` label |
 | `echo`, `grep`, `head`, `tail`, `wc`, `sort`, `uniq`, `diff` | text, from files of the model or from the command before in a pipe |
 | `write`, `append`, `touch`, `cp`, `mv`, `rm` | make, change or remove a file of the model, as the editor holds it |
@@ -286,15 +342,15 @@ xterm.js draws and reports keys; a browser tab has no operating system to run an
 | `audit` | each guarantee's status by the rule of `model/ide-audit` |
 | `save`, `restore`, `sessions` | keep this session's transcript in this browser, print one, list them |
 
-A line is commands joined as in a shell: `a | b` pipes, `a ; b`, `a && b` and `a || b` join, `> file` and `>> file` write a file of the model, `< file` reads one. `'…'` and `"…"` quote, `$NAME` and `${NAME}` are variables (`NAME=value` sets one, `$?` is the last command's status), `*` and `?` match the model's files, `#` starts a comment.
+A line is commands joined as in a shell: `a | b` pipes, `a ; b`, `a && b` and `a || b` join, `> file` and `>> file` write a file of the model, `< file` reads one. `'…'` and `"…"` quote, `$NAME` and `${NAME}` are variables (`NAME=value` sets one, `$?` is the last command's status), `*` and `?` match the model's files, `#` starts a comment. `$( … )` in a word stands for what the commands inside it print. A line loops and chooses with `for NAME in words; do …; done`, `while …; do …; done` and `if …; then …; else …; fi`; a loop stops after 10000 turns, and scripts, functions and `$( … )` nest eight deep. `case WORD in pattern) … ;; *) … ;; esac` chooses by a pattern. `name() { …; }` gives lines a name; a function cannot take a command's name. `$(( … ))` is a sum over whole numbers, with comparisons. In a script or a function, `$1` to `$9`, `$#` and `$@` are the words it was handed.
 
-It is a command line for the model, in this tab, and no more than that. Any other word is refused: there is no bash, no native program, no package manager, no git and no connection to any machine, because nothing in a browser tab can run them and this page talks to no server. A command cannot be run inside a word (`$( … )`), nothing runs in the background (`&`), and there are no scripts, loops or functions.
+It is a command line for the model, in this tab, and no more than that. Any other word is refused: there is no bash, no native program, no package manager, no git and no connection to any machine, because nothing in a browser tab can run them and this page talks to no server. Nothing runs in the background (`&`). A condition is a command's own status: `test`, `[ … ]`, `grep -q`.
 
-The line is edited as in a terminal: Left, Right, Home, End, Ctrl+A, Ctrl+E; by word with Ctrl+Left, Ctrl+Right, Alt+B, Alt+F; Backspace, Delete, Ctrl+D; Ctrl+U, Ctrl+K, Ctrl+W, Alt+Backspace and Alt+D cut, and Ctrl+Y puts back; Up, Down, Ctrl+P and Ctrl+N walk the history and Ctrl+R searches it; Tab completes a command or a file of the model, and a second Tab lists what fits; Ctrl+C abandons the line or stops the running line; Ctrl+L clears. Keys pressed while a command runs are entered after it.
+The line is edited as in a terminal: Left, Right, Home, End, Ctrl+A, Ctrl+E; by word with Ctrl+Left, Ctrl+Right, Alt+B, Alt+F; Backspace, Delete, Ctrl+D; Ctrl+U, Ctrl+K, Ctrl+W, Alt+Backspace and Alt+D cut, and Ctrl+Y puts back; Up, Down, Ctrl+P and Ctrl+N walk the history and Ctrl+R searches it; Tab completes a command or a file of the model, and a second Tab lists what fits; Ctrl+C abandons the line or stops the running line; Ctrl+L clears; Ctrl+S holds what is being written and Ctrl+Q lets it go. A paste of several lines is one block: the page asks first, as the effects table says, and the block is then entered whole, so a loop pasted over several lines is read as one. Keys pressed while a command runs are entered after it.
 
 ### What decides
 
-- Every command of a line is put to `model/ide-terminal-commands` before it runs, and a redirection is put to it as the command it stands for: `> file` as `write file`, `>> file` as `append file`, `< file` as `cat file`. A pipeline in which one word is not a command runs none of its commands. A program runs only when its executable hashed to its pinned label; with one byte of the LexLean executable changed, `check`, `snapshot`, `prove` and `audit` are refused and the builtins still answer.
+- Every command of a line is put to `model/ide-terminal-commands` before it runs, and a redirection is put to it as the command it stands for: `> file` as `write file`, `>> file` as `append file`, `< file` as `cat file`. A pipeline in which one word is not a command runs none of its commands. A loop, a `$( … )` and a script add no way round this: they only decide which commands are reached, and each one reached is put to the table under its own name. A program runs only when its executable hashed to its pinned label; with one byte of the LexLean executable changed, `check`, `snapshot`, `prove` and `audit` are refused and the builtins still answer.
 - Every use of a resource by a running command is put to `model/ide-terminal-reach`. A command is handed the screen, the model's files, the kept outputs and nothing else; six commands may change a file of the model, and no command is handed the network, the clipboard or a process.
 - A path never leaves the model: `..` above its root, an address, a drive letter or a control byte in a path is `outside`, and the command table refuses it to every command. A file that is not there can be named only by the five commands that make one. The whole model is not removed from here.
 - A file a command changes is changed where the editor holds it: the open file in its editor, the others beside it. The model is checked again, as after typing. The workbench keeps the change in its draft, in this browser; the plain page keeps nothing. A file removed from the workbench is back when the page is loaded again.
@@ -308,12 +364,12 @@ The line is edited as in a terminal: Left, Right, Home, End, Ctrl+A, Ctrl+E; by 
 - `terminal/pins.json` names each published file of xterm.js by its `blake3:` label, and the plain page runs a file only when its bytes have that label. `node tools/terminal-site.mjs pin` rewrites the pins after a version change; the site builder refuses an installed file that is not the pinned one. The workbench's xterm.js is part of the workbench bundle and is held by the lockfile, not by a label the page checks.
 - A program's output is kept under the label of its program's label and the label of everything it read, and shown again only when `reuseAdmits` (proved in `model/rule-app`) admits it. A second `check` of an unchanged model starts nothing, on this visit or a later one, in either page.
 - The store (`terminal/kappa-space.mjs`) follows the browser store of Hologram (github.com/Hologram-Technologies/hologram, `crates/hologram-store/src/opfs/js_api.rs` at `e8fcdc70`): one file to a blob in the origin's private file system, named by its label, returned only when it re-derives to that label. It is that layout written in JavaScript, because Hologram publishes no browser build of its store. Where the browser has no such file system, things are kept for the visit only.
-- Hologram's rule that a pure function over a finite domain is computed once and kept as a table is applied to the decision tables: the command, reach, effects and audit tables are each computed once into a lookup table (792, 264, 108 and 108 answers, one byte each), named by its label, and a request is answered with one read. The flow table has a number in it and is judged rule by rule. `tables.json` carries the label each lookup table must have, and a terminal whose tables compute to another label does not start.
+- Hologram's rule that a pure function over a finite domain is computed once and kept as a table is applied to the decision tables: the command, reach, effects and audit tables are each computed once into a lookup table (840, 280, 108 and 108 answers, one byte each), named by its label, and a request is answered with one read. The flow table has a number in it and is judged rule by rule. `tables.json` carries the label each lookup table must have, and a terminal whose tables compute to another label does not start.
 - `site.json` names every published file by its `blake3:` label, beside its SHA-256.
 
 What this does and does not buy: content addressing makes a repeated command cost a few milliseconds and makes what is stored checkable. It does not make a key press faster. That time is xterm.js drawing, and it was already short.
 
-The tables reach the pages as `terminal/tables.json`, read at build time from the models through LexLean's own snapshot. The guarantees are proved of the tables; that this code asks them and obeys, and that each lookup table answers as its rules do, is tested by `node tools/terminal-test.mjs` (30 tests), not proved.
+The tables reach the pages as `terminal/tables.json`, read at build time from the models through LexLean's own snapshot. The guarantees are proved of the tables; that this code asks them and obeys, and that each lookup table answers as its rules do, is tested by `node tools/terminal-test.mjs` (38 tests), not proved.
 
 ### Measured
 
@@ -336,14 +392,20 @@ What the command line adds to a key: 0.35 µs to edit the line and hand the echo
 
 The prompt no longer waits for the WebGL renderer: it is drawn by xterm.js's own renderer and the fast one is put in just after. `window.prismTerminal.timing` says when each part of starting was done. The first load's 0.8 s is fetching xterm.js, hashing it against its pins and compiling it.
 
+### In a browser, in CI
+
+`node tools/terminal-browser-test.mjs` opens both pages in headless Chrome, enters nine lines in each terminal and checks the answers, and times 1000 keys in each. It fails on a page error, a file not fetched, a wrong answer, a key never drawn, or a 95th percentile over 50 ms. `.github/workflows/ide-kernels-model.yml` runs it on the CI runner (job `terminal-browser`) and prints the figures. On the development machine on 2026-11-22: 1000 keys in each page, median 5.5 ms, 95th percentile 5.9 ms, worst 7.0 ms in the plain page and 8.9 ms in the workbench. With `--base <address>` it tests a published site; on the live pages that day the worst key was 6.0 ms and 7.9 ms.
+
+The plain page used to hold a key for up to 1.6 s while it looked for a request that breaks each guarantee, on the page's own thread after every change to the model. That search now runs in a worker (`search-worker.mjs`).
+
 ### Not built
 
 - A shell that runs programs. No native program, package manager, git or SSH, and no connection to any machine. A WASI shell with core utilities is a later phase with its own proposal.
-- Scripts, loops, functions, command substitution and background commands.
-- A program is not paused mid-run: its output is produced whole, then written under flow control. Ctrl+C stops what is being written and the rest of the line.
+- Background commands, here-documents, arrays and `local`. `test` knows the comparisons listed above and no others.
+- A program is not paused mid-run: its output is produced whole, then written under flow control. What is being written can be held with Ctrl+S and let go with Ctrl+Q, and Ctrl+C stops it and the rest of the line. In the workbench the panel may take Ctrl+S for itself.
 - A transcript is kept only by `save`, as text. The screen itself (colours, the scrollback as drawn) is not kept, and the serialize addon is not loaded.
 - The history is this visit's. It is not kept between visits unless a transcript is saved.
-- A character is taken to be one column wide by the line editor, so a line with wide characters is edited out of place.
+- The line editor takes a wide character as two columns and a joining mark as none, by a table of its own; an emoji made of several joined characters may still be placed a column out.
 - `prove` is held to the SHA-256 names in the kernel's manifest; only the label of the whole list is BLAKE3.
 - The workbench bundle grew by the terminal: the published `edit/ide/` folder is 31 MiB.
 - Leaving the workbench page logs one more of the workbench's own shutdown notices (`join.terminalAutoReplies`).

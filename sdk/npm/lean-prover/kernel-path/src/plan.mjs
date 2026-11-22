@@ -13,7 +13,7 @@ import { emitter } from "./emit.mjs";
 import { lower } from "./lower.mjs";
 
 // LexLean's proof kinds the proof finder covers, by the name it knows them by.
-export const COVERED = Object.freeze({ linear_arithmetic: "linear_arithmetic", decide: "decide", reflexivity: "rfl" });
+export const COVERED = Object.freeze({ linear_arithmetic: "linear_arithmetic", decide: "decide", reflexivity: "rfl", simplify: "simplify" });
 
 export function plan(snapshot, library, { hash = null } = {}) {
   const em = emitter(library);

@@ -8,7 +8,7 @@ import { reuseAdmits } from '../../src/journey/kappa-rules.mjs';
 import { judgeTable } from '../../src/journey/rule-table.mjs';
 import { cleanTitle, createEffects, schemeOf } from '../edit/terminal/effects.mjs';
 import { createKeptIn, indexOf, materialize, openStore } from '../edit/terminal/kappa-space.mjs';
-import { createLineEditor } from '../edit/terminal/line-editor.mjs';
+import { columns, createLineEditor } from '../edit/terminal/line-editor.mjs';
 import { createKept, createWriter, makeJudge, visible } from '../edit/terminal/session.mjs';
 import { build, createSession, diffLines, lex, resolveTarget, USAGE, WORDS } from '../edit/terminal/shell.mjs';
 import { terminalTables, vendorFiles } from './terminal-site.mjs';
@@ -261,7 +261,7 @@ await test('each finite table as a lookup table answers every request as its rul
       if (f < 0) break;
     }
   }
-  assert.equal(requests, 792 + 264 + 108 + 108);
+  assert.equal(requests, 840 + 280 + 108 + 108);
   // A table with a number in it has no finite list of requests, and is judged rule by rule.
   assert.equal(materialize(tables.flow, judgeTable, kappa), null);
   assert.equal(judge('flow', { pending: 100000, paused: 'no' }), 'hold');
@@ -367,7 +367,7 @@ await test('a line is commands joined by pipes, ; && and ||, with quotes, variab
 
 await test('what the command line does not do, it says, and runs nothing', async () => {
   const t = setup();
-  for (const line of ['echo $(ls)', 'echo `ls`', 'check &', 'echo "open', "echo 'open", '| ls', 'ls |', 'ls > ', 'ls ; ; ls', '&& ls', 'cat < src/*']) {
+  for (const line of ['echo `ls`', 'check &', 'echo "open', "echo 'open", '| ls', 'ls |', 'ls > ', 'ls && ; ', '&& ls', 'cat < src/*']) {
     t.take();
     assert.equal(await t.session.run(line), 'refuse', line);
     assert.ok(t.take().length > 0, line);
@@ -462,7 +462,7 @@ await test('the text commands answer as their names say', async () => {
   assert.equal(await out('head -x n.txt'), 'head: unknown option -x.\n');
   assert.equal(await out('set A 1; set B two words; env; unset A; env'), 'A=1\nB=two words\nB=two words\n');
   assert.match(await out('history'), /^ {3}1 {2}sort n\.txt\n/);
-  assert.match(await out('help'), /Files of the model[\s\S]*grep \[-ivnc\]/);
+  assert.match(await out('help'), /Files of the model[\s\S]*grep \[-ivncq\]/);
   // A file's control bytes are written out by every command that prints them.
   for (const line of ['grep before src/evil.txt', 'head src/evil.txt', 'sort src/evil.txt', 'cat src/evil.txt | tail', 'echo "\u001b]52;c;eA==\u0007"']) assert.ok(!/[\u001b\u0007]/.test(await out(line)), line);
 });
@@ -555,6 +555,205 @@ await test('the history is searched with Ctrl+R, and the line is moved through b
   assert.equal(editor.line, 'wo three');
   await type('\x1b[1;5C', '\x1b[1;5C', 'X', '\x1b[1;5D', 'Y');
   assert.equal(editor.line, 'wo YthreeX');
+});
+
+await test('$( … ) stands for what its commands print, and each of them is judged like any other', async () => {
+  const t = setup();
+  const out = async (line) => { t.take(); await t.session.run(line); return t.take(); };
+  assert.equal(await out('echo $(echo a b)'), 'a b\r\n');
+  assert.equal(await out('echo "[$(ls | grep toml)]" $(ls | wc -l)'), '[lexlean.toml] 3\r\n');
+  assert.equal(await out('wc -l $(ls | grep tex)'), '       1 src/App.lex.tex\r\n');
+  assert.equal(await out('echo $(echo $(echo deep))'), 'deep\r\n');
+  assert.equal(await out('N=$(grep -c model src/App.lex.tex); echo $N'), '1\r\n');
+  assert.equal(await out('echo [$(grep zzz lexlean.toml)]'), '[]\r\n');
+  // What is inside is not let past the tables: an unlisted word runs nothing, and a path outside is refused.
+  assert.equal(await out('echo $(bash -c ls) done'), 'bash: not a command here. Type help.\r\ndone\r\n');
+  assert.equal(await out('echo $(cat ../secret) x'), '../secret: not in the open model.\r\nx\r\n');
+  assert.equal(await out('echo $(check) | wc -w'), '       4\r\n');
+  assert.equal(t.started.check, 1);
+  for (const line of ['echo $(ls', 'echo `ls`']) assert.equal(await t.session.run(line), 'refuse', line);
+  // Nesting stops.
+  t.model.set('/loop.sh', 'echo $(run loop.sh)\n');
+  assert.match(await out('run loop.sh'), /nested too deep/);
+});
+
+await test('a line loops and chooses, within bounds, and Ctrl+C stops it', async () => {
+  const t = setup();
+  const out = async (line) => { t.take(); await t.session.run(line); return t.take(); };
+  assert.equal(await out('for f in a b c; do echo "<$f>"; done'), '<a>\r\n<b>\r\n<c>\r\n');
+  assert.equal(await out('for f in src/*; do kappa $f | wc -l; done'), '       1\r\n       1\r\n');
+  assert.equal(await out('for f in $(ls); do echo $f; done | wc -l'), 'A ; is missing.\r\n');
+  assert.equal(await out('if grep -q spec lexlean.toml; then echo yes; else echo no; fi'), 'yes\r\n');
+  assert.equal(await out('if grep -q nope lexlean.toml; then echo yes; else echo no; fi; echo $?'), 'no\r\n0\r\n');
+  assert.equal(await out('if cat nothing; then echo yes; fi; echo after'), 'nothing: no such file in the open model.\r\nafter\r\n');
+  assert.equal(await out('touch n.txt; while grep -c x n.txt | grep -q -v 3; do echo x >> n.txt; done; wc -l n.txt'), '       3 n.txt\r\n');
+  assert.equal(await out('for a in 1 2; do for b in x y; do echo $a$b; done; done'), '1x\r\n1y\r\n2x\r\n2y\r\n');
+  assert.equal(await out('echo for in do done if then else fi while'), 'for in do done if then else fi while\r\n');
+  for (const line of ['for; do echo; done', 'for x in a; echo', 'for x in a; do echo', 'if ls; echo; fi', 'done', 'if ls; then echo; fi echo', 'while ls; done']) assert.equal(await t.session.run(line), 'refuse', line);
+  // A loop that would not end is ended.
+  assert.match(await out('while echo -n; do set X 1; done'), /while: stopped after 10000 turns\./);
+  const slow = setup({ delay: 40 });
+  const running = slow.session.run('for i in 1 2 3 4 5; do check; done; echo after');
+  await new Promise((r) => setTimeout(r, 5));
+  slow.session.interrupt();
+  await running;
+  assert.equal(slow.started.check, 1);
+  assert.equal(slow.text(), '');
+  // Every command a loop reaches was put to the command table.
+  const judged = t.session.log.filter((e) => e.line && e.line.startsWith('for a in 1 2')).map((e) => e.command);
+  assert.deepEqual(judged, ['echo', 'echo', 'echo', 'echo']);
+});
+
+await test('run enters the lines of a file of the model, each judged on its own', async () => {
+  const t = setup();
+  const out = async (line) => { t.take(); await t.session.run(line); return t.take(); };
+  t.model.set('/tools/report.sh', '# what the model holds\nFILES=$(ls | grep -c .)\necho "files: $FILES"\nfor f in lexlean.toml src/App.lex.tex\ndo\n  kappa $f | wc -l\ndone\n\nif grep -q spec lexlean.toml\nthen echo has-spec\nelse echo no-spec\nfi\nls |\n  grep toml\n');
+  assert.equal(await out('run tools/report.sh'), 'files: 4\r\n       1\r\n       1\r\nhas-spec\r\nlexlean.toml\r\n');
+  assert.equal(await out('run tools/report.sh | grep -c 1'), '2\r\n');
+  assert.equal(await out('echo "[$(run tools/report.sh | head -1)]"'), '[files: 4]\r\n');
+  // A script cannot do what a line cannot.
+  t.model.set('/bad.sh', 'echo one\nbash -c "rm -rf /"\ncurl https://example.org\necho x > ../escape.txt\ncat ../../etc/passwd\necho two\n');
+  assert.equal(await out('run bad.sh'), 'one\r\nbash: not a command here. Type help.\r\ncurl: not a command here. Type help.\r\n../escape.txt: not in the open model.\r\n../../etc/passwd: not in the open model.\r\ntwo\r\n');
+  assert.equal(t.model.size, 5);
+  const uses = t.session.log.filter((e) => e.resource && !['screen', 'readmodel', 'writemodel'].includes(e.resource));
+  assert.equal(uses.length, 0);
+  assert.equal(judge('reach', { command: 'run', resource: 'writemodel' }), 'deny');
+  // A file that is not there, a folder, a path outside, a script that does not parse.
+  assert.equal(await t.session.run('run nothing.sh'), 'refuse');
+  assert.equal(await t.session.run('run ../x.sh'), 'refuse');
+  assert.equal(await out('run src'), 'run takes one file of the model.\r\n');
+  t.model.set('/broken.sh', 'for x in a\necho $x\n');
+  assert.equal(await out('run broken.sh; echo $?'), 'run: broken.sh: for needs a do.\r\n1\r\n');
+});
+
+await test('sums, comparisons and patterns choose what a line does', async () => {
+  const t = setup();
+  const out = async (line) => { t.take(); await t.session.run(line); return t.take().replace(/\r\n/g, '\n'); };
+  assert.equal(await out('echo $((1 + 2 * 3)) $(( (1 + 2) * 3 )) $((7 / 2)) $((7 % 4)) $((-3 + 1))'), '7 9 3 3 -2\n');
+  assert.equal(await out('N=4; echo $((N * N)) $(($N + 1)) $((UNSET + 1)) $((3 < N)) $((N == 4 && N != 5)) $((!0))'), '16 5 1 1 1 1\n');
+  assert.equal(await out('i=0; while [ $i -lt 3 ]; do i=$((i + 1)); done; echo $i'), '3\n');
+  assert.match(await out('echo $((1 / 0))'), /division by zero/);
+  assert.match(await out('echo $((1 +))'), /ends too soon/);
+  assert.match(await out('echo $((ls; cat))'), /is not a sum/);
+  for (const [line, status] of [['test a = a', 0], ['test a = b', 1], ['test a != b', 0], ['[ 2 -lt 10 ]', 0], ['[ 10 -lt 2 ]', 1], ['[ 3 -ge 3 ]', 0], ['test -z ""', 0], ['test -n ""', 1], ['test word', 0], ['test', 1],
+    ['test ! a = b', 0], ['test -f lexlean.toml', 0], ['test -f src', 1], ['test -d src', 0], ['test -e nothing', 1], ['test -f ../secret', 1], ['[ -f /etc/passwd ]', 1], ['test a -eq 1', 2], ['test 1 2 3 4', 2]]) {
+    await t.session.run(line);
+    assert.equal(t.session.status, status, line);
+  }
+  assert.equal(await t.session.run('[ a = a'), 'refuse');
+  assert.equal(await out('if [ -f lexlean.toml ] && test "$(ls | grep -c .)" -gt 1; then echo both; fi'), 'both\n');
+  const kind = 'case $F in *.toml) echo toml ;; src/*|*.tex) echo source ;; "*") echo star ;; *) echo other ;; esac';
+  assert.equal(await out('F=lexlean.toml; ' + kind), 'toml\n');
+  assert.equal(await out('F=src/App.lex.tex; ' + kind), 'source\n');
+  assert.equal(await out('F=a.tex; ' + kind), 'source\n');
+  assert.equal(await out('F="*"; ' + kind), 'star\n');
+  assert.equal(await out('F=README; ' + kind + '; echo $?'), 'other\n0\n');
+  assert.equal(await out('case x in y) echo no ;; esac; echo [$?]'), '[0]\n');
+  for (const line of ['case x', 'case x in y echo; esac', 'case x in y) echo', 'esac', 'echo ;; echo']) assert.equal(await t.session.run(line), 'refuse', line);
+  // What a case or a test reaches is judged like anything else.
+  assert.equal(await out('case a in a) bash ;; esac'), 'bash: not a command here. Type help.\n');
+  for (const use of t.session.log.filter((e) => e.command === 'test' && e.resource)) assert.ok(use.resource === 'readmodel' || use.resource === 'screen');
+});
+
+await test('a function names lines, and a script or a function is handed words', async () => {
+  const t = setup();
+  const out = async (line) => { t.take(); await t.session.run(line); return t.take().replace(/\r\n/g, '\n'); };
+  assert.equal(await out('greet() { echo "hello $1, $# words: $@"; }; greet a b c'), 'hello a, 3 words: a b c\n');
+  assert.equal(await out('greet "two words" | wc -w'), '       7\n');
+  assert.equal(await out('echo "[$(greet x)]"'), '[hello x, 1 words: x]\n');
+  assert.equal(await out('count() { for w in "$@"; do echo "<$w>"; done; }; count "a b" c'), '<a b>\n<c>\n');
+  assert.equal(await out('echo [$1] [$#] [$@]'), '[] [0] []\n');
+  assert.deepEqual(t.session.complete('gr').options, ['greet ', 'grep ']);
+  // A function cannot take a command's name, and what it reaches is still judged.
+  assert.match(await out('ls() { echo mine; }; ls | head -1'), /ls is a command here; a function cannot take its name\.\nlexlean\.toml\n/);
+  assert.equal(await out('sneak() { bash -c x; cat ../secret; echo x > ../out; }; sneak'), 'bash: not a command here. Type help.\n../secret: not in the open model.\n../out: not in the open model.\n');
+  assert.match(await out('again() { again; }; again'), /nested too deep/);
+  for (const line of ['f() { echo', 'f() echo', '{ echo; }', '}']) assert.equal(await t.session.run(line), 'refuse', line);
+  // A script is handed the words after its name.
+  t.model.set('/tools/each.sh', 'echo "$0: $# given"\nfor a in "$@"\ndo\n  echo "- $a"\ndone\nif [ "$1" = stop ]\nthen echo stopping\nfi\nhelper() { echo "helper got $1"; }\nhelper $2\n');
+  assert.equal(await out('run tools/each.sh stop "second word"'), 'prism: 2 given\n- stop\n- second word\nstopping\nhelper got second word\n');
+  assert.equal(await out('run tools/each.sh'), 'prism: 0 given\nhelper got \n');
+  assert.equal(await out('echo after [$1]'), 'after []\n');
+});
+
+await test('several lines pasted at once are one block, entered only when the page allows it', async () => {
+  const run = async (allow) => {
+    const echoed = [];
+    const lines = [];
+    const asked = [];
+    const editor = createLineEditor({ echo: (text) => echoed.push(text), submit: async (line) => { lines.push(line); }, interrupt() {}, clear() {}, complete: completing([]), multiline: async (block) => { asked.push(block); return allow; } });
+    editor.start();
+    await editor.feed('for f in a b\rdo\r  echo $f\rdone\r');
+    return { echoed: echoed.join(''), lines, asked };
+  };
+  const yes = await run(true);
+  assert.deepEqual(yes.lines, ['for f in a b\ndo\n  echo $f\ndone']);
+  assert.deepEqual(yes.asked, [['for f in a b', 'do', '  echo $f', 'done']]);
+  assert.match(yes.echoed, /model> for f in a b\r\n> do\r\n> {3}echo \$f\r\n> done\r\n/);
+  const no = await run(false);
+  assert.deepEqual(no.lines, []);
+  assert.match(no.echoed, /\(4 pasted lines were not entered\)/);
+  // The block is read whole by the command line.
+  const t = setup();
+  await t.session.run('for f in a b\ndo\n  echo $f\ndone');
+  assert.equal(t.text(), 'a\r\nb\r\n');
+  // Lines the page already asked about are entered as one block too.
+  const lines = [];
+  const editor = createLineEditor({ echo() {}, submit: async (line) => { lines.push(line); }, interrupt() {}, clear() {}, complete: completing([]) });
+  await editor.lines(['if [ a = a ]', 'then echo yes', 'fi']);
+  await editor.lines(['ls']);
+  assert.deepEqual(lines, ['if [ a = a ]\nthen echo yes\nfi', 'ls']);
+});
+
+await test('a wide character takes two columns in the line, and a joining mark none', async () => {
+  assert.deepEqual(['a', '漢', 'ｶ', '😀', 'e', '́', '한', 'é'].map(columns), [1, 2, 1, 2, 1, 0, 2, 1]);
+  const echoed = [];
+  const editor = createLineEditor({ echo: (text) => echoed.push(text), submit: async () => {}, interrupt() {}, clear() {}, complete: completing([]) });
+  const type = async (...keys) => { for (const key of keys) await editor.feed(key); };
+  await type('a', '漢', '字', 'b');
+  echoed.length = 0;
+  await type('\x1b[D', '\x1b[D', '\x1b[D');
+  assert.deepEqual(echoed, ['\x1b[1D', '\x1b[2D', '\x1b[2D']);
+  echoed.length = 0;
+  await type('X');
+  // The line is drawn again and the cursor put back over 漢字b: five columns.
+  assert.equal(echoed[echoed.length - 1], '\r\x1b[Kmodel> aX漢字b\x1b[5D');
+  echoed.length = 0;
+  await type('\x1b[C');
+  assert.deepEqual(echoed, ['\x1b[2C']);
+  assert.equal(editor.line, 'aX漢字b');
+});
+
+await test('Ctrl+S holds what is being written and Ctrl+Q lets it go', async () => {
+  const shown = [];
+  const writer = createWriter({ judge, sink: (part, done) => { shown.push(part.length); done(); }, piece: 1000 });
+  writer.hold();
+  const writing = writer.write('x'.repeat(5000));
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(shown.length, 0);
+  assert.ok(writer.held);
+  writer.release();
+  assert.equal(await writing, true);
+  assert.equal(shown.reduce((a, b) => a + b, 0), 5000);
+  // Held, then stopped: nothing more is written and the hold is gone.
+  writer.hold();
+  const more = writer.write('y'.repeat(3000));
+  await new Promise((r) => setTimeout(r, 5));
+  writer.stop();
+  assert.equal(await more, false);
+  assert.ok(!writer.held);
+  // The keys reach the writer only while a command runs.
+  const calls = [];
+  let finish;
+  const editor = createLineEditor({ echo() {}, submit: () => new Promise((r) => { finish = r; }), interrupt() {}, clear() {}, complete: completing([]), hold: () => calls.push('hold'), release: () => calls.push('release') });
+  await editor.feed('\x13');
+  editor.feed('a');
+  editor.feed('\r');
+  editor.feed('\x13');
+  editor.feed('\x11');
+  finish();
+  await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(calls, ['hold', 'release']);
 });
 
 console.log(`${passed} tests passed` + (failed ? `, ${failed} FAILED` : ''));
