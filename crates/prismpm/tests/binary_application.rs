@@ -3,6 +3,7 @@
 //! declarations through the pinned lexlean compiler, in process.
 
 use lexlean::{CheckRequest, Engine, LockRequest, Selection};
+use prismpm::controller::BuildRequest;
 use prismpm::holo::binary_application::BinaryApplication;
 use prismpm::holo::model_document::{Application, ModelDocument};
 use serde_json::Value;
@@ -314,4 +315,64 @@ fn the_projection_is_valid_against_model_document_9() {
         let typed: ModelDocument = serde_json::from_value(document).unwrap();
         prismpm::holo::validate::validate(&typed).unwrap();
     }
+}
+
+/// Build `d` with `prismpm build` and return the project and the build directory.
+fn build(d: &Declaration) -> (tempfile::TempDir, PathBuf) {
+    let (project, _) = snapshot(&source(d));
+    std::fs::write(
+        project.path().join("prismpm.toml"),
+        "spec = \"prismpm/project/1\"\nproject = \"BinaryProbe\"\nlexlean_project = \"lexlean.toml\"\nbuild_root = \".prism\"\n\n[limits]\nmax_holo_bytes = 16777216\nmax_entities = 100000\nmax_diagnostics = 256\n",
+    )
+    .unwrap();
+    let build = prismpm::Controller::load(project.path())
+        .unwrap()
+        .build(BuildRequest { config_path: None })
+        .expect("the binary application builds");
+    let directory = project.path().join(".prism/build").join(&build.build_id);
+    (project, directory)
+}
+
+fn read(path: PathBuf) -> Vec<u8> {
+    std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+}
+
+/// `prismpm build` composes a binary application in the session world: its
+/// guest is the compiled session shim, checked against @2 and the declared
+/// memory, its archive's wasm layer names @2 and is entered at holo_step, and
+/// its View is static, with no browser adapter. Two builds give the same holo.
+#[test]
+fn a_session_application_is_built_into_a_holo_of_the_session_world() {
+    let (_first, directory) = build(&counter());
+    let wasm = read(directory.join("core-wasm/binary_probe_core_wasm.wasm"));
+    prismpm::session_guest::validate_session_guest(&wasm, "hologram:guest/core-wasm@2", 2)
+        .expect("the built guest is the session world at the declared maximum");
+    let target: Value =
+        serde_json::from_slice(&read(directory.join("application/target-profile.json"))).unwrap();
+    assert_eq!(target["schema"], "prismpm/core-wasm-session-target/1");
+    assert_eq!(target["state_maximum"], 8);
+    let manifest: Value =
+        serde_json::from_slice(&read(directory.join("application/holo-manifest.json"))).unwrap();
+    assert_eq!(
+        manifest["layers"][0]["contract"],
+        "hologram:guest/core-wasm@2"
+    );
+    assert_eq!(manifest["layers"][0]["entry"], "holo_step");
+    let provenance: Value =
+        serde_json::from_slice(&read(directory.join("application/model-provenance.json"))).unwrap();
+    assert_eq!(
+        provenance["view_binding"]["browser_projection"]["tag"],
+        "none"
+    );
+    let view = String::from_utf8(read(directory.join("view/hologram/index.html"))).unwrap();
+    assert!(view.contains("hologram:guest/core-wasm@2") && !view.contains("<script"));
+    assert!(!directory.join("view/browser-adapter").exists());
+    assert!(!directory.join("view/browser/provenance.json").exists());
+    let holo = read(directory.join("Binary Probe.holo"));
+    let (_second, again) = build(&counter());
+    assert_eq!(
+        holo,
+        read(again.join("Binary Probe.holo")),
+        "the build is deterministic"
+    );
 }

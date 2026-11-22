@@ -32,6 +32,7 @@ pub(super) fn verify(root: &Path) {
         "a_frame_over_the_declared_memory_is_pp2027",
         "an_input_the_acceptance_does_not_carry_is_pp2027",
         "the_projection_is_valid_against_model_document_9",
+        "a_session_application_is_built_into_a_holo_of_the_session_world",
     ] {
         assert!(
             stdout.contains(&format!("{test} ... ok")),

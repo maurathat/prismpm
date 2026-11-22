@@ -499,3 +499,34 @@ fn write_v5_reference_fixtures() {
         .unwrap();
     }
 }
+
+/// A session guest is laid out as its own world, entered at holo_step, and a
+/// static View binds no browser projection; a contract no revision admits is
+/// refused before anything is written.
+#[test]
+fn v5_composition_declares_the_session_world_and_a_static_view() {
+    for contract in ["hologram:guest/core-wasm@2", "hologram:guest/core-wasm@3"] {
+        let mut input = application_input();
+        input.core_contract = contract.to_owned();
+        input.provenance.browser_projection_sha256 = None;
+        let archive = compose_application(&input).unwrap();
+        assert_eq!(archive.bytes, compose_application(&input).unwrap().bytes);
+        parse_application(&archive.bytes).unwrap();
+        let objects = v5_objects(&archive.bytes);
+        let manifest: Value = serde_json::from_slice(&objects[0]).unwrap();
+        assert_eq!(manifest["layers"][0]["contract"], contract);
+        assert_eq!(manifest["layers"][0]["entry"], "holo_step");
+        let provenance: Value = serde_json::from_slice(&archive.prism_extension).unwrap();
+        assert_eq!(provenance["core_wasm_contract"], contract);
+        assert_eq!(
+            provenance["view_binding"]["browser_projection"],
+            json!({"tag": "none"})
+        );
+    }
+    let stateless = compose_application(&application_input()).unwrap();
+    let manifest: Value = serde_json::from_slice(&v5_objects(&stateless.bytes)[0]).unwrap();
+    assert_eq!(manifest["layers"][0]["entry"], "holo_run");
+    let mut unknown = application_input();
+    unknown.core_contract = "hologram:guest/core-wasm@4".to_owned();
+    assert_eq!(compose_application(&unknown).unwrap_err().code, "PP3010");
+}
