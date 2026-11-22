@@ -100,8 +100,9 @@ jobs:
             // the admission rules of the Wire codec in the table check (#298), and the holo v5 (UORC archive) reader in src/ and browser.js (ADR-017),
             // the checkpoint world row (HO-47) in src/vendor/spec.mjs and browser.js, 2.6 KiB over 664 measured, so 668 KiB,
             // and the model-document/9 schema and revision 2026-11-18 (HO-49, HO-50) in src/vendor and browser.js, 698 KiB measured, so 704 KiB,
-            // and BLAKE3 written for speed, ten times the throughput, in src/vendor/blake3.mjs and again in browser.js, 705.1 KiB measured, so 712 KiB.
-            if (pack.unpackedSize > 729088) throw new Error("package exceeds 712 KiB");
+            // and BLAKE3 written for speed, ten times the throughput, in src/vendor/blake3.mjs and again in browser.js, 705.1 KiB measured, so 712 KiB,
+            // and the holo v6 reader (ADR-018) and the model-provenance/3 schema in src/ and browser.js, 718.1 KiB measured, so 724 KiB.
+            if (pack.unpackedSize > 741376) throw new Error("package exceeds 724 KiB");
             const paths = pack.files.map((f) => f.path);
             const stray = paths.filter((p) => /^(test|scripts)\//.test(p));
             if (stray.length) throw new Error(`tests or scripts in the package: ${stray}`);

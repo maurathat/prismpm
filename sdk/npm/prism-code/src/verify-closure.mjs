@@ -19,6 +19,7 @@
  */
 import { holoDigest, parseArchive } from './archive.mjs';
 import { blake3Hex } from './blake3.mjs';
+import { sealName } from './uorc.mjs';
 import { readAttestations, DSSE_PAYLOAD_TYPE } from './attestations.mjs';
 import { checkSubjects, experimental_verifyAttestations, experimental_verifyBundle } from './attest.mjs';
 import { check, policyOf } from './check.mjs';
@@ -66,7 +67,7 @@ export function verifyHoloClaims(closure) {
     if (!(cause instanceof PrismCodeError)) throw cause;
     throw new DigestMismatchError(`the pulled bytes are not a holo: ${cause.message}`, { check: 'pull.archive', cause });
   }
-  if (!parsed.verification.footer) throw new DigestMismatchError(parsed.format === 5 ? `the holo's seal ${parsed.footer} is not the UORC-SHA256-CHAIN-v1 of the archive` : `the holo's footer ${parsed.footer} is not the BLAKE3 of its body, ${parsed.fingerprint}`, { check: 'pull.archive' });
+  if (!parsed.verification.footer) throw new DigestMismatchError(parsed.format >= 5 ? `the holo's seal ${parsed.footer} is not the ${sealName(parsed.format)} of the archive` : `the holo's footer ${parsed.footer} is not the BLAKE3 of its body, ${parsed.fingerprint}`, { check: 'pull.archive' });
   if (!parsed.verification.labels) throw new DigestMismatchError(`a content blob of the holo does not match its label: ${parsed.verification.labelMismatches.map((m) => m.label).join(', ')}`, { check: 'pull.archive' });
   const fingerprint = holoDigest(parsed);
   const asked = closure.asked?.fingerprint;

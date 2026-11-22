@@ -136,17 +136,67 @@ function compare(table, edited) {
   matchLine.hidden = false;
 }
 
+// Holospace's library, published beside this page and held to its labels when the site was built. It is opened
+// once, by whichever needs it first: a workspace kept in its store, or the run panel.
+let holospace = null;
+const holospaceModule = () => import(/* @vite-ignore */ EDIT + 'holospace/holospace.bundle.mjs');
+const library = () => (holospace ??= holospaceModule().then((m) => m.openHolospace()));
+
+// ?workspace=<name> keeps the model's files in a workspace of Holospace's store, in this browser, and mounts them in
+// the workbench through Holospace's own file provider. The first visit puts the model there as fetched, in one
+// step; later visits open what was saved. Without it the files are held in memory and changes are kept as a draft.
+const WORKSPACE = (() => { const name = new URLSearchParams(location.search).get('workspace'); return name !== null && /^[a-z0-9][a-z0-9._-]{0,62}$/.test(name) ? name : null; })();
+let stored = null;
+let storedBench = null;
+// Files of the model that a saved workspace no longer has: they were removed there on an earlier visit.
+const goneFromWorkspace = [];
 // The reader's changes from an earlier visit, kept in this browser under BLAKE3 labels for exactly this model.
 const { baseLabel, openDrafts } = await import(/* @vite-ignore */ EDIT + 'drafts.mjs');
 const drafts = await openDrafts();
 const base = baseLabel(listing.entry, files);
-const kept = await drafts.load(base);
-// A path the model no longer has is not restored: the draft is for this model, so there should be none.
-const restored = Object.fromEntries(Object.entries(kept.restored).filter(([path]) => path in files));
+let kept = { restored: {}, dropped: [] };
+let restored = {};
+if (WORKSPACE) {
+  try {
+    const [h, { walk }] = await Promise.all([library(), holospaceModule()]);
+    stored = h.workspace(WORKSPACE);
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    const there = (await walk(stored, { path: '/', limit: 5000 })).filter((e) => !e.dir);
+    if (there.length === 0) {
+      await stored.writeFiles(Object.fromEntries(Object.entries(files).map(([path, text]) => [path.slice(1), encoder.encode(text)])));
+    } else {
+      const names = new Set(there.map((e) => '/' + e.path));
+      for (const path of names) { const text = decoder.decode(await stored.readFile(path)); if (text !== files[path]) restored[path] = text; }
+      for (const path of Object.keys(files)) if (!names.has(path)) goneFromWorkspace.push(path);
+    }
+    storedBench = h.workbench(stored);
+    state.workspace = { name: WORKSPACE, made: there.length === 0, label: await stored.label(), changed: Object.keys(restored).sort(), gone: [...goneFromWorkspace] };
+  } catch (error) {
+    // A browser that gives no store, or a library that did not open: the page says so and goes on in memory.
+    state.workspace = { name: WORKSPACE, error: String(error?.message ?? error) };
+    stored = null;
+    storedBench = null;
+    restored = {};
+  }
+}
+if (!stored) {
+  kept = await drafts.load(base);
+  // A path the model no longer has is not restored: the draft is for this model, so there should be none.
+  restored = Object.fromEntries(Object.entries(kept.restored).filter(([path]) => path in files));
+}
 const draftLine = document.getElementById('draft');
 const draftText = document.getElementById('draftText');
 state.draft = { base, off: drafts.off, restored: Object.keys(restored), dropped: kept.dropped, kept: Object.keys(restored) };
 function sayDraft(paths) {
+  if (stored) {
+    // In a workspace the files are saved by the workbench into the store; there is no draft apart from them.
+    state.draft.kept = paths;
+    draftLine.hidden = false;
+    draftText.textContent = `Workspace "${WORKSPACE}", kept in this browser's store. ` + (paths.length === 0 ? 'Its files are the model as fetched.' : `Changed from the model as fetched: ${paths.map((path) => path.replace(/^\//, '')).join(', ')}.`);
+    document.getElementById('draftDiscard').hidden = true;
+    return;
+  }
   state.draft.kept = paths;
   const names = paths.map((path) => path.replace(/^\//, '')).join(', ');
   const lost = kept.dropped.length ? ` ${kept.dropped.length} earlier change${kept.dropped.length === 1 ? ' was' : 's were'} not restored: the stored text is no longer what its label names.` : '';
@@ -183,9 +233,11 @@ const kernel = channel(EDIT + 'prove-worker.mjs', noted('kernel'));
 // The kernel for a model's own theorems, started only when a model that is not a rule table is met: its base
 // library is 20 MB, and a page that opens rule tables never fetches it.
 let theoremProver = null;
+// What a running build says as each of its steps begins.
+let onBuildStage = null;
 const theorems = () => {
   if (!theoremProver) {
-    theoremProver = channel(EDIT + 'model-prove-worker.mjs', (note) => { state.modelKernel = note; });
+    theoremProver = channel(EDIT + 'model-prove-worker.mjs', (note) => { if (note.stage) { state.building = note.stage; onBuildStage?.(note.stage); } else state.modelKernel = note; });
     theoremProver.post({ start: { lexlean: { url: EDIT + 'lexlean.wasm.gz', pin: { kappa: pin.kappa, encoding: pin.encoding } }, kernel: EDIT + 'model-kernel/pins.json' } });
   }
   return theoremProver;
@@ -229,10 +281,15 @@ try {
   // Each file's registration, so a file a terminal command removes or replaces can be taken out again.
   const registered = {};
   const register = (path, text) => { registered[path]?.dispose(); registered[path] = provider.registerFile(new RegisteredMemoryFile(uriOf(path), text)); };
-  for (const [path, text] of Object.entries(files)) register(path, restored[path] ?? text);
-  // A file made on an earlier visit, by a terminal command, comes back with the rest of the draft.
-  for (const [path, text] of Object.entries(restored)) if (!(path in files)) register(path, text);
-  registerFileSystemOverlay(1, provider);
+  if (storedBench) {
+    // The workspace's files, through Holospace's provider: the workbench reads and saves there.
+    registerFileSystemOverlay(1, storedBench);
+  } else {
+    for (const [path, text] of Object.entries(files)) register(path, restored[path] ?? text);
+    // A file made on an earlier visit, by a terminal command, comes back with the rest of the draft.
+    for (const [path, text] of Object.entries(restored)) if (!(path in files)) register(path, text);
+    registerFileSystemOverlay(1, provider);
+  }
   // LexLean's colours reach the editor as semantic tokens, so they are on whatever the theme would choose.
   // ?theme=<a theme's name> opens the page in that theme; without it, the workbench's own choice stands.
   const theme = new URLSearchParams(location.search).get('theme');
@@ -291,13 +348,108 @@ try {
   const current = { ...restored };
   // What the terminal's commands read: every file as the reader has it now.
   // Files a terminal command removed, until the page is loaded again.
-  const removed = new Set();
+  const removed = new Set(goneFromWorkspace);
   const whole = () => { const all = { ...files, ...current, [entry]: model.getValue() }; for (const path of removed) delete all[path]; return all; };
   projectNow = whole;
   sayDraft(Object.keys(current).filter((path) => current[path] !== files[path]).sort());
   // The model as it stands in the editor, as one archive. The same model gives the same bytes, so the label names it.
   window.prismModel.archive = () => { const all = { ...files, ...current }; for (const path of removed) delete all[path]; return modelTar(all); };
   const took = document.getElementById('took');
+  // Run: the holo that was just built, opened and run by Holospace's library, published beside this page and held
+  // to its labels when the site was built. The library judges the holo again (its seal, its members, its examples
+  // replayed) before anything is run, and gives nothing to call unless its verdict is "verified". Each request is
+  // one call on a fresh instance: an app that keeps state keeps it in the request, and this page holds the earlier
+  // requests for it.
+  const runBox = document.getElementById('run');
+  const runVerdict = document.getElementById('runVerdict');
+  const runForm = document.getElementById('runForm');
+  const runInput = document.getElementById('runInput');
+  const runKeep = document.getElementById('runKeep');
+  const runLog = document.getElementById('runLog');
+  let running = null;
+  async function openRun(bytes) {
+    running = null;
+    runLog.textContent = '';
+    runForm.hidden = true;
+    state.run = null;
+    if (!bytes) { runBox.hidden = true; return; }
+    runBox.hidden = false;
+    runBox.dataset.state = '';
+    runVerdict.textContent = 'Opening the holo to run it…';
+    try {
+      const h = await library();
+      const opened = await h.open(bytes.slice());
+      const replayed = opened.replay ? `; ${opened.replay.passed} of ${opened.replay.total} of its examples replayed` : '';
+      state.run = { verdict: opened.verdict, error: opened.error ?? null, kind: opened.kind ?? null, stateful: opened.stateful ?? null, replay: opened.replay ?? null, sent: [], answers: [] };
+      if (opened.verdict !== 'verified') {
+        runBox.dataset.state = 'refused';
+        runVerdict.textContent = `Not run: the holo was judged "${opened.verdict}"` + (opened.error ? ` (${opened.error})` : '') + '. Nothing of it was started.';
+        return;
+      }
+      running = { runner: h.run(opened), steps: [] };
+      runBox.dataset.state = 'verified';
+      runVerdict.textContent = `Ready to run ${opened.name ?? 'the app'}: its holo was judged verified in this tab${replayed}. Each request is one call on a fresh instance.`;
+      runForm.hidden = false;
+    } catch (error) {
+      state.run = { verdict: null, error: String(error?.message ?? error) };
+      runBox.dataset.state = 'refused';
+      runVerdict.textContent = `Not run: the holo could not be opened here (${state.run.error}).`;
+    }
+  }
+  // `send`, not `run`: this object is also the page's state, and `run` there is what the last run was.
+  window.prismModel.send = async (text) => {
+    if (!running) throw new Error('nothing is ready to run: build first');
+    const request = runKeep.checked ? [...running.steps, text].join(';') : text;
+    let answers;
+    try { answers = await running.runner.step(request); } catch (error) { answers = [`(the app did not answer: ${String(error?.message ?? error)})`]; }
+    if (runKeep.checked) running.steps.push(text);
+    state.run.sent.push(request);
+    state.run.answers.push(answers);
+    runLog.textContent += `> ${request}\n${answers.map((a) => '  ' + a).join('\n')}\n`;
+    runLog.scrollTop = runLog.scrollHeight;
+    return answers;
+  };
+  runForm.addEventListener('submit', (event) => { event.preventDefault(); const text = runInput.value; if (text === '') return; runInput.value = ''; window.prismModel.send(text); });
+  document.getElementById('runClear').addEventListener('click', () => { if (running) running.steps = []; runLog.textContent = ''; if (state.run) { state.run.sent = []; state.run.answers = []; } });
+  // Build: the package's own build, in the worker that holds LexLean and Lean's kernel. The holo is offered only
+  // when the build gives one: every theorem proved, the holo read back verified, every acceptance vector passing.
+  const buildButton = document.getElementById('build');
+  window.prismModel.build = async () => {
+    const project = whole();
+    buildButton.disabled = true;
+    const steps = { check: 'LexLean is checking the model', prove: 'Lean\'s kernel is judging its theorems', build: 'the holo is being made' };
+    onBuildStage = (stage) => { took.textContent = `Building in this tab: ${steps[stage] ?? stage}…`; };
+    took.textContent = 'Building in this tab' + (state.modelKernel?.ready ? '…' : '; the kernel is opened once, which takes some seconds…');
+    took.hidden = false;
+    const reply = await theorems().ask({ build: true, files: project });
+    onBuildStage = null;
+    buildButton.disabled = false;
+    const built = reply.built;
+    if (!built) {
+      state.built = { ok: false, error: reply.error ?? 'no answer' };
+      took.textContent = `Not built: the build could not run in this tab (${state.built.error}).`;
+      return state.built;
+    }
+    const theoremsProved = built.theorems ? built.theorems.filter((t) => t.status === 'proved').length : null;
+    state.built = { ok: built.ok, stage: built.stage, proved: built.proved, theorems: built.theorems ? { proved: theoremsProved, total: built.theorems.length } : null, vectors: built.vectors ?? null, ms: reply.ms, message: built.message,
+      diagnostics: (built.diagnostics ?? []).length, holo: built.holo ? { label: built.holo.label, name: built.holo.name, bytes: built.holo.bytes.length, semanticId: built.holo.semanticId } : null };
+    // The bytes are kept for whoever runs or saves the holo next; a failed build keeps none.
+    window.prismModel.holo = built.holo ? () => built.holo.bytes : null;
+    await openRun(built.holo ? built.holo.bytes : null);
+    if (!built.holo) {
+      took.textContent = `Not built (stopped at ${built.stage}): ${built.message}`;
+      return state.built;
+    }
+    const name = `${built.holo.name || 'app'}.holo`;
+    took.textContent = '';
+    const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([built.holo.bytes], { type: 'application/octet-stream' })), download: name, textContent: `Save ${name}` });
+    link.id = 'saveHolo';
+    took.append(`Built in this tab in ${reply.ms} ms, with nothing compiled: ${name}, ${built.holo.bytes.length} bytes, ${built.holo.label}. `
+      + (built.theorems ? `Proved: Lean's kernel accepted all ${built.theorems.length} of its theorems. ` : '')
+      + (built.vectors ? `Tested: ${built.vectors.passed} of ${built.vectors.total} examples give their recorded answer through it. ` : ''), link);
+    return state.built;
+  };
+  buildButton.addEventListener('click', () => { window.prismModel.build().catch((error) => { buildButton.disabled = false; took.textContent = 'Not built: ' + String(error?.message ?? error); took.hidden = false; }); });
   document.getElementById('download').addEventListener('click', () => {
     try {
       const { bytes, label } = window.prismModel.archive();
@@ -319,7 +471,15 @@ try {
     clearTimeout(saving);
     saving = setTimeout(async () => {
       const changed = Object.fromEntries(Object.entries(current).filter(([path, text]) => text !== files[path]));
-      await drafts.save(base, changed);
+      // In a workspace the workbench has saved the change into the store; a draft would be a second copy.
+      if (!stored) await drafts.save(base, changed);
+      else {
+        // The workbench saves, by its own command, so nothing is written behind it; this workbench does not save
+        // on its own after a pause. Then the workspace has a new label.
+        await (await getService(ICommandService)).executeCommand('workbench.action.files.saveAll').catch((error) => { state.workspace.error = String(error?.message ?? error); });
+        state.workspace.label = await stored.label().catch(() => state.workspace.label);
+        state.workspace.saves = (state.workspace.saves ?? 0) + 1;
+      }
       sayDraft(Object.keys(changed).sort());
     }, 400);
   };
@@ -455,13 +615,16 @@ try {
     write(path, text) {
       removed.delete(path);
       const open = monaco.editor.getModel(uriOf(path));
-      if (open && path in registered) { if (open.getValue() !== text) open.setValue(text); current[path] = text; } else { register(path, text); current[path] = text; }
+      if (open && (stored || path in registered)) { if (open.getValue() !== text) open.setValue(text); current[path] = text; }
+      else if (stored) { current[path] = text; stored.writeFile(path, new TextEncoder().encode(text)).catch((error) => { state.workspace.error = String(error?.message ?? error); }); }
+      else { register(path, text); current[path] = text; }
       changedByTerminal();
     },
     remove(path) {
       if (path === entry) throw new Error(listing.entry + " is the model's entry; it stays");
       registered[path]?.dispose();
       delete registered[path];
+      if (stored) stored.delete(path).catch((error) => { state.workspace.error = String(error?.message ?? error); });
       delete current[path];
       removed.add(path);
       changedByTerminal();

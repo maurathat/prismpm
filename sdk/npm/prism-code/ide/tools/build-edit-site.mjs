@@ -8,6 +8,8 @@
 //   <out>/edit/kernel/               Lean's kernel, its loader and its library, with the manifest that names them
 //   <out>/edit/model-kernel/         the kernel a model's own theorems are put to, its loader and its base library,
 //                                    and pins.json naming each by its BLAKE3 label (src/journey/model-prove.mjs)
+//   <out>/edit/holospace/            the Holospace library a built holo is opened and run with, each file the one
+//                                    tools/holospace-pins.json names by its BLAKE3 label
 //   <out>/edit/project/              the model the page opens when it is given no other, and project.json listing it
 //   <out>/edit/ide/                  the same loop in the VS Code workbench, when dist-model/ has been built
 //   <out>/edit/vendor/xterm/         xterm.js and its addons, the files npm ships, each the one terminal/pins.json names
@@ -26,6 +28,7 @@ import { LEXLEAN_WASM, ensureLexleanWasm, lexleanWasmFile } from '../../src/jour
 import { ensureKernel, hasKernel, readKernelFile } from '../../src/journey/kernel-store.mjs';
 import { pinnedFile } from '../../src/journey/kappa-store.mjs';
 import { MODEL_KERNEL_FILES, ensureModelKernel } from '../../src/journey/model-prove.mjs';
+import { EVALUATOR_GUEST } from '../../src/journey/model-guest.mjs';
 import { projectListing } from './edit-project.mjs';
 import { kappa } from '../../src/blake3.mjs';
 import { terminalTables, vendorFiles } from './terminal-site.mjs';
@@ -42,6 +45,9 @@ mkdirSync(site, { recursive: true });
 cpSync(join(ide, 'edit'), site, { recursive: true, filter: (p) => !/README\.md$/.test(p) });
 // Only code: the page imports modules, never the studio's pages or anything else under src.
 cpSync(join(pkg, 'src'), join(site, 'prism-code'), { recursive: true, filter: (p) => statSync(p).isDirectory() || /\.(mjs|js)$/.test(p) });
+// And the one file a build in the page needs that is not code: the evaluator guest a holo is made from. The worker
+// admits it by the label model-guest.mjs pins.
+cpSync(join(pkg, 'src', 'journey', EVALUATOR_GUEST.file), join(site, 'prism-code', 'journey', EVALUATOR_GUEST.file));
 
 writeFileSync(join(site, 'pin.json'), JSON.stringify({ commit: LEXLEAN_WASM.commit, kappa: LEXLEAN_WASM.kappa, encoding: LEXLEAN_WASM.encoding }) + '\n');
 cpSync(lexleanWasmFile() ?? await ensureLexleanWasm(), join(site, 'lexlean.wasm.gz'));
@@ -63,6 +69,24 @@ for (const name of Object.keys(MODEL_KERNEL_FILES)) {
   cpSync(kept, join(site, 'model-kernel', name));
 }
 writeFileSync(join(site, 'model-kernel', 'pins.json'), JSON.stringify({ loader: modelPin('lean-kernel.mjs'), kernel: modelPin('lean-kernel.wasm.gz'), library: modelPin('base.ndjson.gz') }) + '\n');
+
+// Holospace's library: fetched once from where it is published, or read from PRISM_HOLOSPACE_DIR, and written
+// beside the page only when each file's bytes derive to its pinned label. At run time nothing is fetched from there.
+const holospace = JSON.parse(readFileSync(join(ide, 'tools', 'holospace-pins.json'), 'utf8'));
+for (const pin of holospace.files) {
+  const local = process.env.PRISM_HOLOSPACE_DIR ? join(process.env.PRISM_HOLOSPACE_DIR, pin.path) : null;
+  let bytes;
+  if (local) bytes = new Uint8Array(readFileSync(local));
+  else {
+    const response = await fetch(new URL(pin.path, holospace.from));
+    if (!response.ok) throw new Error(`${holospace.from}${pin.path} answered HTTP ${response.status}`);
+    bytes = new Uint8Array(await response.arrayBuffer());
+  }
+  const got = kappa(bytes);
+  if (got !== pin.kappa || bytes.length !== pin.bytes) throw new Error(`holospace/${pin.path} is ${got}, ${bytes.length} bytes, not the pinned ${pin.kappa}, ${pin.bytes} bytes`);
+  mkdirSync(dirname(join(site, 'holospace', pin.path)), { recursive: true });
+  writeFileSync(join(site, 'holospace', pin.path), bytes);
+}
 
 // The terminal: xterm.js, refused here when an installed file is not the pinned one, and its tables.
 mkdirSync(join(site, 'vendor', 'xterm'), { recursive: true });

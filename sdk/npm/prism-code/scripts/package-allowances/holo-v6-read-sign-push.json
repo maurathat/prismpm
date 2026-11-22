@@ -1,0 +1,4 @@
+{
+  "kib": 11,
+  "reason": "Holo v6 read, signed and pushed (ADR-018): src/archive.mjs reads a v6 and upgrades a v5 to it, about 3.8 KiB; src/vendor/verify.mjs verifies a v6 and carries the model-provenance/3 schema, about 6.7 KiB; src/vendor/spec gains HOLO_V6, about 0.7 KiB."
+}

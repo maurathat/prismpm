@@ -1,5 +1,5 @@
 /**
- * The checks of a holo v5 (ADR-017): a raw self-contained UORC archive
+ * The checks of a holo v5 (ADR-017) and v6 (ADR-018). A holo v5 is a raw self-contained UORC archive
  * (`"UORC" 02 01 00 00`, ULEB128 count and lengths, the objects, then the
  * UORC-SHA256-CHAIN-v1 seal of every byte before it) whose ordered objects are
  * the manifest, the source manifest, the provenance, the capability set, the
@@ -10,24 +10,42 @@
  * reach the same level for the same reasons. The Rust twin is
  * crates/prismpm/src/inspect/verdict_v5.rs. Every identity is a κ-label,
  * `sha256:` and the hex SHA-256 of the bytes it names.
+ *
+ * A holo v6 is the same archive with profile 2 (`"UORC" 02 02 00 00`), sealed by
+ * plain BLAKE3 of every byte before the seal, and every κ-label is `blake3:` and
+ * the hex BLAKE3 of the bytes it names. Its documents are v5's under
+ * `prism/holo/6` and `prismpm/model-provenance/3`.
  */
 import { sha256Hex } from './sha256.mjs';
+import { blake3Hex } from './vendor/blake3.mjs';
 
 export const MANIFEST_SCHEMA = 'prism/holo/5';
 export const PROVENANCE_SCHEMA = 'prismpm/model-provenance/2';
+/** What differs between holo v5 and v6, by holo version. */
+const FORMATS = Object.freeze({
+  5: Object.freeze({ profile: 1, manifest: MANIFEST_SCHEMA, provenance: PROVENANCE_SCHEMA, kappa: /^sha256:[0-9a-f]{64}$/, prefix: 'sha256:', hash: sha256Hex, seal: 'UORC-SHA256-CHAIN-v1' }),
+  6: Object.freeze({ profile: 2, manifest: 'prism/holo/6', provenance: 'prismpm/model-provenance/3', kappa: /^blake3:[0-9a-f]{64}$/, prefix: 'blake3:', hash: blake3Hex, seal: 'BLAKE3' }),
+});
 export const ROLES = Object.freeze(['manifest', 'source-manifest', 'provenance', 'capabilities', 'guest', 'view', 'model']);
 export const ROLE_ATTESTATIONS = 'attestations';
 const CONTENT = Object.freeze({ capabilities: 3, guest: 4, view: 5, model: 6 });
 const BUDGET = Object.freeze({ objects: 16, bytes: 2 ** 30 });
 const SEAL_LENGTH = 32;
-const KAPPA = /^sha256:[0-9a-f]{64}$/;
 const TAG = Uint8Array.from('UORC-SHA256-CHAIN-v1\0', (c) => c.charCodeAt(0));
 const utf8 = new TextDecoder('utf-8', { fatal: true });
 
 /** Whether `bytes` start like a UORC archive. */
 export const isUorc = (bytes) => bytes.length >= 4 && bytes[0] === 0x55 && bytes[1] === 0x4f && bytes[2] === 0x52 && bytes[3] === 0x43;
 
-export const kappa = (bytes) => `sha256:${sha256Hex(bytes)}`;
+/** The κ-label of `bytes` in holo `version` 5 (`sha256:`, the default) or 6 (`blake3:`). */
+export const kappa = (bytes, version = 5) => `${FORMATS[version].prefix}${FORMATS[version].hash(bytes)}`;
+
+/** The holo version a UORC archive's magic names, 5 or 6, or null. */
+export function versionOf(bytes) {
+  if (bytes.length < 6 || bytes[4] !== 2) return null;
+  if (bytes[5] === 1) return 5;
+  return bytes[5] === 2 ? 6 : null;
+}
 
 const fromHex = (hex) => Uint8Array.from(hex.match(/../g), (pair) => parseInt(pair, 16));
 function concat(parts) {
@@ -63,13 +81,14 @@ function readUleb(bytes, at) {
 }
 
 /**
- * The framing of a raw self-contained UORC archive: `{ objects, seal, sealed }`
+ * The framing of a raw self-contained UORC archive: `{ version, objects, seal, sealed }`
  * with each object `{ index, offset, length, bytes }`, or `{ problem, check }`
  * when its header cannot be read. The seal is reported, not enforced.
  */
 export function readArchive(bytes) {
   const refuse = (problem, check = 'archive.table') => ({ problem, check });
-  if (bytes.length < 6 || bytes[4] !== 2 || bytes[5] !== 1) return refuse('a holo v5 file is a UORC archive (format 2, profile 1)', 'archive.version');
+  const version = versionOf(bytes);
+  if (version === null) return refuse('a holo v5 or v6 file is a UORC archive (format 2, profile 1 or 2)', 'archive.version');
   if (bytes.length < 8 + SEAL_LENGTH) return refuse('the UORC archive is truncated');
   const preimage = bytes.subarray(0, bytes.length - SEAL_LENGTH);
   const seal = Array.from(bytes.subarray(bytes.length - SEAL_LENGTH), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -98,7 +117,7 @@ export function readArchive(bytes) {
     offset += length;
     return object;
   });
-  return { objects, seal, sealed: chainHex(preimage) === seal };
+  return { version, objects, seal, sealed: (version === 6 ? blake3Hex(preimage) : chainHex(preimage)) === seal };
 }
 
 /** JSON as the canonical form of a holo document: keys sorted, no whitespace. */
@@ -135,7 +154,11 @@ export function analyzeV5(bytes, context) {
    * contract is one some revision admits (@1, or a session world of 2026-11-18),
    * and the wasm layer is entered where that contract's world says.
    */
-  const admitted = new Set(Object.values(spec.FORMAT_REVISIONS).filter((r) => r.holoVersions.includes(5)).flatMap((r) => r.coreWasmContracts));
+  // An unreadable header is refused below as for v5, so it is read as v5 here.
+  const version = versionOf(bytes) ?? 5;
+  const format = FORMATS[version];
+  const KAPPA = format.kappa;
+  const admitted = new Set(Object.values(spec.FORMAT_REVISIONS).filter((r) => r.holoVersions.includes(version)).flatMap((r) => r.coreWasmContracts));
   // The session worlds are entered at holo_step, the stateless world at holo_run.
   const entryOf = (contract) => (contract === spec.CORE_WASM_SESSION.CONTRACT || contract === spec.CORE_WASM_CHECKPOINT.CONTRACT ? spec.CORE_WASM_SESSION.ENTRY : spec.CORE_WASM.ENTRY);
   const layersOf = (guest, view, contract = spec.CORE_WASM.CONTRACT) => [
@@ -143,7 +166,8 @@ export function analyzeV5(bytes, context) {
     { entry: spec.HOLOVIEW.ENTRY, kappa: view, kind: 'view', surface: 'portable' },
   ];
   const checks = [{ id: 'archive.magic', level: 'archive', status: 'pass', detail: 'magic UORC' }];
-  const facts = { v5: true, structure: { ok: false }, sections: [], documents: {}, roles: {}, revision: null, layoutRevision: null, footer: null, fingerprint: null, newestDifferences: [] };
+  // `v5` marks the UORC family (v5 and v6); `holoVersion` says which.
+  const facts = { v5: true, holoVersion: version, structure: { ok: false }, sections: [], documents: {}, roles: {}, revision: null, layoutRevision: null, footer: null, fingerprint: null, newestDifferences: [] };
   const add = (level, id, ok, detail) => checks.push({ id, level, status: ok ? 'pass' : 'fail', detail });
   const skip = (level, id, detail) => checks.push({ id, level, status: 'skip', detail });
 
@@ -151,23 +175,23 @@ export function analyzeV5(bytes, context) {
   if (archive.problem) {
     for (const id of context.structureIds.slice(1)) {
       if (id === archive.check) add('archive', id, false, archive.problem);
-      else if (!checks.some((c) => c.id === archive.check)) add('archive', id, true, 'UORC format 2, profile 1');
+      else if (!checks.some((c) => c.id === archive.check)) add('archive', id, true, `UORC format 2, profile ${format.profile}`);
     }
     for (const id of context.archiveIds) if (!checks.some((c) => c.id === id)) skip('archive', id, `not checked: ${archive.check} failed`);
     for (const id of context.documentIds) skip('documents', id, `not checked: ${archive.check} failed`);
     return { checks, facts };
   }
-  add('archive', 'archive.version', true, 'UORC format 2, profile 1');
+  add('archive', 'archive.version', true, `UORC format 2, profile ${format.profile}`);
   add('archive', 'archive.flags', true, 'a self-contained archive, objects stored raw');
   add('archive', 'archive.table', true, `${archive.objects.length} objects, contiguous, ending at the seal`);
   facts.structure.ok = true;
   facts.footer = { stored: archive.seal, computed: archive.sealed ? archive.seal : null, matches: archive.sealed };
-  facts.fingerprint = kappa(bytes);
+  facts.fingerprint = kappa(bytes, version);
   add(
     'archive',
     'archive.footer',
     archive.sealed,
-    archive.sealed ? `the seal is the UORC-SHA256-CHAIN-v1 of the archive, ${archive.seal}` : `the seal ${archive.seal} is not the UORC-SHA256-CHAIN-v1 of the archive: the archive was altered`,
+    archive.sealed ? `the seal is the ${format.seal} of the archive, ${archive.seal}` : `the seal ${archive.seal} is not the ${format.seal} of the archive: the archive was altered`,
   );
 
   const known = archive.objects.length === ROLES.length || archive.objects.length === ROLES.length + 1;
@@ -176,15 +200,16 @@ export function analyzeV5(bytes, context) {
     const role = ROLES[object.index] ?? ROLE_ATTESTATIONS;
     const section = { index: object.index, kind: null, kindName: role, role, offset: object.offset, length: object.length, payload: object.bytes };
     if (contentRoles.has(object.index)) {
-      section.label = kappa(object.bytes);
+      section.label = kappa(object.bytes, version);
       section.content = object.bytes;
-      section.digests = { sha256: section.label.slice('sha256:'.length) };
+      // A v6 object's κ is its blake3; its sha256 is kept beside it, as a v4 blob's is (ADR-018 §4).
+      section.digests = version === 6 ? { sha256: sha256Hex(object.bytes), blake3: section.label.slice(format.prefix.length) } : { sha256: section.label.slice(format.prefix.length) };
       section.labelMatches = true;
     }
     return section;
   });
   const at = (index) => (known ? facts.sections[index] : undefined);
-  const labelOf = (index) => at(index)?.label ?? (at(index) ? kappa(at(index).payload) : undefined);
+  const labelOf = (index) => at(index)?.label ?? (at(index) ? kappa(at(index).payload, version) : undefined);
 
   // manifest.wire and blob.labels: the manifest names every object by its κ.
   {
@@ -193,7 +218,7 @@ export function analyzeV5(bytes, context) {
     const manifest = decoded.value;
     if (decoded.error) problems.push(`the holo manifest ${decoded.error}`);
     else {
-      if (manifest.schema !== MANIFEST_SCHEMA) problems.push(`the manifest names schema ${JSON.stringify(manifest.schema)}`);
+      if (manifest.schema !== format.manifest) problems.push(`the manifest names schema ${JSON.stringify(manifest.schema)}`);
       if (typeof manifest.name !== 'string' || manifest.name.length === 0) problems.push('the manifest names no application');
       if (manifest.basis !== undefined && !KAPPA.test(manifest.basis)) problems.push('the manifest basis is not a κ-label');
       if (!KAPPA.test(manifest.requires)) problems.push('the manifest requires no κ-label');
@@ -204,7 +229,7 @@ export function analyzeV5(bytes, context) {
       if (canonical(manifest) !== utf8.decode(at(0).payload)) problems.push('the manifest is not canonical JSON');
     }
     if (problems.length === 0) facts.documents.manifest = manifest;
-    add('documents', 'manifest.wire', problems.length === 0, problems.length === 0 ? `the holo manifest is canonical ${MANIFEST_SCHEMA}` : problems.join('; '));
+    add('documents', 'manifest.wire', problems.length === 0, problems.length === 0 ? `the holo manifest is canonical ${format.manifest}` : problems.join('; '));
     if (manifest && problems.length === 0) {
       // The provenance names the manifest, so the manifest lists every object but the provenance.
       const expected = [1, 3, 4, 5, 6].map((i) => ({ kappa: labelOf(i), length: at(i).length, role: ROLES[i] }));
@@ -228,12 +253,12 @@ export function analyzeV5(bytes, context) {
   const modelSchemas = new Set(revisions.flatMap((r) => r.modelDocumentSchemas));
 
   documentCheck('metadata.schema', 'the source manifest', at(1), spec.HOLO_SCHEMAS.SOURCE_MANIFEST, 'sourceManifest');
-  skip('documents', 'directory.schema', 'not checked: a holo v5 names its layers in the manifest');
+  skip('documents', 'directory.schema', `not checked: a holo v${version} names its layers in the manifest`);
   documentCheck(
     'provenance.schema',
     'the model provenance',
     at(2),
-    (v) => (v?.schema === PROVENANCE_SCHEMA ? spec.SCHEMAS[PROVENANCE_SCHEMA] : null),
+    (v) => (v?.schema === format.provenance ? spec.SCHEMAS[format.provenance] : null),
     'provenance',
     (v) => (canonical(v) === utf8.decode(at(2).payload) ? '' : 'it is not canonical JSON'),
   );
@@ -304,7 +329,7 @@ export function analyzeV5(bytes, context) {
     };
     let matched = null;
     let differences = [];
-    for (const [date, revision] of Object.entries(spec.FORMAT_REVISIONS).filter(([, r]) => r.holoVersions.includes(5))) {
+    for (const [date, revision] of Object.entries(spec.FORMAT_REVISIONS).filter(([, r]) => r.holoVersions.includes(version))) {
       const found = differencesFrom(revision);
       if (found.length === 0) {
         matched = date;
@@ -319,7 +344,7 @@ export function analyzeV5(bytes, context) {
       differences = [];
     }
     facts.newestDifferences = differences;
-    add('documents', 'format.revision', matched !== null, matched !== null ? `holo v5, format revision ${matched}` : `the archive matches no format revision this package knows (holo v5): ${differences.join('; ')}`);
+    add('documents', 'format.revision', matched !== null, matched !== null ? `holo v${version}, format revision ${matched}` : `the archive matches no format revision this package knows (holo v${version}): ${differences.join('; ')}`);
   }
 
   checks.sort((a, b) => context.order.indexOf(a.id) - context.order.indexOf(b.id));
