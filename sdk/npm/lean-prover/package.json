@@ -1,6 +1,6 @@
 {
   "name": "@prism-code/lean-prover",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Lean 4.32.2's elaborator and kernel as WebAssembly: prove a LexLean project in Node with no hosted server and no Docker, every blob checked by its BLAKE3 label.",
   "license": "MIT",
   "type": "module",

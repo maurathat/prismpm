@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.2](https://github.com/UOR-Foundation/prismpm/compare/prism-code-lean-prover-v0.1.1...prism-code-lean-prover-v0.1.2) (2026-11-22)
+
+
+### Features Added
+
+* **prism-code:** the browser store keeps bytes under their BLAKE3 label ([a5d4b6e](https://github.com/UOR-Foundation/prismpm/commit/a5d4b6ec90008e76c434a1620c1ea7e136ea687b))
+
+
+### Bugs Fixed
+
+* **lean-prover:** one refused LexLean-produced proof no longer sinks a project; prism-code proves from LexLean's declarations ([#762](https://github.com/UOR-Foundation/prismpm/issues/762)) ([5ae88fa](https://github.com/UOR-Foundation/prismpm/commit/5ae88facb207f654b182b061efcfb99478635b2a))
+
+
+### Other Changes
+
+* **main:** release prism-code 0.10.3 ([#755](https://github.com/UOR-Foundation/prismpm/issues/755)) ([7e3bfa6](https://github.com/UOR-Foundation/prismpm/commit/7e3bfa64c5577b4e27fe982d2c220048916742bd))
+* **prism-code:** carry the faster BLAKE3 into every copy of it ([576b17e](https://github.com/UOR-Foundation/prismpm/commit/576b17eef4d5e9ce2df204255a57b861470b739b))
+
 ## [0.1.1](https://github.com/UOR-Foundation/prismpm/compare/prism-code-lean-prover-v0.1.0...prism-code-lean-prover-v0.1.1) (2026-11-20)
 
 ### Features Added
