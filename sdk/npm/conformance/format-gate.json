@@ -70,6 +70,10 @@
     {
       "files": ["crates/prismpm/src/holo/canonical.rs", "crates/prismpm/src/holo/model_document.rs"],
       "reason": "Module cut (#448, #626): encode_canonical and decode_canonical move verbatim from canonical.rs to model_document.rs, so the errors module keeps only the value codec. No document byte changes; existing holos change only through the emitter semantics id, as with any change to an emitter input."
+    },
+    {
+      "files": ["crates/prismpm/src/holo/archive.rs"],
+      "reason": "The Rust reader and composer learn holo v6 (ADR-018), the format #798 already defines and the scenarios already pin: load.reference-v6.opens, verify.reference-v6.default-policy and verify.reference-v6.seal-broken. The Rust runtime's declaration drops its expected failure for the verify check, which now passes, so that check holds this change. No byte of v5 changes: compose_application still writes v5, and upgrade_application_v6 writes the same bytes as prism-code's upgradeToV6, the committed corpus/Calculator.v6.holo."
     }
   ]
 }
