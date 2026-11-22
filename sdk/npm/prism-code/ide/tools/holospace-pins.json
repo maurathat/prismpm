@@ -1,14 +1,14 @@
 {
  "schema": "prism-ide/holospace-pins/1",
  "note": "The Holospace library the workbench opens and runs a built holo with, and keeps a workspace in. Each file is published beside the page only when its bytes derive to the BLAKE3 label here; nothing of it is fetched from Holospace's site at run time. They are fetched from the release of the commit named, an address whose bytes do not change when Holospace publishes again; a release holds the files flat, under the last part of each path. The labels are those of that release's library.json (schema holospace/library/1), each file fetched and derived again before it was pinned. A newer library is taken by a pull request that changes this file.",
- "from": "https://github.com/Hologram-Technologies/holospace-shell/releases/download/library-ea9639719cea3ed99105f34a315c637726f57cd5/",
+ "from": "https://github.com/Hologram-Technologies/holospace-shell/releases/download/library-0e2d04ec424f800b66a80c38f6186a1fc174949f/",
  "repository": "https://github.com/Hologram-Technologies/holospace-shell",
- "commit": "ea9639719cea3ed99105f34a315c637726f57cd5",
+ "commit": "0e2d04ec424f800b66a80c38f6186a1fc174949f",
  "entry": "holospace.bundle.mjs",
  "storage": { "opfs": "holospace-store", "cache": "holospace-store" },
  "files": [
-  { "path": "holospace.bundle.mjs", "kappa": "blake3:bd0d3399fc3b2ecbcb177e6ab2590882d91d8a751bd04b4388322740433af979", "bytes": 629982 },
-  { "path": "store-worker.bundle.mjs", "kappa": "blake3:842aa2624615abef863e1e7c8b6e1c530ae9a5edc567950401dafd0a7560427e", "bytes": 7881 },
+  { "path": "holospace.bundle.mjs", "kappa": "blake3:26bc294fb29cc723714c463149d1ca0f0f3638e465db43d1687e3f432d2b0411", "bytes": 631557 },
+  { "path": "store-worker.bundle.mjs", "kappa": "blake3:6869b4cfbf203421951be950453f28633f575ac36e3bbb8d720c5f0aa818533d", "bytes": 8355 },
   { "path": "kernels/kernel.json", "kappa": "blake3:56c7b2beca3db2c7ac6609297d9f89161f1f05285ea64086d6152a0c2df5aea7", "bytes": 300 },
   { "path": "kernels/holospace-kernel.holo", "kappa": "blake3:4852752961dbf141aa0e142b0efc5c15c83f2f504f5a3adb15e85c55a0d00ef2", "bytes": 35782 }
  ]
