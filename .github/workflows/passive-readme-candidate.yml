@@ -21,7 +21,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          fetch-depth: 0
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: sdk/ci
+          sparse-checkout-cone-mode: true
       - name: Exercise complete standalone planted suite
         shell: bash
         run: |
