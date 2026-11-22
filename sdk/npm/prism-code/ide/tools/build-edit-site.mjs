@@ -74,7 +74,8 @@ for (const name of Object.keys(MODEL_KERNEL_FILES)) {
 }
 writeFileSync(join(site, 'model-kernel', 'pins.json'), JSON.stringify({ loader: modelPin('lean-kernel.mjs'), kernel: modelPin('lean-kernel.wasm.gz'), library: modelPin('base.ndjson.gz') }) + '\n');
 
-// Holospace's library: fetched once from where it is published, or read from PRISM_HOLOSPACE_DIR, and written
+// Holospace's library: fetched once from the release of the commit the pins name, whose address and bytes do not
+// change when Holospace publishes again, or read from PRISM_HOLOSPACE_DIR, and written
 // beside the page only when each file's bytes derive to its pinned label. At run time nothing is fetched from there.
 const holospace = JSON.parse(readFileSync(join(ide, 'tools', 'holospace-pins.json'), 'utf8'));
 for (const pin of holospace.files) {
@@ -82,8 +83,10 @@ for (const pin of holospace.files) {
   let bytes;
   if (local) bytes = new Uint8Array(readFileSync(local));
   else {
-    const response = await fetch(new URL(pin.path, holospace.from));
-    if (!response.ok) throw new Error(`${holospace.from}${pin.path} answered HTTP ${response.status}`);
+    // A release holds its files flat, so a file is asked for by the last part of its path.
+    const address = new URL(pin.path.split('/').pop(), holospace.from);
+    const response = await fetch(address);
+    if (!response.ok) throw new Error(`${address} answered HTTP ${response.status}`);
     bytes = new Uint8Array(await response.arrayBuffer());
   }
   const got = kappa(bytes);
