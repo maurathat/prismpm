@@ -33,7 +33,7 @@
 import { fail } from './errors.mjs';
 import { VERSION } from './version.mjs';
 import { FORMAT_REVISION } from './vendor/spec/constants.mjs';
-import { sdkImageFromLock } from './docker.mjs';
+import { sdkImageFromLock } from './lock.mjs';
 
 export const SYSTEM_INFO_SCHEMA = 'prism/system-info/1';
 export const SYSTEM_VERSION_SCHEMA = 'prism/system-version/1';

@@ -5,38 +5,13 @@ import assert from 'node:assert/strict';
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { GAPS_META_KEY, GAPS_SCHEMA, BATCH_LINES, MODEL_STEPS, fingerprint, gapLedger, telemetryNotice, telemetryOn } from '../src/gaps.mjs';
-import { hostedClient } from '../src/hosted.mjs';
+import { GAPS_SCHEMA, MODEL_STEPS, fingerprint, gapLedger, telemetryNotice, telemetryOn } from '../src/gaps.mjs';
 import { VERSION } from '../src/version.mjs';
 
 const scratch = () => mkdtempSync(join(tmpdir(), 'prism-gaps-'));
 const ledger = (env = {}) => gapLedger({ env, dir: scratch() });
 const lines = (l) => (existsSync(l.file) ? readFileSync(l.file, 'utf8').trim().split('\n').filter(Boolean).map((x) => JSON.parse(x)) : []);
 const recorded = (l) => lines(l).map(({ kind, construct, code }) => ({ kind, construct, code }));
-
-/** A stand-in hosted verifier that keeps every request it is sent; `answers` are the verify results, one per call. */
-function server(gaps, answers = []) {
-  const requests = [];
-  let id = 0;
-  let down = false;
-  const PROFILE = { id: 'p1', name: 'prism-app', roots: ['src'], packages: [{ package: 'lexlean.core' }, { package: 'lexlean.std.nat' }, { package: 'prism.arch' }] };
-  const fetch = async (_url, { body }) => {
-    if (down) throw new Error('connection refused');
-    const request = JSON.parse(body);
-    requests.push(request);
-    const tool = request.params.name;
-    let result = {};
-    if (tool === 'lexlean_profiles') result = { structuredContent: { profiles: [PROFILE] } };
-    else if (tool === 'lexlean_draft_write') result = { structuredContent: { draft: `prism-app/${++id}` } };
-    else if (tool === 'lexlean_verify') result = answers.shift();
-    return { status: 200, text: async () => JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) };
-  };
-  return {
-    requests,
-    setDown: (value) => (down = value),
-    client: hostedClient({ url: 'https://lexlean.example.test/', fetch, sleep: async () => {}, retries: 0, retryMs: 0, gaps }),
-  };
-}
 
 test('a fingerprint is a closed record: a kind, a construct from its vocabulary, a code and a version, and nothing else', () => {
   assert.deepEqual(fingerprint({ kind: 'model-refused', construct: 'check', code: 'PP2014', version: '0.6.0-rc.1', purpose: 'secret' }), { kind: 'model-refused', construct: 'check', code: 'PP2014', version: '0.6.0-rc.1' });
@@ -56,53 +31,6 @@ test('a fingerprint is a closed record: a kind, a construct from its vocabulary,
 // fits its grammar, and drops it silently otherwise.
 test('every construct prism-code can emit fits the gateway\'s grammar', () => {
   assert.deepEqual([...MODEL_STEPS].sort(), ['build', 'check', 'format', 'lock', 'prelock', 'run', 'verify']);
-});
-
-test('the ledger is appended to and delivered in the _meta of the next hosted call, counted by fingerprint, then marked sent', async () => {
-  const gaps = ledger();
-  gaps.record({ kind: 'model-refused', construct: 'check', code: 'LLC0102' });
-  gaps.record({ kind: 'model-refused', construct: 'check', code: 'LLC0102' });
-  gaps.record({ kind: 'model-refused', construct: 'verify', code: 'LLV7002' });
-  assert.equal(lines(gaps).length, 3);
-  assert.match(lines(gaps)[0].day, /^\d{4}-\d{2}-\d{2}$/);
-  const { client, requests } = server(gaps);
-  await client.call('lexlean_profiles', { profile: 'prism-app' });
-  const batch = requests[0].params._meta[GAPS_META_KEY];
-  assert.deepEqual(Object.keys(batch).sort(), ['gaps', 'install', 'schema']);
-  assert.equal(batch.schema, GAPS_SCHEMA);
-  assert.match(batch.install, /^[0-9a-f]{32}$/);
-  assert.deepEqual(batch.gaps, [
-    { kind: 'model-refused', construct: 'check', code: 'LLC0102', version: VERSION, count: 2 },
-    { kind: 'model-refused', construct: 'verify', code: 'LLV7002', version: VERSION, count: 1 },
-  ]);
-  assert.ok(requests[0].params._meta['io.modelcontextprotocol/protocolVersion'], 'the call keeps its own _meta');
-  await client.call('lexlean_profiles', { profile: 'prism-app' });
-  assert.equal(requests[1].params._meta[GAPS_META_KEY], undefined, 'sent once');
-  gaps.record({ kind: 'model-refused', construct: 'build' });
-  await client.call('lexlean_profiles', { profile: 'prism-app' });
-  const next = requests[2].params._meta[GAPS_META_KEY];
-  assert.equal(next.install, batch.install, 'one install ID');
-  assert.deepEqual(next.gaps.map((g) => g.construct), ['build']);
-});
-
-test('a call that is not answered marks nothing sent; the gaps go with the next one', async () => {
-  const gaps = ledger();
-  gaps.record({ kind: 'model-refused', construct: 'check', code: 'LLC0102' });
-  const { client, requests, setDown } = server(gaps);
-  setDown(true);
-  await assert.rejects(client.call('lexlean_profiles', { profile: 'prism-app' }), /did not answer/);
-  setDown(false);
-  await client.call('lexlean_profiles', { profile: 'prism-app' });
-  assert.equal(requests[0].params._meta[GAPS_META_KEY].gaps[0].count, 1);
-});
-
-test('a batch holds at most BATCH_LINES lines; the rest go with the next call', async () => {
-  const gaps = ledger();
-  for (let i = 0; i < BATCH_LINES + 3; i++) gaps.record({ kind: 'model-refused', construct: 'lock' });
-  const { client, requests } = server(gaps);
-  await client.call('lexlean_profiles', {});
-  await client.call('lexlean_profiles', {});
-  assert.deepEqual(requests.map((r) => r.params._meta[GAPS_META_KEY].gaps[0].count), [BATCH_LINES, 3]);
 });
 
 test('PRISM_TELEMETRY=0 or DO_NOT_TRACK=1 records nothing and sends nothing; setup says what is sent and how to stop it', async () => {

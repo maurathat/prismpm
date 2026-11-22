@@ -353,7 +353,7 @@ export function createImages({ spawn, docker = null, store, references } = {}) {
     const { readFile } = await import('node:fs/promises');
     const { resolve, join } = await import('node:path');
     if (docker === null) fail('PP5008', 'images.build runs the builder image in Docker, and this client has no Docker host; use prism.images from createPrism() or Prism.fromEnv() in Node');
-    const { sdkImageFromLock } = await import('./docker.mjs');
+    const { sdkImageFromLock } = await import('./lock.mjs');
     const root = resolve(options.path ?? '.');
     const lock = await readFile(join(root, 'prismpm.lock'), 'utf8').catch(() => fail('PP1101', `${root} has no prismpm.lock, which pins the builder image`));
     const builder = sdkImageFromLock(lock);

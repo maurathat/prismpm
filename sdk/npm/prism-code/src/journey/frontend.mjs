@@ -18,7 +18,7 @@ export const PHASE_3 = 'docs/proposals/canonical-serverless-build.md, Phase 3: L
 export const PHASE_4 = 'docs/proposals/canonical-serverless-build.md, Phase 4: in-process proof producers';
 
 /** Where each step runs, said wherever the state matters. */
-export const NO_DOCKER_FREE_BUILD = `No step needs Docker, an image or a server. LexLean runs as WebAssembly on this machine (${PHASE_3}), fetched once (about 4 MB) and checked against its BLAKE3 label; it checks every app. Every app's theorems are then proved by Lean's own kernel, as WebAssembly, in this process (${PHASE_4}), fetched once (about 1.7 MB) and checked the same way. Nothing about the app is sent anywhere; PRISM_CODE_TIER=offline fetches nothing either.`;
+export const NO_DOCKER_FREE_BUILD = `No step needs Docker, an image or a server. LexLean runs as WebAssembly on this machine (${PHASE_3}), shipped in this package and checked against its BLAKE3 label; it checks every app. Every app's theorems are then proved by Lean's own kernel, as WebAssembly, in this process (${PHASE_4}), shipped and checked the same way. Nothing is fetched, and nothing about the app is sent anywhere.`;
 
 /** No place to run the step. `code` is `build.frontend-unavailable`. */
 export function frontendUnavailable(why) {

@@ -1,7 +1,8 @@
 /**
  * Where Lean's kernel, its loader, the lemma library and the rule judge's holo
- * are kept: not in the package, which stays small, but fetched once per machine
- * into the pinned store (`$PRISM_HOME/kappa/pinned/`, kappa-store.mjs).
+ * are kept: in the package (`wasm/pinned/`, kappa-store.mjs), so a first run fetches
+ * nothing. A package without them fetches each once per machine into the pinned
+ * store (`$PRISM_HOME/kappa/pinned/`).
  *
  * Each file is named by the BLAKE3 κ-label of its decoded bytes at one commit
  * of UOR-Foundation/foundry, and kept as served; its SHA-256 is a secondary
@@ -12,7 +13,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildFetch } from './hosts.mjs';
-import { admittedLabel, pinnedFile, writeAtomic } from './kappa-store.mjs';
+import { admittedLabel, keptFile, pinnedFile, writeAtomic } from './kappa-store.mjs';
 
 export const KERNEL_REPOSITORY = 'UOR-Foundation/foundry';
 export const KERNEL_COMMIT = '7755331b8d1cba879d89a1956c0703b749868abd';
@@ -46,7 +47,9 @@ export function kernelFile(name, env = process.env) {
 
 /** One kept file as served, admitted when it decodes to its κ-label. Throws `KernelMissing` when it is absent or is not the pinned bytes. */
 export function readKernelFile(name, { env = process.env } = {}) {
-  const file = kernelFile(name, env);
+  // Read from the store, else from the package's own copy; a fetched file is written to the store only (kernelFile).
+  const file = env.PRISM_KERNEL_DIR ? kernelFile(name, env) : keptFile(KERNEL_FILES[name]?.kappa ?? '', env);
+  if (!KERNEL_FILES[name]) throw new Error(`${name} is not a pinned kernel file`);
   if (!existsSync(file)) throw new KernelMissing(`${name} is not on this machine yet`);
   const bytes = readFileSync(file);
   if (admittedLabel(bytes) !== KERNEL_FILES[name].kappa) throw new KernelMissing(`${file} is not the pinned ${name}`);

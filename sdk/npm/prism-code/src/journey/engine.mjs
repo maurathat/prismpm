@@ -57,9 +57,9 @@ function repair(diagnostics, dir = null) {
   if (fixes.length) return `Lean observed other axioms than ${fixes.map((f) => `${f.name} declares`).join(', ')}; set each theorem's axioms to ${fixes.map((f) => `[${f.axioms.join(', ')}] for ${f.name}`).join('; ')}.`;
   // The first problem, when its hint names the fix: the replacement, and where to write it.
   const first = dir ? shown(diagnostics, dir)[0] : null;
-  if (first?.didYouMean?.length && first.at) return `\`${first.name}\` is not in scope: at ${first.at} write ${first.didYouMean.map((n) => `\`${n}\``).join(' or ')} instead, then call the same tool again.`;
-  if (first?.at && first.line) return `Fix ${first.at}, \`${first.line}\`, then call the same tool again.`;
-  return 'Fix the model at the lines named, then call the same tool again.';
+  if (first?.didYouMean?.length && first.at) return `\`${first.name}\` is not in scope: at ${first.at} write ${first.didYouMean.map((n) => `\`${n}\``).join(' or ')} instead, then run the same command again.`;
+  if (first?.at && first.line) return `Fix ${first.at}, \`${first.line}\`, then run the same command again.`;
+  return 'Fix the model at the lines named, then run the same command again.';
 }
 
 /**
@@ -389,7 +389,7 @@ export async function tryRequest(dir, session, request) {
       return { ok: false, request, code: error.code, message: `The built rule app is refused: ${error.message}` };
     }
   }
-  return { ...failure(new PrismCodeError('try.unbuilt', 'Nothing is built yet, so nothing answers: call prism_run, which builds first. Prism answers only from a built app, never from a second reading of the model.')), request };
+  return { ...failure(new PrismCodeError('try.unbuilt', 'Nothing is built yet, so nothing answers: run prism-code build first. Prism answers only from a built app, never from a second reading of the model.')), request };
 }
 
 /**

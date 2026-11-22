@@ -11,7 +11,6 @@ import { resolve, join, extname } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { createPrism, loadArchive, loadClosure } from './index.mjs';
 import { createAuth } from './auth.mjs';
-import { hostDockerArguments } from './host.mjs';
 import { fail } from './errors.mjs';
 import { fileImageStore, imagesDirectory } from './image-store.mjs';
 
@@ -254,8 +253,8 @@ export async function serve(app, { port = 0, host = '127.0.0.1' } = {}) {
  *
  * - `containers` keep their records in `$PRISM_HOME/containers` (`fileContainerStore`).
  * - `images` keeps built and pulled images in `$PRISM_IMAGES`, else `$PRISM_HOME/images` (`fileImageStore`).
- * - `images.build` runs the builder image through the Docker that `prism-code setup`
- *   recorded, or the one found on the PATH (`host.mjs`).
+ * - `images.build` starts no builder of its own: prism-code runs none. A caller that has one passes `docker`;
+ *   the CLI's `build` builds in this process instead (journey/engine.mjs).
  * - `system.info({ path })` and `system.version({ path })` read `<path>/prismpm.lock`.
  * - `auth` logs in and out through Docker's credential stores and holds signing identities.
  *
@@ -267,7 +266,6 @@ function fromEnv(options = {}) {
   return createPrism({
     store: fileContainerStore(containersDirectory(env)),
     imageStore: fileImageStore(imagesDirectory(env)),
-    docker: (request) => hostDockerArguments({ ...request, env }),
     readLock: (directory) =>
       readFile(join(toPath(directory), 'prismpm.lock'), 'utf8').catch((error) => {
         if (error.code === 'ENOENT') return null;

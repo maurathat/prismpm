@@ -1,9 +1,10 @@
 # Lean's kernel, as WebAssembly
 
-The files below are not in this package. `kernel-store.mjs` fetches them once
-from UOR-Foundation/foundry at commit `7755331b8d1cba879d89a1956c0703b749868abd`
-and keeps them under `$PRISM_HOME/kernel/`. Each is named by the SHA-256 of its
-bytes, and is used only when its bytes have that address. `manifest.json`, which
+The files below ship in this package under `wasm/pinned/`, each named by the
+BLAKE3 label of its decoded bytes, and are used only when their bytes have that
+label. They are the bytes of UOR-Foundation/foundry at commit
+`7755331b8d1cba879d89a1956c0703b749868abd`; a package without them fetches each
+once from there (`kernel-store.mjs`). `manifest.json`, which
 is in this package, names what the unpacked files must be and records that this
 kernel judged this library whole.
 

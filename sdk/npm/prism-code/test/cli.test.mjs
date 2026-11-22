@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sdkImageFromLock, dockerArguments } from '../src/docker.mjs';
+import { sdkImageFromLock } from '../src/lock.mjs';
 
 const bin = fileURLToPath(new URL('../bin/prism-code.mjs', import.meta.url));
 const fixture = fileURLToPath(new URL('../fixtures/Calculator.holo', import.meta.url));
@@ -65,40 +65,6 @@ test('the lock admits only an immutable image reference', () => {
     assert.throws(() => sdkImageFromLock(JSON.stringify({ sdk_image: image })), (e) => e.code === 'lock.image', image);
   }
   assert.throws(() => sdkImageFromLock('not json'), (e) => e.code === 'lock.image');
-});
-
-test('the docker invocation is the template\'s, minus the socket unless building', () => {
-  const check = dockerArguments({ image: IMAGE, cwd: '/home/u/app', command: 'check', uid: 1000, gid: 1000, platform: 'linux' });
-  assert.deepEqual(check, [
-    'run', '--rm', '--user', '1000:1000', '--tmpfs', '/tmp:rw,exec,nosuid,size=2g',
-    '--volume', '/home/u/app:/home/u/app', '--workdir', '/home/u/app',
-    '--env', 'HOME=/tmp/prismpm-home', '--env', 'PRISMPM_EPHEMERAL_HOME=1',
-    IMAGE, 'prismpm', 'check',
-  ]);
-  const build = dockerArguments({ image: IMAGE, cwd: '/home/u/app', command: 'build', args: ['--release'], uid: 1000, gid: 1000, platform: 'linux', build: true, dockerSocketGid: 999 });
-  assert.ok(build.includes('--group-add') && build.includes('999'));
-  assert.ok(build.includes('/var/run/docker.sock:/var/run/docker.sock'));
-  assert.ok(build.includes(`SDK_IMAGE=${IMAGE}`));
-  assert.deepEqual(build.slice(-3), ['build', '--release'].length === 2 ? ['prismpm', 'build', '--release'] : null);
-  const windows = dockerArguments({ image: IMAGE, cwd: 'C:\\app', command: 'check', platform: 'win32' });
-  assert.ok(!windows.includes('--user'));
-  assert.ok(windows.includes('C:\\app:/work'));
-  assert.ok(windows.includes('/work'));
-});
-
-test('build --check checks the LexLean project as WebAssembly, needing no lockfile and no Docker (dry run)', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'prism-code-nolock-'));
-  writeFileSync(join(dir, 'lexlean.toml'), 'spec = "lexlean/project/1"\n');
-  const env = { ...process.env, PRISM_CODE_DRY_RUN: '1', PRISM_HOME: mkdtempSync(join(tmpdir(), 'prism-home-')) };
-  const { code, out, err } = run(['build', '--check'], { cwd: dir, env });
-  assert.equal(code, 0, err);
-  assert.equal(out, 'wasm check .\n');
-  assert.doesNotMatch(out + err, /docker|prismpm\.lock/);
-  assert.equal(run(['build', '--check', '--local'], { cwd: dir, env }).code, 64);
-  assert.equal(run(['build', '--check', '--verbose'], { cwd: dir, env }).code, 64, 'an unknown argument is usage');
-  const none = run(['build', '--check'], { cwd: mkdtempSync(join(tmpdir(), 'prism-code-empty-')), env });
-  assert.equal(none.code, 2, 'no LexLean project here');
-  assert.match(none.err, /^tier\.project: no lexlean\.toml/);
 });
 
 test('vectors refuses an altered holo, and with --allow-unverified runs it and still exits 1 (#583)', () => {

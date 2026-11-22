@@ -18,7 +18,7 @@
 import { closeSync, existsSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { join, relative, resolve } from 'node:path';
-import { prismHome } from '../agents.mjs';
+import { prismHome } from '../home.mjs';
 import { kappa } from '../blake3.mjs';
 import { admittedLabel, isGzip, kappaDirectory, pinnedFile, writeAtomic } from './kappa-store.mjs';
 import { KERNEL_FILES } from './kernel-store.mjs';

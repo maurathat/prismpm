@@ -22,7 +22,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { PrismCodeError } from '../errors.mjs';
 import { buildFetch } from './hosts.mjs';
-import { admittedLabel, decoded, pinnedFile, receiveDecoded, writeAtomic } from './kappa-store.mjs';
+import { admittedLabel, decoded, keptFile, pinnedFile, receiveDecoded, writeAtomic } from './kappa-store.mjs';
 import { DECLARE_LIBRARY_PATH, lexleanCheck, lexleanDeclare, lexleanRun, lexleanSnapshot } from './lexlean-core.mjs';
 
 /**
@@ -67,7 +67,7 @@ export function lexleanWasmFile({ env = process.env, pin = null } = {}) {
   if (!want.kappa) return null;
   // Kept or named, gzipped or not, a file is admitted when it decodes to the pinned label.
   const label = want.kappa;
-  const file = env.PRISM_LEXLEAN_WASM ? resolve(env.PRISM_LEXLEAN_WASM) : pinnedFile(label, env);
+  const file = env.PRISM_LEXLEAN_WASM ? resolve(env.PRISM_LEXLEAN_WASM) : keptFile(label, env);
   if (!existsSync(file)) return null;
   const stat = statSync(file);
   const seen = `${label} ${stat.size} ${stat.mtimeMs}`;

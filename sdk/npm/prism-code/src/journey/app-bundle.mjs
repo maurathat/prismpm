@@ -126,7 +126,7 @@ function readerOf(source, { env, fetch }) {
  */
 export async function pullBundle(reference, { env = process.env, fetch = globalThis.fetch } = {}) {
   const source = parseReference(reference);
-  if (!source.address) fail('bundle.reference', `${reference} names no app: add #<κ>, the address prism_push gave`);
+  if (!source.address) fail('bundle.reference', `${reference} names no app: add #<κ>, the address the push gave`);
   const read = readerOf(source, { env, fetch });
   const admitted = async (label, what) => {
     const bytes = await read(label);

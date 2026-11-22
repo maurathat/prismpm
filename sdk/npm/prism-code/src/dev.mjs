@@ -270,11 +270,8 @@ async function holoWrittenSince(directory, buildRoot, since) {
  * no holo reports a `problem` and no holo: a verdict on some older file would
  * describe source the developer has already changed.
  *
- * `command` is null for `prism-code build --update --json`, the build in the
- * SDK image `prismpm.lock` names; otherwise it runs in a shell, as an npm script
- * does. `--update` is what makes this a development loop: a plain build refuses
- * a lock whose model pin the edit just made stale (PP5401), so without it every
- * edit would fail. The lock follows the model, for the developer to commit.
+ * `command` is null for `prism-code build --json`, the build in this process: the model is checked, every theorem
+ * proved and the app written with nothing compiled. Otherwise it runs in a shell, as an npm script does.
  *
  * @param {{ directory: string, command: string | null, holo?: string | null, buildRoot?: string, env?: object, onSpawn?: (child: object) => void, now?: () => number }} options
  */
@@ -283,7 +280,7 @@ export async function runBuild({ directory, command, holo = null, buildRoot = '.
   // A coarse file system rounds a time down, so a holo written at once can look older than its build's start.
   const writtenSince = startedAt - 2000;
   const child = command === null
-    ? spawn(process.execPath, [BIN, 'build', '--update', '--json'], { cwd: directory, env, stdio: ['ignore', 'pipe', 'pipe'] })
+    ? spawn(process.execPath, [BIN, 'build', '--json'], { cwd: directory, env, stdio: ['ignore', 'pipe', 'pipe'] })
     : spawn(command, { cwd: directory, env, shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
   onSpawn(child);
   let stdout = '';

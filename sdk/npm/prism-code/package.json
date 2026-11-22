@@ -57,6 +57,7 @@
     "types",
     "templates",
     "skill",
+    "wasm",
     "fixtures/Calculator.holo",
     "fixtures/Calculator.history.json",
     "README.md",

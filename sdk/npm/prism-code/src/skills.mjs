@@ -19,9 +19,9 @@
  * `installs` below is the model's own definition, written out; test/skills.test.mjs holds it to every theorem.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join, relative, sep } from 'node:path';
+import { basename, dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { kappa } from './blake3.mjs';
 import { PrismCodeError } from './errors.mjs';
@@ -35,7 +35,7 @@ export const RECEIPT_SCHEMA = 'prism/skill-receipt/1';
 export const readPins = (dir = SKILL_DIR) => JSON.parse(readFileSync(join(dir, 'skills.json'), 'utf8'));
 
 /** Hosts a skill may point at: Prism's own sites and the registries it installs from. */
-export const SKILL_HOSTS = Object.freeze(['github.com', 'universal-coordinate-foundation.lovable.app', 'mcp.uor.foundation', 'www.npmjs.com', 'docs.anthropic.com', 'claude.ai', 'chatgpt.com', 'cursor.com', 'code.visualstudio.com']);
+export const SKILL_HOSTS = Object.freeze(['github.com', 'universal-coordinate-foundation.lovable.app', 'www.npmjs.com', 'docs.anthropic.com', 'claude.ai', 'chatgpt.com', 'cursor.com', 'code.visualstudio.com']);
 const SECRET = /\b(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,})|-----BEGIN [A-Z ]*PRIVATE KEY-----/g;
 const TEXT = /\.(md|json|toml|lock|tex)$/;
 
@@ -67,10 +67,22 @@ export const namedVerbs = (markdown) => new Set([...codeOf(markdown).matchAll(/p
 /** Every distinct `prism_<tool>` the markdown teaches in its code. */
 export const namedTools = (markdown) => new Set([...codeOf(markdown).matchAll(/(?<![\w-])prism_[a-z]+(?![\w-])/g)].map((m) => m[0]));
 
-/** The tools the MCP server answers, the six named as Docker names its verbs. */
+/** The tools prism-code serves: none. It has no server, so a skill that names a `prism_<tool>` names one that is not there. */
 export async function servedTools() {
-  const { TOOLS } = await import('./journey/mcp.mjs');
-  return new Set(TOOLS.map((t) => t.name));
+  return new Set();
+}
+
+/**
+ * `prism-code skill --out <dir>`: copy the skill this package ships, SKILL.md and its references, into `dir`.
+ * Reads only the package and reaches no network. Returns `{ directory, files }`.
+ */
+export function copySkill(directory, { from = SKILL_DIR } = {}) {
+  const shipped = files(from).filter((p) => p === 'SKILL.md' || p.startsWith('references/')).sort();
+  for (const p of shipped) {
+    mkdirSync(dirname(join(directory, p)), { recursive: true });
+    writeFileSync(join(directory, p), readFileSync(join(from, p)));
+  }
+  return { directory, files: shipped };
 }
 
 /** The facts about the folder itself: links outside the skill's hosts, credential-shaped strings, non-text files. */
@@ -225,7 +237,7 @@ export async function verifyInstalled(dir, { env = process.env, log = () => {} }
     `  SKILL.md         ${f.markdownNamed}${f.markdownNamed === f.markdownRendered ? ', the label prism-code pins' : `, not the pinned ${f.markdownRendered}`}`,
     `  skill gate       ${f.modelNamed}${f.modelNamed === f.modelPinned ? ', pinned' : `, not the pinned ${f.modelPinned}`}; Lean's kernel proved ${f.theoremsProved} of ${f.theoremsDeclared} theorems here`,
     `  commands         ${f.commandsShipped} of ${f.commandsNamed} it names ship in this prism-code${verdict.unshipped.length ? ` (not: ${verdict.unshipped.join(', ')})` : ''}`,
-    `  tools            ${f.toolsServed} of ${f.toolsNamed} it names are answered by the MCP server`,
+    `  tools            ${f.toolsServed} of ${f.toolsNamed} it names are served; prism-code serves none`,
     `  authority        network ${f.network}, secrets ${f.secrets}, execution ${f.execution}`,
     `  routing          sends unasked ${f.sendsWithoutOptIn}, proof needs Docker ${f.proofNeedsDocker}`,
     ...(marker?.receipt && !receiptHolds ? ['  receipt          names other bytes than are installed'] : []),

@@ -1,0 +1,4 @@
+{
+  "kib": 10000,
+  "reason": "the package ships every file it pins, so a first run fetches nothing: LexLean as WebAssembly (4087 KiB gzipped), the rule judge kernel, its loader, lemma library and holo (2288 KiB), and the model kernel, its loader and base library (3612 KiB); about 9987 KiB"
+}

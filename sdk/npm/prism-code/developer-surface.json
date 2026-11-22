@@ -8,11 +8,6 @@
     },
     {
       "kind": "verb",
-      "place": "prism-code axioms",
-      "name": "axioms"
-    },
-    {
-      "kind": "verb",
       "place": "prism-code build",
       "name": "build"
     },
@@ -23,11 +18,6 @@
     },
     {
       "kind": "verb",
-      "place": "prism-code conformance",
-      "name": "conformance"
-    },
-    {
-      "kind": "verb",
       "place": "prism-code dev",
       "name": "dev"
     },
@@ -35,11 +25,6 @@
       "kind": "verb",
       "place": "prism-code export",
       "name": "export"
-    },
-    {
-      "kind": "verb",
-      "place": "prism-code export-browser",
-      "name": "export-browser"
     },
     {
       "kind": "verb",
@@ -63,11 +48,6 @@
     },
     {
       "kind": "verb",
-      "place": "prism-code lock",
-      "name": "lock"
-    },
-    {
-      "kind": "verb",
       "place": "prism-code login",
       "name": "login"
     },
@@ -85,16 +65,6 @@
       "kind": "verb",
       "place": "prism-code manifest",
       "name": "manifest"
-    },
-    {
-      "kind": "verb",
-      "place": "prism-code mcp",
-      "name": "mcp"
-    },
-    {
-      "kind": "verb",
-      "place": "prism-code open",
-      "name": "open"
     },
     {
       "kind": "verb",
@@ -148,11 +118,6 @@
     },
     {
       "kind": "verb",
-      "place": "prism-code setup",
-      "name": "setup"
-    },
-    {
-      "kind": "verb",
       "place": "prism-code skill",
       "name": "skill"
     },
@@ -160,11 +125,6 @@
       "kind": "verb",
       "place": "prism-code tag",
       "name": "tag"
-    },
-    {
-      "kind": "verb",
-      "place": "prism-code template",
-      "name": "template"
     },
     {
       "kind": "verb",
@@ -323,23 +283,8 @@
     },
     {
       "kind": "flag",
-      "place": "--agent",
-      "name": "agent"
-    },
-    {
-      "kind": "flag",
-      "place": "--agents-only",
-      "name": "agents-only"
-    },
-    {
-      "kind": "flag",
       "place": "--all",
       "name": "all"
-    },
-    {
-      "kind": "flag",
-      "place": "--allow-dirty",
-      "name": "allow-dirty"
     },
     {
       "kind": "flag",
@@ -385,11 +330,6 @@
       "kind": "flag",
       "place": "--dangling",
       "name": "dangling"
-    },
-    {
-      "kind": "flag",
-      "place": "--dry-run",
-      "name": "dry-run"
     },
     {
       "kind": "flag",
@@ -453,21 +393,6 @@
     },
     {
       "kind": "flag",
-      "place": "--lean",
-      "name": "lean"
-    },
-    {
-      "kind": "flag",
-      "place": "--local",
-      "name": "local"
-    },
-    {
-      "kind": "flag",
-      "place": "--machine-only",
-      "name": "machine-only"
-    },
-    {
-      "kind": "flag",
       "place": "--model",
       "name": "model"
     },
@@ -485,11 +410,6 @@
       "kind": "flag",
       "place": "--no-open",
       "name": "no-open"
-    },
-    {
-      "kind": "flag",
-      "place": "--no-pull",
-      "name": "no-pull"
     },
     {
       "kind": "flag",
@@ -533,23 +453,8 @@
     },
     {
       "kind": "flag",
-      "place": "--pull",
-      "name": "pull"
-    },
-    {
-      "kind": "flag",
       "place": "--record",
       "name": "record"
-    },
-    {
-      "kind": "flag",
-      "place": "--ref",
-      "name": "ref"
-    },
-    {
-      "kind": "flag",
-      "place": "--remote",
-      "name": "remote"
     },
     {
       "kind": "flag",
@@ -558,18 +463,8 @@
     },
     {
       "kind": "flag",
-      "place": "--repo",
-      "name": "repo"
-    },
-    {
-      "kind": "flag",
       "place": "--rm",
       "name": "rm"
-    },
-    {
-      "kind": "flag",
-      "place": "--sdk-image",
-      "name": "sdk-image"
     },
     {
       "kind": "flag",
@@ -610,11 +505,6 @@
       "kind": "flag",
       "place": "--template",
       "name": "template"
-    },
-    {
-      "kind": "flag",
-      "place": "--timeout",
-      "name": "timeout"
     },
     {
       "kind": "flag",
@@ -665,11 +555,6 @@
       "kind": "flag",
       "place": "--volume",
       "name": "volume"
-    },
-    {
-      "kind": "flag",
-      "place": "--write",
-      "name": "write"
     },
     {
       "kind": "namespace",

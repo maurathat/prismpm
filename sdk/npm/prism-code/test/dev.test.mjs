@@ -732,12 +732,12 @@ test('Ctrl-C stops dev with exit 0 and frees the port', { skip: process.platform
 
 // The default build, and the policies check takes
 
-test('the default build updates the lock, because a plain build refuses every edit to the model', async () => {
-  const image = `ghcr.io/uor-foundation/prismpm-sdk@sha256:${'a'.repeat(64)}`;
-  const root = project({ 'prismpm.lock': JSON.stringify({ sdk_image: image }) });
-  const built = await runBuild({ directory: root, command: null, env: { ...process.env, PRISM_CODE_DRY_RUN: '1', PRISM_HOME: mkdtempSync(join(tmpdir(), 'prism-home-')) } });
-  assert.equal(built.code, 0, built.log);
-  assert.match(built.log, new RegExp(`${image} prismpm build --update --json`));
+test('the default build is prism-code build in this process, and a folder with no model is refused by it', async () => {
+  const root = project({ 'notes.txt': 'n' });
+  const built = await runBuild({ directory: root, command: null, env: { ...process.env, PRISM_HOME: mkdtempSync(join(tmpdir(), 'prism-home-')) } });
+  assert.equal(built.code, 2, built.log);
+  assert.match(built.log, /"command": "build"/);
+  assert.match(built.log, /tier\.project/);
 });
 
 test('the page verifier takes each policy check takes, and reaches the same verdict', async () => {
