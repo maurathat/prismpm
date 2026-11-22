@@ -38,6 +38,7 @@
   "src/cli/volumes.mjs",
   "src/closure.mjs",
   "src/containers.mjs",
+  "src/contract.mjs",
   "src/core.mjs",
   "src/dev-cli.mjs",
   "src/dev-replay.mjs",

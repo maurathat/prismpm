@@ -982,6 +982,14 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `container.running` |  | `DK-43` | The container is running and cannot be removed. |
 | `container.state` |  | `DK-43` | The container was read back from its store, which does not keep its input, so it cannot be started again; run the holo again. |
 | `container.store` |  | `DK-43` | The container store directory cannot be created or written; set PRISM_HOME to a directory that can be written. |
+| `contract.authority` |  | `DK-41` | A some-true claim cites an authority the workspace does not name, or an authority is realized by an ID that is not registered (R2). |
+| `contract.conformance` |  | `DK-41` | The generated conformance document does not list an ID the register holds (R1). |
+| `contract.duplicate` |  | `DK-41` | One ID is registered twice, in model/ids.toml or across it and model/ledger.toml (R2). |
+| `contract.level` |  | `DK-41` | A level is not some-true, build or open, or a scenario is tagged with another level than its ID has (R2). |
+| `contract.register` |  | `DK-41` | A register of a template workspace cannot be read. |
+| `contract.unregistered` |  | `DK-41` | A scenario is tagged with an ID that model/ids.toml does not register (R3). |
+| `contract.unspecified` |  | `DK-41` | A registered ID has no scenario under features/suites (R3). |
+| `contract.untested` |  | `DK-41` | A registered ID has no test named for it (R3). |
 | `core.allocation` |  | `DK-41` | The request is larger than the guest allocation maximum. |
 | `core.compile` |  | `DK-41` | The guest WebAssembly does not compile. |
 | `core.exports` |  | `DK-41` | The guest exports differ from the exports its ABI expects. |

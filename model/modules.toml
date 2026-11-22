@@ -410,6 +410,10 @@ path = "sdk/npm/prism-code/src/containers.mjs"
 module = "containers"
 
 [[owner]]
+path = "sdk/npm/prism-code/src/contract.mjs"
+module = "client"
+
+[[owner]]
 path = "sdk/npm/prism-code/src/core.mjs"
 module = "containers"
 

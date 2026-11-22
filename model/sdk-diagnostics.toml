@@ -308,6 +308,46 @@ capability = "DK-43"
 statement = "The container store directory cannot be created or written; set PRISM_HOME to a directory that can be written."
 
 [[error]]
+code = "contract.authority"
+capability = "DK-41"
+statement = "A some-true claim cites an authority the workspace does not name, or an authority is realized by an ID that is not registered (R2)."
+
+[[error]]
+code = "contract.conformance"
+capability = "DK-41"
+statement = "The generated conformance document does not list an ID the register holds (R1)."
+
+[[error]]
+code = "contract.duplicate"
+capability = "DK-41"
+statement = "One ID is registered twice, in model/ids.toml or across it and model/ledger.toml (R2)."
+
+[[error]]
+code = "contract.level"
+capability = "DK-41"
+statement = "A level is not some-true, build or open, or a scenario is tagged with another level than its ID has (R2)."
+
+[[error]]
+code = "contract.register"
+capability = "DK-41"
+statement = "A register of a template workspace cannot be read."
+
+[[error]]
+code = "contract.unregistered"
+capability = "DK-41"
+statement = "A scenario is tagged with an ID that model/ids.toml does not register (R3)."
+
+[[error]]
+code = "contract.unspecified"
+capability = "DK-41"
+statement = "A registered ID has no scenario under features/suites (R3)."
+
+[[error]]
+code = "contract.untested"
+capability = "DK-41"
+statement = "A registered ID has no test named for it (R3)."
+
+[[error]]
 code = "core.allocation"
 capability = "DK-41"
 statement = "The request is larger than the guest allocation maximum."

@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -186,6 +186,13 @@ function journey(t, { template, model }) {
   assert.deepEqual([verified.ok, verified.summary.identitiesVerified, verified.summary.vectorsPassed], [true, true, built.summary.vectorsTotal]);
   assert.equal(verified.summary.theoremsVerified, verified.summary.theoremsDeclared);
 
+  // inspect reads what was built without running it, whatever built it.
+  if (existsSync(join(at, '.prism', 'build')) && readdirSync(out)[0].endsWith('.holo')) {
+    const inspected = run(['inspect', join(out, readdirSync(out)[0])], { cwd: root, env: OFFLINE });
+    assert.equal(inspected.code, 0, inspected.err);
+    assert.match(inspected.out, /^Verification:\n {2}Footer: +ok$/m);
+  }
+
   // What --out holds verifies on its own, as a holo from anywhere does.
   const alone = run(['verify', join(out, readdirSync(out)[0]), '--json'], { cwd: root, env: OFFLINE });
   assert.equal(alone.code, 0, alone.out);
@@ -197,6 +204,32 @@ function journey(t, { template, model }) {
   assert.equal(stale.ok, false);
   return undefined;
 }
+
+test('in a template workspace, check runs the contract ratchet: a kept contract passes and a broken one is exit 1', { timeout: 600000 }, () => {
+  const root = scratch();
+  assert.equal(run(['init', root, '--no-skill']).code, 0);
+  const write = (path, body) => {
+    mkdirSync(join(root, path, '..'), { recursive: true });
+    writeFileSync(join(root, path), body);
+  };
+  write('model/ids.toml', 'spec = "template/1"\n\n[[id]]\nid = "TC-01"\nsuite = "app"\nlevel = "build"\nstatement = "The app decides the fee tier."\n');
+  write('features/suites/app.feature', 'Feature: app\n\n  @TC-01 @build\n  Scenario: The app decides the fee tier.\n    Given a request\n');
+  write('tests/app.test.mjs', 'export const decides_tc_01 = true;\n');
+  const kept = run(['check', '--json'], { cwd: root, env: OFFLINE });
+  assert.equal(kept.code, 0, kept.out);
+  const report = JSON.parse(kept.out);
+  assert.deepEqual([report.summary.idsRegistered, report.summary.scenarios, report.summary.contractViolations], [1, 1, 0]);
+  assert.ok(report.summary.lexiconEntriesBound > 0, 'the starter binds its lexicon');
+
+  // A scenario for an ID nobody registered: the model still proves, and the gate fails on the contract alone.
+  write('features/suites/extra.feature', 'Feature: extra\n\n  @TC-09 @build\n  Scenario: Not registered.\n    Given nothing\n');
+  const broken = run(['check', '--json'], { cwd: root, env: OFFLINE });
+  assert.equal(broken.code, 1, broken.out);
+  const refused = JSON.parse(broken.out);
+  assert.equal(refused.summary.theoremsVerified, refused.summary.theoremsDeclared);
+  assert.deepEqual(refused.diagnostics.map((d) => [d.code, d.id, d.file, d.line]), [['contract.unregistered', 'TC-09', 'features/suites/extra.feature', 3]]);
+  assert.equal(run(['build', '--json'], { cwd: root, env: OFFLINE }).code, 1, 'build stops at a broken contract');
+});
 
 test('a standalone app goes from init to a verified build in this process, fetching nothing', { timeout: 600000 }, (t) => journey(t, { template: 'decision-app', model: '.' }));
 

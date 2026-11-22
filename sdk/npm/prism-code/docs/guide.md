@@ -668,7 +668,7 @@ npx prism-code verify
 
 | Verb | What it does | Writes |
 | --- | --- | --- |
-| `check [<dir>]` | reads `prism.toml`, checks the model, proves every theorem within its declared axioms | nothing |
+| `check [<dir>]` | reads `prism.toml`, runs the template contract's ratchet when the workspace has `model/ids.toml`, checks the model, proves every theorem within its declared axioms | nothing |
 | `build [<dir>] [--out <dir>]` | `check`, then the app under `.prism/build`, then replays its acceptance vectors | the app, and its page under `.prism/site` |
 | `verify [<dir>]` | `check`, requires what is built to be the build of the model on disk, then replays every vector on a fresh instance | nothing |
 | `verify <app.holo>` | the holo's digests, its world within the grant, and every vector | nothing |
@@ -696,9 +696,16 @@ Each verb takes `--json` and prints one report, `prism/report/1`:
 }
 ```
 
-Exit codes: 0 the gate passed; 1 a theorem is not proved, a vector fails,
-nothing is built or the build is stale; 2 the manifest or the model does not
-check.
+Exit codes: 0 the gate passed; 1 a theorem is not proved, the contract is
+violated, a vector fails, nothing is built or the build is stale; 2 the
+manifest or the model does not check.
+
+In a workspace made from the UOR template, the ratchet reads `model/ids.toml`,
+`model/authorities.toml`, `model/ledger.toml` and `features/suites/*.feature`,
+and refuses, each with a `contract.` code: an ID with no scenario or no test, a
+scenario with no ID, a level that is not `some-true`, `build` or `open`, a
+`some-true` claim with no authority, a duplicate, and a `CONFORMANCE.md` that
+does not list a registered ID.
 
 `--project <dir>` names the folder that holds `lexlean.toml` when it is not the
 project root or the one folder directly under it. `PRISM_CODE_BUNDLED=0` sets

@@ -48,8 +48,10 @@ is the default, and `--template` names another:
 `check`, `build` and `verify` answer one report, `prism/report/1`: `ok`, a
 `summary`, and `diagnostics`, each with a `code`, a `file`, a `line`, a
 `message` and often a `remediation`. They exit 0 when the gate passed, 1 when a
-theorem is not proved or a vector fails, and 2 when the manifest or the model
-does not check. Guarantees are proved; the reading of requests and the examples
+theorem is not proved, the template contract is violated or a vector fails, and
+2 when the manifest or the model does not check. In a workspace that keeps the
+template's ledgers (`model/ids.toml`), `check` also runs the contract's ratchet
+over them and the scenarios. Guarantees are proved; the reading of requests and the examples
 are tested.
 
 LexLean and Lean's kernel run as WebAssembly and ship in this package, under

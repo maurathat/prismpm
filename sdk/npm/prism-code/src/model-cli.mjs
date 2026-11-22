@@ -1,7 +1,8 @@
 /**
  * The model verbs, each in this process: `check`, `build` and `verify` of a project's LexLean model.
  *
- *   check [<dir>]     prism.toml, then LexLean as WebAssembly checks the model, then Lean's kernel, as
+ *   check [<dir>]     prism.toml, the template contract's ratchet when the workspace has its registers
+ *                     (contract.mjs), then LexLean as WebAssembly checks the model, then Lean's kernel, as
  *                     WebAssembly, proves every theorem. Writes nothing in the project.
  *   build [<dir>]     check, then the app is written under <project>/.prism/build, with nothing compiled.
  *   verify <target>   a holo: its digests, its world within the grant, and every acceptance vector replayed
@@ -15,12 +16,14 @@
  *   { ok, command, durationMs, summary, diagnostics: [{ code, severity, file, line, column, message, remediation }] }
  *
  * Exit codes: 0 the gate passed; 1 a theorem is not proved, a vector fails or a digest does not match; 2 the
- * manifest fails its checks or the model does not check (it does not parse, link or elaborate).
+ * manifest fails its checks or the model does not check (it does not parse, link or elaborate). A contract
+ * violation is exit 1.
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
-import { basename, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { PrismCodeError, PrismError } from './errors.mjs';
 import { lexleanProjectDir } from './tiers.mjs';
+import { checkContract, contractRoot, lexiconEntries } from './contract.mjs';
 import { readSession, sourceDigest, sourceFiles, writeSession } from './journey/project.mjs';
 
 export const REPORT_SCHEMA = 'prism/report/1';
@@ -94,8 +97,15 @@ const answer = (command, started, code, summary, diagnostics) => ({ code, report
 /** Check then prove, on `session`. Resolves `{ code, summary, diagnostics }`; `code` is null when both passed. */
 async function gate(project, session, { env, log, engine }) {
   const { check, prove } = engine ?? (await import('./journey/engine.mjs'));
-  const summary = { modulesChecked: sourceFiles(project.dir).length, theoremsDeclared: 0, theoremsVerified: 0 };
+  const summary = { modulesChecked: sourceFiles(project.dir).length, lexiconEntriesBound: lexiconEntries(project.dir), theoremsDeclared: 0, theoremsVerified: 0, contractViolations: 0 };
   const diagnostics = [...project.diagnostics];
+  // The template contract's ratchet (contract.mjs), when this is a template workspace: the project's own folder, its
+  // root, or the folder above the model. Its violations are reported with the model's, and fail the gate with exit 1.
+  const contract = checkContract(contractRoot(project.root, project.dir, dirname(project.dir)));
+  if (contract.applies) {
+    Object.assign(summary, contract.summary);
+    for (const d of contract.diagnostics) diagnostics.push({ ...diagnostic({ code: d.code, message: d.message, file: d.file, remediation: d.remediation }), line: d.line, id: d.id ?? null });
+  }
   const checked = await check(project.dir, session, { env, log });
   if (!checked.ok) return { code: EXIT.REFUSED, summary, diagnostics: [...diagnostics, ...stepDiagnostics(checked, new PrismCodeError('model.unchecked', ''))] };
   const proved = await prove(project.dir, session, { env, log });
@@ -103,6 +113,7 @@ async function gate(project, session, { env, log, engine }) {
   summary.theoremsDeclared = judged.length;
   summary.theoremsVerified = proved.ok ? judged.length : judged.filter((t) => String(t.status).startsWith('proved')).length;
   if (!proved.ok) return { code: EXIT.FAILED, summary, diagnostics: [...diagnostics, ...stepDiagnostics(proved, new PrismCodeError('proof.rejected', ''))] };
+  if (summary.contractViolations > 0) return { code: EXIT.FAILED, summary, diagnostics };
   return { code: null, summary, diagnostics };
 }
 
@@ -225,11 +236,12 @@ export function formatReport(r) {
   const lines = [`${r.ok ? 'ok      ' : 'failed  '} ${r.command}, in ${r.durationMs} ms`];
   const s = r.summary;
   if (s.modulesChecked !== undefined) lines.push(`  model      ${s.modulesChecked} module${s.modulesChecked === 1 ? '' : 's'}; ${s.theoremsVerified} of ${s.theoremsDeclared} theorems proved by Lean's kernel in this process`);
+  if (s.idsRegistered !== undefined) lines.push(`  contract   ${s.idsRegistered} IDs, ${s.scenarios} scenarios, ${s.authorities} authorities, ${s.claims} claims; ${s.contractViolations} violation${s.contractViolations === 1 ? '' : 's'}`);
   if (s.artifact) lines.push(`  artifact   ${s.artifact}${s.address ? ` (${s.address})` : ''}`);
   if (s.vectorsTotal !== undefined) lines.push(`  vectors    ${s.vectorsPassed} of ${s.vectorsTotal} acceptance vectors pass`);
   if (s.identitiesVerified !== undefined) lines.push(`  identities ${s.identitiesVerified ? 'verified' : 'NOT verified'}${s.level ? `; assurance level ${s.level}` : ''}`);
   for (const d of r.diagnostics) {
-    lines.push(`  ${d.severity === 'warning' ? 'warning' : 'error  '} ${d.file ? `${d.file}${d.line ? `:${d.line}:${d.column}` : ''}: ` : ''}${d.code}: ${d.message.replace(/\n/g, '\n    ')}`);
+    lines.push(`  ${d.severity === 'warning' ? 'warning' : 'error  '} ${d.file ? `${d.file}${d.line ? `:${d.line}${d.column ? `:${d.column}` : ''}` : ''}: ` : ''}${d.code}: ${d.message.replace(/\n/g, '\n    ')}`);
     if (d.remediation) lines.push(`          ${d.remediation}`);
   }
   return `${lines.join('\n')}\n`;
