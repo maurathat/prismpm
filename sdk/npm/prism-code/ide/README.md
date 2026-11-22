@@ -8,11 +8,11 @@ This folder is a spike. It is not in the published `prism-code` package, and `pr
 
 | Decision | Model | State |
 |---|---|---|
-| May this extension use this resource: deny, allow or ask | [`../model/ide-capability-gate`](../model/ide-capability-gate/README.md) | 13 guarantees accepted by Lean's kernel; the page runs the built judge |
+| May this extension use this resource: deny, allow or ask | Holospace's gate kernel, asked through `h.extensionGate` of the library `tools/holospace-pins.json` names by BLAKE3 label | Proved in Holospace's repository, not here. The page states the facts of a call (`src/gate-facts.js`) and uses the kernel's answer unchanged. [`../model/ide-capability-gate`](../model/ide-capability-gate/README.md) is the same seven rules, with 13 guarantees accepted by Lean's kernel here; it is the model the edit page opens, and the page no longer asks it at run time |
 | Is this editor command `show` or `exec` | [`../model/ide-command-table`](../model/ide-command-table/README.md) | 5 guarantees accepted by Lean's kernel; the page runs the built judge |
 | Is this path or host inside a granted scope | [`../model/ide-scope`](../model/ide-scope/README.md) | 8 theorems proved by Lean; the page runs `src/scope.js`, a tested copy of the rules, not the model |
 
-Everything else in `src/` is unproved page code: turning a call into a request (`main.js`, `method-table.json`), the Prism ID wiring and the signed, sealed grants store (`identity.js`), and the scope rules copy (`scope.js`).
+Everything else in `src/` is unproved page code: turning a call into a request (`main.js`, `method-table.json`), stating its facts for the gate (`gate-facts.js`, checked against the pinned library by `tools/gate-facts-test.mjs`), the Prism ID wiring and the signed, sealed grants store (`identity.js`), and the scope rules copy (`scope.js`).
 
 ## What was measured
 
@@ -21,7 +21,8 @@ Everything else in `src/` is unproved page code: turning a call into a request (
 ## What is not here
 
 - The extensions under test. `tools/fetch_batch.py` downloads them from open-vsx.org and checks each against the SHA-256 in `public/ext/batch.json`. Each has its own licence.
-- The judge archive and the copy of prism-code the page loads (`public/gate/kernel.holo`, `public/gate/prism-code/`). Building either rule-table model with prism-code writes them to its `.prism/site/`.
+- Holospace's library (`public/holospace/`): the four files `tools/holospace-pins.json` names, from the release it names. The page takes each only as the bytes its label names, and answers "deny" to everything otherwise.
+- The judge archive and the copy of prism-code the page loads for the command table (`public/gate/kernel.holo`, `public/gate/prism-code/`). Building either rule-table model with prism-code writes them to its `.prism/site/`.
 - The Prism ID frame. `tools/prism-frame-pin.mjs` fetches it from `UOR-Foundation/template` at the commit in `public/prism-frame/PIN.json` and checks every file against that record.
 
 ## Run it
@@ -31,11 +32,15 @@ npm ci
 python -I tools/fetch_batch.py           # the extensions under test
 node tools/prism-frame-pin.mjs           # the Prism ID frame
 # copy kernel.holo and prism-code/ from a built rule-table model's .prism/site/ into public/gate/
+# put the four files of tools/holospace-pins.json into public/holospace/ (kernel.json and the kernel holo under kernels/)
 npx vite build
 npx vite preview --port 4173 --strictPort &
 npx vite preview --port 4174 --strictPort &   # the second origin the extension worker runs on
 # then open http://localhost:4173/batch.html
 node tools/scope-test.mjs                # the scope rules copy, 35 cases
+node tools/gate-facts-test.mjs           # the facts sent to the gate, read by the pinned library
+# planted requests, on the page: ?wb=full&id=off&grant=network&undeclared=network  (network is denied)
+#                                ?wb=full&id=off&trusted=no&grant=write            (a workspace write is denied)
 ```
 
 ## Known limits
