@@ -15,6 +15,9 @@
 import { HOLDS, KERNEL_AXIOMS, proofLines, readLibrary } from './prism-code/journey/kernel-terms.mjs';
 import { guaranteeStatement } from './prism-code/journey/kappa-rules.mjs';
 import { judgedFacts, proved } from './prism-code/journey/canonical-rules.mjs';
+// The kernel is opened by the package's own function, the one its build uses: one place that starts it, loads its
+// library and lays it back. What is judged, and what counts as proved, stays here.
+import { loaderFromBlob, openKernel } from './prism-code/journey/prove-core.mjs';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -31,29 +34,10 @@ async function open() {
   const b = manifest.binding;
   if (!b || b.kernel !== w || b.loader !== g || b.library !== l) throw new Error('there is no record that this kernel judged this library whole');
 
-  const said = [];
-  const url = URL.createObjectURL(new Blob([glue], { type: 'text/javascript' }));
-  let module, memory;
-  try {
-    module = await (await import(url)).default({ instantiateWasm: (imports, done) => { WebAssembly.instantiate(wasm, imports).then((r) => { memory = r.instance.exports.memory; done(r.instance, r.module); }); return {}; }, print: (s) => said.push(s), printErr: (s) => said.push(s) });
-  } finally { URL.revokeObjectURL(url); }
-  const run = (entry, bytes) => {
-    said.length = 0;
-    module.FS.writeFile('/in.ndjson', bytes);
-    let exit;
-    try { exit = module.ccall(entry, 'number', ['string'], ['/in.ndjson']); } catch { exit = 3; }
-    module.FS.unlink('/in.ndjson');
-    const axioms = {};
-    for (const line of said) { const a = /^axioms ([^:]+): ?(.*)$/.exec(line); if (a) axioms[a[1]] = a[2] ? a[2].split(', ') : []; }
-    return { exit, axioms };
-  };
-  if (module.ccall('checker_ready', 'number', [], []) !== 0) throw new Error('the kernel did not start');
-  if (run('load_library', library).exit !== 0) throw new Error('the kernel refused its library');
-  // The kernel with this library and nothing else: every batch starts from here.
-  const image = new Uint8Array(memory.buffer).slice();
-  const reset = () => { const now = new Uint8Array(memory.buffer); now.set(image); now.fill(0, image.length); };
+  // Resettable: the kernel as it is once its library is resident is held, and laid back before every batch.
+  const k = await openKernel({ factory: await loaderFromBlob(glue), wasm, baseText: dec.decode(library), resettable: true });
   postMessage({ ready: true, ms: Math.round(performance.now() - started), lean: manifest.lean?.version ?? null });
-  return { lib: readLibrary(dec.decode(library)), run, reset, labels: { kernel: 'sha256:' + w, library: 'sha256:' + l } };
+  return { lib: readLibrary(k.baseText), check: k.check, reset: k.reset, labels: { kernel: 'sha256:' + w, library: 'sha256:' + l } };
 }
 
 const kernel = open();
@@ -61,14 +45,15 @@ kernel.catch((e) => postMessage({ failed: String(e?.message ?? e), reason: e?.re
 
 onmessage = async ({ data }) => {
   try {
-    const { lib, run, reset } = await kernel;
+    const { lib, check, reset } = await kernel;
     const started = performance.now();
     reset();
     const results = [];
     for (const guarantee of data.guarantees) {
       const statement = guaranteeStatement(data.words, guarantee);
-      const bytes = enc.encode(proofLines(lib, data.words, guarantee));
-      const r = run('check_suffix', bytes);
+      const text = proofLines(lib, data.words, guarantee);
+      const bytes = enc.encode(text);
+      const r = check(text);
       const axioms = r.axioms[HOLDS] || null;
       const derived = 'sha256:' + await sha256(bytes);
       // A term is proved only by what this kernel accepts now, within the axioms a rule table is allowed.

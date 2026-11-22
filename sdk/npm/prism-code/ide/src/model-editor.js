@@ -180,6 +180,16 @@ const noted = (which) => (note) => { state[which] = note; if (note.ready) settle
 const lexlean = channel(EDIT + 'lexlean-worker.mjs', noted('lexlean'));
 lexlean.post({ start: { url: EDIT + 'lexlean.wasm.gz', pin: { kappa: pin.kappa, encoding: pin.encoding } } });
 const kernel = channel(EDIT + 'prove-worker.mjs', noted('kernel'));
+// The kernel for a model's own theorems, started only when a model that is not a rule table is met: its base
+// library is 20 MB, and a page that opens rule tables never fetches it.
+let theoremProver = null;
+const theorems = () => {
+  if (!theoremProver) {
+    theoremProver = channel(EDIT + 'model-prove-worker.mjs', (note) => { state.modelKernel = note; });
+    theoremProver.post({ start: { lexlean: { url: EDIT + 'lexlean.wasm.gz', pin: { kappa: pin.kappa, encoding: pin.encoding } }, kernel: EDIT + 'model-kernel/pins.json' } });
+  }
+  return theoremProver;
+};
 
 // The terminal panel's command line: the one the plain edit page uses, from the files published beside it.
 // `projectNow` is the model as it is in the editor, once the editor has opened it.
@@ -358,11 +368,45 @@ try {
     if (mine !== latest) return;
     let table;
     try { table = ruleTable(JSON.parse(taken.snapshot)); } catch (e) {
+      // Not a rule table: its theorems are its own, and Lean's kernel judges them here, in a worker of their own.
       markers.changeOne('prism-guarantees', resource, []);
       state.proof = { table: false };
       compare(null, edited);
-      say(`The model checks, in ${reply.ms} ms. It is not a rule table, so its guarantees are not proved in this tab.`, 'ok');
-      state.markers = markers.read({ resource }).length;
+      say(`The model checks, in ${reply.ms} ms. Lean's kernel is judging its theorems in this tab` + (state.modelKernel?.ready ? '…' : '; the kernel is opened once, which takes some seconds…'));
+      const put = await theorems().ask({ files: project });
+      if (mine !== latest) return;
+      const proving = put.result;
+      if (!proving) {
+        // The kernel could not be opened or did not answer: nothing is called proved, and the page says why.
+        state.proof = { table: false, error: put.error ?? 'no answer' };
+        say(`The model checks, in ${reply.ms} ms. Its theorems are not proved here: Lean's kernel could not judge them (${state.proof.error}).`, 'ok');
+        state.markers = markers.read({}).length;
+        state.ready = true;
+        return;
+      }
+      // A theorem that is not proved is marked where the model states it, in whichever file that is.
+      const stated = (name) => {
+        for (const [path, body] of Object.entries(project)) {
+          const line = path.endsWith('.lex.tex') ? body.split('\n').findIndex((l) => new RegExp('^\\s*name:\\s*' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*,?\\s*$').test(l)) : -1;
+          if (line >= 0) return { path, line: line + 1 };
+        }
+        return { path: entry, line: 1 };
+      };
+      const missed = proving.theorems.filter((t) => t.status !== 'proved').map((t) => ({ ...t, at: stated(t.theorem) }));
+      for (const path of Object.keys(project)) {
+        markers.changeOne('prism-guarantees', uriOf(path), missed.filter((t) => t.at.path === path).map((t) => ({
+          severity: ERROR, source: 'Prism', code: t.status,
+          message: t.status === 'not settled' ? `Theorem ${t.theorem} is not settled: Lean's kernel accepted no proof of it here. That says nothing about whether it is true. ${t.detail}`
+            : `Theorem ${t.theorem} is not proved: ${t.detail.replace(/^not proved: /, '')}.`,
+          startLineNumber: t.at.line, startColumn: 1, endLineNumber: t.at.line, endColumn: 1000,
+        })));
+      }
+      const total = proving.theorems.length;
+      const provedCount = total - missed.length;
+      state.proof = { table: false, proved: provedCount, total, ms: put.ms ?? null, via: proving.via, theorems: proving.theorems.map((t) => ({ theorem: t.theorem, status: t.status, ms: t.ms })), message: proving.message };
+      say(total === 0 ? `The model checks, in ${reply.ms} ms. ${proving.message ?? 'It states no theorem the kernel was given.'}`
+        : `${provedCount} of ${total} theorems proved by Lean's kernel in this tab` + (put.ms ? `, in ${put.ms} ms` : '') + (missed.length === 0 ? '.' : `; ${missed.length} not, listed under Problems.`), total > 0 && missed.length === 0 ? 'ok' : total === 0 ? 'ok' : 'bad');
+      state.markers = markers.read({}).length;
       state.ready = true;
       return;
     }
