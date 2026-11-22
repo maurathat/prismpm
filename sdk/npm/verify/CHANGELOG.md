@@ -2,11 +2,6 @@
 
 ## [0.2.0](https://github.com/UOR-Foundation/prismpm/compare/prism-code-verify-v0.1.0...prism-code-verify-v0.2.0) (2026-11-22)
 
-
-### ⚠ BREAKING CHANGES
-
-* **holo:** holo v5 is a UORC archive named by κ (ADR-017) ([#663](https://github.com/UOR-Foundation/prismpm/issues/663))
-
 ### Features Added
 
 * **conformance:** the Rust runtime runs @prism-code/conformance ([#590](https://github.com/UOR-Foundation/prismpm/issues/590)) ([d9373f9](https://github.com/UOR-Foundation/prismpm/commit/d9373f952cfc5ef1524b79791346085ef60f7a9d))
@@ -19,11 +14,13 @@
 * **prism-code:** the browser store keeps bytes under their BLAKE3 label ([a5d4b6e](https://github.com/UOR-Foundation/prismpm/commit/a5d4b6ec90008e76c434a1620c1ea7e136ea687b))
 * **verify:** read and verify a holo v6, sealed and labelled by BLAKE3 (ADR-018) ([78872eb](https://github.com/UOR-Foundation/prismpm/commit/78872eb5a60fa46d39a681cd754a70b3f3f1b065))
 
+### Breaking Changes
+
+* **holo:** holo v5 is a UORC archive named by κ (ADR-017) ([#663](https://github.com/UOR-Foundation/prismpm/issues/663))
 
 ### Bugs Fixed
 
 * **verify:** say plainly that a built holo does not carry its proof ([#600](https://github.com/UOR-Foundation/prismpm/issues/600)) ([46b13cc](https://github.com/UOR-Foundation/prismpm/commit/46b13cc72be35af3919a654438096adcbf0cd6bd))
-
 
 ### Other Changes
 
