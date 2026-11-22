@@ -65,6 +65,8 @@ export async function startTerminal(element, { project, check, snapshotOf, prove
     const line = createCommandLine({
       tables: published.tables, luts: published.luts, rules, kappa, reuseAdmits, project, check, snapshotOf, prove, held, pin, manifest,
       sink: (bytes, done) => term.write(bytes, done), echo: (text) => term.write(text), clear: () => term.clear(), kept: createKeptIn(store), change,
+      // Lines that reach the command line at once without passing the paste handler below are asked about too.
+      askLines: async (lines) => window.confirm(`Run these ${lines.length} pasted lines?\n\n` + lines.join('\n').slice(0, 600)),
     });
     const effects = createEffects({ judge: line.judge, ui: { setTitle, confirm: async (text) => window.confirm(text), open: (uri) => window.open(uri, '_blank', 'noopener,noreferrer') } });
     const dark = matchMedia('(prefers-color-scheme: dark)').matches;

@@ -52,12 +52,17 @@ export function createWriter({ judge, sink, piece = 16384 }) {
   let pending = 0;
   let paused = false;
   let stopped = false;
+  // Held by the reader (Ctrl+S) until let go (Ctrl+Q): nothing more is handed to the terminal meanwhile.
+  let held = false;
   let wake = null;
   const state = { peak: 0, holds: 0 };
   const settled = () => new Promise((resolve) => { wake = resolve; });
   return {
     state,
-    stop() { stopped = true; wake?.(); },
+    stop() { stopped = true; held = false; wake?.(); },
+    hold() { held = true; },
+    release() { held = false; const go = wake; wake = null; go?.(); },
+    get held() { return held; },
     /** A new line starts: what the last one was stopped from writing stays unwritten. */
     resume() { stopped = false; },
     async write(text) {
@@ -65,6 +70,7 @@ export function createWriter({ judge, sink, piece = 16384 }) {
       for (let at = 0; at < bytes.length; at += piece) {
         for (;;) {
           if (stopped) return false;
+          if (held) { await settled(); continue; }
           if (judge('flow', { pending, paused: paused ? 'yes' : 'no' }) === 'write') { paused = false; break; }
           paused = true;
           state.holds++;

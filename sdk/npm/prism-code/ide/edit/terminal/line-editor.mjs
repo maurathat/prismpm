@@ -10,9 +10,13 @@
 //   Tab                                           complete a command name or a file; twice lists what fits
 //   Ctrl+C                                        abandon the line, or stop the running command
 //   Ctrl+L                                        clear the screen
+//   Ctrl+S, Ctrl+Q                                hold what a running command is writing, and let it go
 //
-// A key is echoed in the same turn it arrives: nothing here waits on anything. A character is taken to be one
-// column wide.
+// Several lines arriving at once (a paste) are one block: shown, then entered together, so a loop written over
+// several lines is read whole. They are entered only when `multiline(lines)` says so.
+//
+// A key is echoed in the same turn it arrives: nothing here waits on anything. A character is as wide as terminals
+// draw it: two columns for the wide scripts and most emoji, none for a mark that joins the character before it.
 
 import { visible } from './session.mjs';
 
@@ -21,7 +25,18 @@ import { visible } from './session.mjs';
  * `interrupt()` stops the running command; `clear()` clears the screen; `prompt()` is the prompt now;
  * `complete(before)` resolves { from, options } for the word the cursor is in (shell.mjs).
  */
-export function createLineEditor({ echo, submit, interrupt, clear, complete, prompt = () => 'model> ' }) {
+/** The columns a character takes: 0 for a joining mark, 2 for a wide character, 1 otherwise. */
+export function columns(ch) {
+  const c = ch.codePointAt(0);
+  if (c < 0x300) return 1;
+  if (/^[\p{Mn}\p{Me}\u200b-\u200d\ufe00-\ufe0f]$/u.test(ch)) return 0;
+  if ((c >= 0x1100 && c <= 0x115f) || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7a3) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0xfe30 && c <= 0xfe6f)
+    || (c >= 0xff00 && c <= 0xff60) || (c >= 0xffe0 && c <= 0xffe6) || (c >= 0x1f300 && c <= 0x1f64f) || (c >= 0x1f900 && c <= 0x1f9ff) || (c >= 0x20000 && c <= 0x3fffd)) return 2;
+  return 1;
+}
+const span = (chars) => chars.reduce((n, ch) => n + columns(ch), 0);
+
+export function createLineEditor({ echo, submit, interrupt, clear, complete, prompt = () => 'model> ', hold = () => {}, release = () => {}, multiline = async () => false }) {
   let chars = [];
   let cursor = 0;
   let busy = false;
@@ -35,15 +50,19 @@ export function createLineEditor({ echo, submit, interrupt, clear, complete, pro
   let at = 0;
   const text = () => chars.join('');
   /** Draw the line again from its start and put the cursor where it belongs. */
-  const redraw = () => echo('\r\x1b[K' + prompt() + text() + (cursor < chars.length ? `\x1b[${chars.length - cursor}D` : ''));
+  const back = (n) => (n > 0 ? `\x1b[${n}D` : '');
+  const redraw = () => echo('\r\x1b[K' + prompt() + text() + back(span(chars.slice(cursor))));
   const set = (next, where = null) => { chars = [...next]; cursor = where ?? chars.length; redraw(); };
   const done = async () => { busy = false; echo(prompt()); while (ahead.length && !busy) await feed(ahead.shift()); };
-  const enter = () => {
-    const line = text();
+  const enter = (block = null) => {
+    // A block is shown as it will be read, each further line marked, then entered whole.
+    const line = block ?? text();
+    if (block !== null) echo('\r\x1b[K' + prompt() + visible(block).split('\n').join('\r\n> '));
     echo('\r\n');
     chars = [];
     cursor = 0;
-    if (line.trim() && history[history.length - 1] !== line) history.push(line);
+    const kept = line.replace(/\n/g, '; ');
+    if (kept.trim() && history[history.length - 1] !== kept) history.push(kept);
     at = history.length;
     busy = true;
     return Promise.resolve(submit(line)).catch((error) => echo(visible(String(error?.message ?? error)).replace(/\n/g, '\r\n') + '\r\n')).then(done);
@@ -113,8 +132,8 @@ export function createLineEditor({ echo, submit, interrupt, clear, complete, pro
     '\x0c': () => { clear(); redraw(); },
     '\x1b[A': () => { if (at > 0) set(history[--at]); },
     '\x1b[B': () => { if (at < history.length) { at++; set(history[at] ?? ''); } },
-    '\x1b[D': () => { if (cursor > 0) { cursor--; echo('\x1b[D'); } },
-    '\x1b[C': () => { if (cursor < chars.length) { cursor++; echo('\x1b[C'); } },
+    '\x1b[D': () => { if (cursor > 0) { cursor--; echo(back(columns(chars[cursor]))); } },
+    '\x1b[C': () => { if (cursor < chars.length) { const n = columns(chars[cursor++]); if (n > 0) echo(`\x1b[${n}C`); } },
     '\x01': () => { cursor = 0; redraw(); },
     '\x05': () => { cursor = chars.length; redraw(); },
     '\x15': () => take(0, cursor),
@@ -138,7 +157,20 @@ export function createLineEditor({ echo, submit, interrupt, clear, complete, pro
 
   /** What the terminal reports for a key press, or a pasted line. */
   async function feed(data) {
-    if (busy) { if (data === '\x03') { ahead.length = 0; interrupt(); echo('^C\r\n'); } else ahead.push(data); return; }
+    if (busy) {
+      if (data === '\x03') { ahead.length = 0; interrupt(); echo('^C\r\n'); } else if (data === '\x13') hold(); else if (data === '\x11') release(); else ahead.push(data);
+      return;
+    }
+    // Several lines at once are a paste: one block, entered whole, and only when the page says it may be.
+    if (data.length > 1 && /[\r\n]/.test(data) && !data.startsWith('\x1b')) {
+      const block = data.split(/\r\n|\r|\n/).filter((l) => l.trim()).map((l) => l.replace(/\t/g, ' '));
+      if (block.length === 0) return;
+      if (block.length === 1) { insert(block[0]); return; }
+      if (await multiline(block)) return enter(block.join('\n'));
+      echo('\r\n' + `(${block.length} pasted lines were not entered)` + '\r\n');
+      redraw();
+      return;
+    }
     if (search && searching(data)) return;
     const again = data === '\t' && tabbed;
     tabbed = false;
@@ -155,6 +187,11 @@ export function createLineEditor({ echo, submit, interrupt, clear, complete, pro
     get searching() { return search !== null; },
     feed,
     /** Lines the user chose to paste: each is entered in turn. */
-    async lines(texts) { for (const line of texts) { if (!busy) set(visible(line).replace(/\t/g, ' ')); await enter(); } },
+    async lines(texts) {
+      const block = texts.filter((l) => l.trim()).map((l) => l.replace(/\t/g, ' '));
+      if (block.length === 0) return;
+      if (busy) { ahead.push(block.join('\n') + (block.length === 1 ? '\r' : '')); return; }
+      if (block.length === 1) { set(visible(block[0])); await enter(); } else await enter(block.join('\n'));
+    },
   };
 }
