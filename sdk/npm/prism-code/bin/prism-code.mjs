@@ -12,7 +12,7 @@
  *                                                     write the acceptance vectors as a recording
  *   prism-code replay <recording | dir>... --image <app.holo> [--statement <file>] [--json]
  *                                                     re-execute histories against a build; a divergence exits 1
- *   prism-code init [<dir>] [--name N] [--template T] [--no-skill] [--force]
+ *   prism-code init [<dir>] [--name N] [--no-skill] [--force]
  *                                                     start a Prism app: a starter model and the Prism skill, in this folder
  *   prism-code manifest [<dir>] [--target browser|node] [--json]
  *                                                     check and lint prism.toml, with its overlay merged
@@ -30,7 +30,7 @@
  *   prism-code generate <app.holo> --out <dir>        write bindings and a typed client from the world
  *   prism-code publish-model <app.holo> --project <dir> --out <dir>
  *                                                     write the holo's model beside its page, with a record of both
- *   prism-code check [<dir>] [--project <dir>] [--json]
+ *   prism-code check [<dir>] [--project <dir>] [--write] [--json]
  *                                                     check the model and prove every theorem, in this process
  *   prism-code check <app.holo> [--policy <file>] [--json]
  *                                                     judge the holo against a policy and print its verdict
@@ -101,14 +101,13 @@ Usage:
   prism-code replay <recording | dir>... --image <app.holo | closure-dir> [--statement <file>] [--json]
                                                     re-execute recordings against this build and compare every
                                                     outcome: exit 0 unchanged, 1 diverged, 2 could not replay
-  prism-code init [<dir>] [--name <name>] [--template <name>] [--no-skill] [--force]
+  prism-code init [<dir>] [--name <name>] [--no-skill] [--force]
                                                     start a Prism app, the one command it begins with: npx prism-code@latest init.
-                                                    Writes prism.toml, a starter LexLean model to edit (rule-app unless
-                                                    --template names decision-app, stateful-app or the text-request template)
-                                                    and the Prism skill for an agent, all inside the folder. A folder that
-                                                    holds a model keeps it and gets only the skill. Nothing outside the folder
-                                                    is written or configured, and nothing is fetched. npm create prism-code
-                                                    runs the same command
+                                                    Writes the canonical template, UOR-Foundation/template, which this package
+                                                    carries and admits by BLAKE3 label, prism.toml naming the app, and the Prism
+                                                    skill for an agent, all inside the folder. A folder that holds a model keeps
+                                                    it and gets only the skill. Nothing outside the folder is written or
+                                                    configured, and nothing is fetched. npm create prism-code runs the same command
   prism-code manifest [<dir>] [--target <browser|node>] [--json]
                                                     check and lint prism.toml, with prism.<target>.toml merged;
                                                     a secret written as a literal is an error
@@ -158,11 +157,13 @@ Usage:
                                                     fetch a holo and write it only after it verifies: digests, archive,
                                                     verdict, attestations; the verify-attestation flags add a signer policy;
                                                     a verified holo is also kept in the local image store
-  prism-code check [<dir>] [--project <dir>] [--json]
+  prism-code check [<dir>] [--project <dir>] [--write] [--json]
                                                     check the project: prism.toml, then LexLean as WebAssembly checks
                                                     the model, then Lean's kernel, as WebAssembly, proves every theorem.
-                                                    All in this process; writes nothing. Exit 0 passed, 1 a theorem is
-                                                    not proved, 2 the manifest or the model does not check
+                                                    All in this process; writes nothing but, with --write, CONFORMANCE.md
+                                                    from the template's register. Exit 0 passed, 1 a theorem is not proved
+                                                    or the template contract is broken, 2 the manifest or the model does
+                                                    not check
   prism-code build [<dir>] [--project <dir>] [--out <dir>] [--json]
                                                     check, then write the app under .prism/build with nothing compiled,
                                                     and replay its acceptance vectors; --out also copies it there.
@@ -755,7 +756,7 @@ async function commandProviders(positional, options) {
   return 0;
 }
 
-const MODEL_OPTIONS = { check: ['project', 'json'], build: ['project', 'out', 'json', 'check'], verify: ['project', 'policy', 'json'] };
+const MODEL_OPTIONS = { check: ['project', 'json', 'write'], build: ['project', 'out', 'json', 'check'], verify: ['project', 'policy', 'json'] };
 
 /**
  * The model verbs (src/model-cli.mjs): check, build and verify, each in this process. LexLean as WebAssembly checks the
@@ -773,7 +774,7 @@ async function commandModel(verb, positional, options) {
   const model = await import('../src/model-cli.mjs');
   const shared = { project: options.project ?? null, log: options.json ? () => {} : (line) => process.stderr.write(`${line}\n`) };
   let result;
-  if (verb === 'check' || (verb === 'build' && options.check)) result = await model.modelCheck(positional[0], shared);
+  if (verb === 'check' || (verb === 'build' && options.check)) result = await model.modelCheck(positional[0], { ...shared, write: verb === 'check' && options.write === true });
   else if (verb === 'build') result = await model.modelBuild(positional[0], { ...shared, out: options.out ?? null });
   else result = await model.modelVerify(positional[0], { ...shared, policy: options.policy ?? null });
   process.stdout.write(options.json ? `${JSON.stringify(result.report, null, 2)}\n` : model.formatReport(result.report));

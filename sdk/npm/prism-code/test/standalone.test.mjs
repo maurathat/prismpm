@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFil
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readSession, startApp, writeSession } from '../src/journey/project.mjs';
 
 const PACKAGE = fileURLToPath(new URL('../', import.meta.url));
 const bin = join(PACKAGE, 'bin', 'prism-code.mjs');
@@ -146,16 +147,25 @@ const OFFLINE = { PRISM_CODE_TIER: 'offline', PRISM_LEXLEAN_FETCH: '0', PRISM_TE
 const absent = (report) => report.diagnostics.find((d) => d.code === 'build.frontend-unavailable' || d.code === 'kernel.unavailable');
 
 /** init, manifest, check, build and verify, in `root`, where the model is in `model` (a path under root). */
-function journey(t, { template, model }) {
+// From an empty folder: `init`, which writes the canonical template with its model in app/, or a starter fixture
+// (test/fixtures/starters), which init no longer offers and whose routes the IDE's own tables still take.
+function journey(t, { starter = null, model = 'app' } = {}) {
   const root = scratch();
   const at = model === '.' ? root : join(root, model);
-  const init = run(['init', at, '--template', template], { cwd: root });
-  assert.equal(init.code, 0, init.err);
+  if (starter) {
+    startApp(at, starter);
+    // The session says which starter the app came from: a rule app is built as its rule judge.
+    writeSession(at, { ...readSession(at), starter, status: {} });
+    writeFileSync(join(at, 'prism.toml'), readFileSync(new URL(`./fixtures/starters/${starter}/prism.toml`, import.meta.url)));
+  } else {
+    const init = run(['init', root], { cwd: root });
+    assert.equal(init.code, 0, init.err);
+  }
 
   const probe = JSON.parse(run(['check', '--json'], { cwd: root, env: OFFLINE }).out);
   assert.equal(absent(probe), undefined, 'the package ships LexLean and the kernel, so neither is ever missing');
 
-  if (model === '.') assert.equal(run(['manifest', '--json'], { cwd: root, env: OFFLINE }).code, 0);
+  if (model === '.' || !starter) assert.equal(run(['manifest', '--json'], { cwd: root, env: OFFLINE }).code, 0);
 
   const check = run(['check', '--json'], { cwd: root, env: OFFLINE });
   assert.equal(check.code, 0, check.out);
@@ -212,14 +222,12 @@ test('in a template workspace, check runs the contract ratchet: a kept contract 
     mkdirSync(join(root, path, '..'), { recursive: true });
     writeFileSync(join(root, path), body);
   };
-  write('model/ids.toml', 'spec = "template/1"\n\n[[id]]\nid = "TC-01"\nsuite = "app"\nlevel = "build"\nstatement = "The app decides the fee tier."\n');
-  write('features/suites/app.feature', 'Feature: app\n\n  @TC-01 @build\n  Scenario: The app decides the fee tier.\n    Given a request\n');
-  write('tests/app.test.mjs', 'export const decides_tc_01 = true;\n');
+  // The template as init writes it keeps its own contract: two IDs, each proved, one of them a refusal.
   const kept = run(['check', '--json'], { cwd: root, env: OFFLINE });
   assert.equal(kept.code, 0, kept.out);
   const report = JSON.parse(kept.out);
-  assert.deepEqual([report.summary.idsRegistered, report.summary.scenarios, report.summary.contractViolations], [1, 1, 0]);
-  assert.ok(report.summary.lexiconEntriesBound > 0, 'the starter binds its lexicon');
+  assert.deepEqual([report.summary.spec, report.summary.idsRegistered, report.summary.scenarios, report.summary.contractViolations], ['template/2', 2, 2, 0]);
+  assert.ok(report.summary.lexiconEntriesBound > 0, 'the template binds its lexicon');
 
   // A scenario for an ID nobody registered: the model still proves, and the gate fails on the contract alone.
   write('features/suites/extra.feature', 'Feature: extra\n\n  @TC-09 @build\n  Scenario: Not registered.\n    Given nothing\n');
@@ -231,16 +239,16 @@ test('in a template workspace, check runs the contract ratchet: a kept contract 
   assert.equal(run(['build', '--json'], { cwd: root, env: OFFLINE }).code, 1, 'build stops at a broken contract');
 });
 
-test('a standalone app goes from init to a verified build in this process, fetching nothing', { timeout: 600000 }, (t) => journey(t, { template: 'decision-app', model: '.' }));
+test('a standalone app goes from init to a verified build in this process, fetching nothing', { timeout: 600000 }, (t) => journey(t));
 
-test('a rule app does the same: its guarantees are proved, and its vectors pass through the rule judge', { timeout: 600000 }, (t) => journey(t, { template: 'rule-app', model: '.' }));
+test('a rule app does the same: its guarantees are proved, and its vectors pass through the rule judge', { timeout: 600000 }, (t) => journey(t, { starter: 'rule-app', model: '.' }));
 
-test('a workspace whose model is in app/ is found from its root and does the same', { timeout: 600000 }, (t) => journey(t, { template: 'stateful-app', model: 'app' }));
+test('a workspace whose model is in app/ is found from its root and does the same', { timeout: 600000 }, (t) => journey(t, { starter: 'stateful-app', model: 'app' }));
 
 test('R6: a lockfile whose digest is not the project\'s is refused by check, by LexLean\'s own code', { timeout: 600000 }, () => {
   const root = scratch();
   assert.equal(run(['init', root, '--no-skill']).code, 0);
-  const lock = join(root, 'lexlean.lock');
+  const lock = join(root, 'app', 'lexlean.lock');
   const text = readFileSync(lock, 'utf8');
   const at = text.indexOf('project_config_sha256 = "') + 'project_config_sha256 = "'.length;
   assert.ok(at > 30, 'the lock records the digest of the project file');

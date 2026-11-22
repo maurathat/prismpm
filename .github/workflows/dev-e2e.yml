@@ -3,7 +3,7 @@ name: dev end to end
 # Issue #288's acceptance, measured on a clean runner:
 #   offline   the studio in a real browser, in a network namespace with only
 #             loopback, so nothing it asks for from outside can arrive
-#   measure   edit to verdict on a starter app, built in this process: prism-code checks the
+#   measure   edit to verdict on the canonical template and two starter fixtures, built in this process: prism-code checks the
 #             model, proves its theorems and writes the holo with nothing compiled, and the
 #             studio judges it. The job holds the time the loop adds on top of the build
 #             (docs/proposals/288-prism-dev.md, The floor). No image is pulled and no
@@ -52,7 +52,7 @@ jobs:
           '
 
   measure:
-    name: edit to verdict on the ${{ matrix.starter }} starter, built in this process
+    name: edit to verdict on the ${{ matrix.starter }} app, built in this process
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -60,6 +60,10 @@ jobs:
       matrix:
         include:
           # Each edit is to text no theorem or acceptance vector reads, so the build still succeeds.
+          # The canonical template is what init writes; the starters are fixtures init no longer offers.
+          - starter: template
+            from: against its locked BLAKE3 label.
+            to: against the BLAKE3 label it is locked to.
           - starter: decision-app
             from: from the hours parked and the vehicle type.
             to: from the hours parked and the kind of vehicle.
@@ -73,13 +77,24 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24'
-      - name: Start the app from its starter
+      - name: Start the app
         shell: bash
         env:
           STARTER: ${{ matrix.starter }}
         run: |
           set -euo pipefail
-          node sdk/npm/prism-code/bin/prism-code.mjs init "$RUNNER_TEMP/app" --template "$STARTER" --no-skill
+          if [ "$STARTER" = template ]; then
+            node sdk/npm/prism-code/bin/prism-code.mjs init "$RUNNER_TEMP/app" --no-skill
+          else
+            node --input-type=module -e '
+              import { copyFileSync } from "node:fs";
+              import { join } from "node:path";
+              import { startApp } from "./sdk/npm/prism-code/src/journey/project.mjs";
+              const [dir, name] = process.argv.slice(1);
+              startApp(dir, name);
+              copyFileSync(`sdk/npm/prism-code/test/fixtures/starters/${name}/prism.toml`, join(dir, "prism.toml"));
+            ' "$RUNNER_TEMP/app" "$STARTER"
+          fi
       - name: Measure edit to verdict
         shell: bash
         env:

@@ -20,17 +20,36 @@
  *       contract.untested      a registered ID with no test named for it
  *       contract.register      a register that cannot be read
  *
- * R4 (no stub, no undeclared axiom) and R6 (locked imports) are LexLean's and the kernel's, in `check` itself. R5
- * (every typed failure has a rejecting example) is `build`'s and `verify`'s, through the acceptance vectors. A
+ * R4 (no stub, no undeclared axiom) and R6 (locked imports) are LexLean's and the kernel's, in `check` itself. A
  * workspace with no `model/ids.toml` is not a template workspace, and nothing here runs.
  *
- * Reads files and nothing else. Returns `{ applies, summary, diagnostics }`.
+ * The register's `spec` decides the rest. `template/1` is contract 1: R3 asks for a test named for each ID, and R1
+ * for CONFORMANCE.md to list every ID. `template/2` is contract 2, the standalone frame (TEMPLATE-CONTRACT.md):
+ *
+ *   R1  contract.conformance    CONFORMANCE.md that is not conformanceDocument(root), byte for byte
+ *   R3  contract.untested       a build row that names no theorem in `theorems`
+ *       contract.theorem-unstated  (checkTheorems) a named theorem the model does not state
+ *       contract.theorem-unproved  (checkTheorems) a named theorem Lean's kernel did not prove within its axioms
+ *   R5  contract.rejects-scenario  a row with `failure` whose scenario is not tagged @rejects
+ *       contract.negative       a row with `failure` whose `negative` is not a registered build row
+ *       contract.refusal-unreplayed (checkRefusals) a row with `failure` no replayed vector is refused with
+ *       contract.policy-drift   a universal policy file whose bytes are not the BLAKE3 label template.lock binds
+ *       contract.spec           a register spec that is neither template/1 nor template/2
+ *
+ * checkContract reads files and nothing else. checkTheorems and checkRefusals judge what check and build hand them:
+ * the kernel's verdicts and the replayed vectors. Each returns `{ diagnostics }`, checkContract also
+ * `{ applies, summary }`.
  */
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { PrismCodeError } from './errors.mjs';
+import { kappa } from './blake3.mjs';
 
 export const LEVELS = Object.freeze(['some-true', 'build', 'open']);
+/** The register specs this ratchet reads: contract 1, and contract 2, the standalone frame. */
+export const SPECS = Object.freeze(['template/1', 'template/2']);
+/** The universal policy files a `uor/template-lock/2` binds, the lock itself excepted. */
+const LOCK_SCHEMA = 'uor/template-lock/2';
 
 const forward = (path) => path.split(sep).join('/');
 /** A code of this module's own, written as an error so that it is registered like every code prism-code raises. */
@@ -143,6 +162,7 @@ export function scenarios(root) {
         line: index + 1,
         ids: tags.map((t) => t.slice(1)).filter((t) => /^[A-Z][A-Z0-9]*-[A-Z0-9][A-Z0-9-]*$/.test(t)),
         levels: tags.map((t) => t.slice(1)).filter((t) => LEVELS.includes(t)),
+        rejects: tags.includes('@rejects'),
       });
     });
   }
@@ -166,6 +186,10 @@ export function checkContract(root) {
   const authorities = readRegister(root, 'authorities.toml', diagnostics);
   const ledger = readRegister(root, 'ledger.toml', diagnostics);
   const rows = Array.isArray(ids?.id) ? ids.id : [];
+  const spec = ids?.spec ?? 'template/1';
+  const contract2 = spec === 'template/2';
+  // A template register names its contract; a register of another spec (this repository's own) is read as contract 1.
+  if (ids && spec.startsWith('template/') && !SPECS.includes(spec)) push(new PrismCodeError('contract.spec', `model/ids.toml has spec ${JSON.stringify(spec)}; this prism-code reads ${SPECS.join(' and ')}.`), { file: 'model/ids.toml', remediation: 'Write the register as template/2 (TEMPLATE-CONTRACT.md), or upgrade prism-code.' });
   const cited = Array.isArray(authorities?.authority) ? authorities.authority : [];
   const claims = Array.isArray(ledger?.claim) ? ledger.claim : [];
 
@@ -209,8 +233,25 @@ export function checkContract(root) {
   const unspecified = [...registered.keys()].filter((id) => !specified.has(id));
   for (const id of unspecified) push(new PrismCodeError('contract.unspecified', `The ID ${id} is registered and has no scenario.`), { file: 'model/ids.toml', line: lineOf(idsText, id), id, remediation: `Add a scenario tagged @${id} under features/suites/ before the behavior is built (R3).` });
 
-  // R3: every ID has a test named for it. One pass over the files that may hold tests.
-  const wanted = new Map([...registered.keys()].map((id) => [testNameOf(id), id]));
+  // R3 (template/2): a build row is proved, not tested: it names the theorems of the model that prove it, which
+  // checkTheorems holds to the kernel's verdicts. R5: a row that specifies a failure has a rejecting scenario and a
+  // registered build row that proves the refusal's condition.
+  if (contract2) {
+    const rejecting = new Set(found.filter((f) => f.rejects).flatMap((f) => f.ids));
+    for (const row of registered.values()) {
+      const at = { file: 'model/ids.toml', line: lineOf(idsText, row.id), id: row.id };
+      const named = Array.isArray(row.theorems) ? row.theorems : [];
+      if (row.level === 'build' && named.length === 0) push(new PrismCodeError('contract.untested', `The build ID ${row.id} names no theorem in \`theorems\`.`), { ...at, remediation: 'Name the theorems of the model that prove it, each Module.name (R3).' });
+      if (row.failure === undefined) continue;
+      if (typeof row.failure !== 'string' || row.failure === '') push(new PrismCodeError('contract.negative', `The ID ${row.id} declares a failure that is not the text of a refusal.`), { ...at, remediation: 'Write `failure` as the exact response the application refuses with (R5).' });
+      if (!rejecting.has(row.id)) push(new PrismCodeError('contract.rejects-scenario', `The ID ${row.id} declares a failure, and no scenario tagged @${row.id} is also tagged @rejects.`), { ...at, remediation: `Tag the scenario of ${row.id} @rejects, and say in it what is refused (R5).` });
+      const negative = registered.get(row.negative);
+      if (!negative || negative.level !== 'build') push(new PrismCodeError('contract.negative', `The ID ${row.id} declares a failure whose negative ${JSON.stringify(row.negative ?? null)} is not a registered build ID.`), { ...at, remediation: 'Name in `negative` the build ID whose theorems prove the refusal, or the row itself (R5).' });
+    }
+  }
+
+  // R3 (template/1): every ID has a test named for it. One pass over the files that may hold tests.
+  const wanted = new Map(contract2 ? [] : [...registered.keys()].map((id) => [testNameOf(id), id]));
   const tested = new Set();
   if (wanted.size > 0) {
     const pattern = new RegExp(`(?<![a-z0-9])(${[...wanted.keys()].sort((a, b) => b.length - a.length).join('|')})(?![a-z0-9])`, 'g');
@@ -226,22 +267,166 @@ export function checkContract(root) {
       if (tested.size === wanted.size) break;
     }
   }
-  const untested = [...registered.keys()].filter((id) => !tested.has(id));
+  const untested = contract2 ? [] : [...registered.keys()].filter((id) => !tested.has(id));
   for (const id of untested) push(new PrismCodeError('contract.untested', `The ID ${id} is registered and no test is named for it.`), { file: 'model/ids.toml', line: lineOf(idsText, id), id, remediation: `Add a test whose name ends in ${testNameOf(id)}, failing first (R3).` });
 
-  // R1: the generated conformance document lists every ID the register holds.
+  // R1: the generated conformance document is the register's own. Under template/2, byte for byte.
   const conformance = join(root, 'CONFORMANCE.md');
-  if (existsSync(conformance) && registered.size > 0) {
+  if (contract2 && ids) {
+    const want = conformanceDocument(root);
+    if (!existsSync(conformance) || readFileSync(conformance, 'utf8') !== want) push(new PrismCodeError('contract.conformance', 'CONFORMANCE.md is not the document the register generates.'), { file: 'CONFORMANCE.md', remediation: 'Run prism-code check --write; never edit CONFORMANCE.md by hand (R1).' });
+  } else if (existsSync(conformance) && registered.size > 0) {
     const text = readFileSync(conformance, 'utf8');
     const missing = [...registered.keys()].filter((id) => !text.includes(`\`${id}\``));
     for (const id of missing) push(new PrismCodeError('contract.conformance', `CONFORMANCE.md does not list ${id}, which model/ids.toml registers.`), { file: 'CONFORMANCE.md', id, remediation: 'Regenerate CONFORMANCE.md from the register; never edit it by hand (R1).' });
   }
 
+  // The universal policy (template/2): every file template.lock binds still has the label it binds.
+  if (contract2) for (const drift of policyDrift(root)) push(new PrismCodeError('contract.policy-drift', drift.message), { file: drift.file, remediation: 'Restore the universal policy file; it changes only with a template release (TEMPLATE-CONTRACT.md).' });
+
   return {
     applies: true,
-    summary: { contractRoot: forward(relative(process.cwd(), root) || '.'), idsRegistered: registered.size, scenarios: found.length, authorities: cited.length, claims: claims.length, contractViolations: diagnostics.length },
+    summary: { contractRoot: forward(relative(process.cwd(), root) || '.'), spec, idsRegistered: registered.size, scenarios: found.length, authorities: cited.length, claims: claims.length, contractViolations: diagnostics.length },
     diagnostics,
   };
+}
+
+/** The register's rows, read without diagnostics: `{ spec, rows, authorities, claims }`, or null when it cannot be read. */
+function registerOf(root) {
+  const read = (file) => {
+    const path = join(root, 'model', file);
+    if (!existsSync(path)) return {};
+    try {
+      return parseRegister(readFileSync(path, 'utf8'));
+    } catch {
+      return null;
+    }
+  };
+  const ids = read('ids.toml');
+  if (!ids) return null;
+  const authorities = read('authorities.toml') ?? {};
+  const ledger = read('ledger.toml') ?? {};
+  return { spec: ids.spec ?? 'template/1', rows: Array.isArray(ids.id) ? ids.id : [], authorities: Array.isArray(authorities.authority) ? authorities.authority : [], claims: Array.isArray(ledger.claim) ? ledger.claim : [] };
+}
+
+const cell = (text) => String(text ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+const code = (text) => '`' + cell(text) + '`';
+
+/**
+ * CONFORMANCE.md as the register generates it (template/2, R1): the IDs by suite, in the order the register first
+ * names each suite, each with its level, its statement and its evidence; then the cited authorities and the ledger.
+ * The same register gives the same bytes on every machine.
+ */
+export function conformanceDocument(root) {
+  const register = registerOf(root);
+  if (!register) throw new PrismCodeError('contract.register', 'model/ids.toml cannot be read, so CONFORMANCE.md cannot be generated from it.');
+  const out = [
+    '<!-- @generated by `prism-code check --write` from model/. -->',
+    '<!-- Do not edit. R1: the model is the single source. -->',
+    '',
+    '# CONFORMANCE',
+    '',
+    'The conformance ID register. A `build` ID names the theorems of the model that',
+    "prove it, and `prism-code check` refuses one that Lean's kernel did not prove,",
+    'within its declared axioms, in the same check (R3). A failure names the exact',
+    'refusal it answers, and `prism-code build` replays a vector refused with it (R5).',
+    '',
+    'The three honesty levels (R2):',
+    '',
+    '| Level | Meaning |',
+    '| --- | --- |',
+    '| `some-true` | A fact reproduced from an authority. **Not established here.** |',
+    "| `build` | Constructed here and proved by Lean's kernel. |",
+    '| `open` | Measured and reported. **Never asserted.** |',
+  ];
+  const suites = [];
+  for (const row of register.rows) if (!suites.includes(row.suite)) suites.push(row.suite);
+  for (const suite of suites) {
+    out.push('', '## ' + cell(suite), '', '| ID | Level | Statement | Evidence |', '| --- | --- | --- | --- |');
+    for (const row of register.rows.filter((r) => r.suite === suite)) {
+      const evidence = [
+        ...(Array.isArray(row.theorems) ? row.theorems.map(code) : []),
+        ...(row.failure !== undefined ? ['refuses with ' + code(row.failure)] : []),
+      ].join(', ');
+      out.push('| ' + code(row.id) + ' | ' + code(row.level) + ' | ' + cell(row.statement) + ' | ' + evidence + ' |');
+    }
+  }
+  out.push('', '## Cited authorities', '', 'An authority is cited, never re-derived: what it states is not claimed as established here, so the claim that reproduces it stays `some-true`.', '', '| Authority | Citation | Realized by |', '| --- | --- | --- |');
+  for (const a of register.authorities) out.push('| ' + code(a.id) + ' | ' + cell(a.citation ?? a.statement) + ' | ' + (Array.isArray(a.realized_by) ? a.realized_by : []).map(code).join(', ') + ' |');
+  out.push('', '## Claims that are not conformance IDs', '', '| ID | Level | Claim |', '| --- | --- | --- |');
+  for (const c of register.claims) out.push('| ' + code(c.id) + ' | ' + code(c.level) + ' | ' + cell(c.statement ?? c.claim) + ' |');
+  return out.join('\n') + '\n';
+}
+
+/** Write CONFORMANCE.md from the register (`check --write`). Returns the path written. */
+export function writeConformance(root) {
+  const path = join(root, 'CONFORMANCE.md');
+  writeFileSync(path, conformanceDocument(root));
+  return path;
+}
+
+/**
+ * The universal policy files whose bytes are not the BLAKE3 label `template.lock` binds them to (template/2):
+ * `[{ file, message }]`. A missing or unreadable lock is itself a drift: a template workspace carries one.
+ */
+export function policyDrift(root) {
+  let lock;
+  try {
+    lock = JSON.parse(readFileSync(join(root, 'template.lock'), 'utf8'));
+  } catch {
+    return [{ file: 'template.lock', message: 'template.lock is missing or is not JSON, so the universal policy cannot be checked.' }];
+  }
+  if (lock.schema !== LOCK_SCHEMA || !Array.isArray(lock.policy_files)) return [{ file: 'template.lock', message: 'template.lock is not ' + LOCK_SCHEMA + '.' }];
+  const drift = [];
+  for (const file of lock.policy_files) {
+    const at = join(root, ...String(file.path).split('/'));
+    if (!existsSync(at)) {
+      drift.push({ file: file.path, message: file.path + ' is a universal policy file and is missing.' });
+      continue;
+    }
+    const label = kappa(new Uint8Array(readFileSync(at)));
+    if (label !== file.blake3) drift.push({ file: file.path, message: file.path + ' has the label ' + label + ', and template.lock binds it to ' + file.blake3 + '.' });
+  }
+  return drift;
+}
+
+/**
+ * R3 under template/2, after the kernel has judged the model: every theorem a build row names must be stated by the
+ * model and proved within its declared axioms. `proved` maps each theorem's qualified name (Module.name) to the
+ * kernel's row `{ theorem, status, axioms }`; a status that starts with "proved" is proved. Returns `{ diagnostics }`.
+ */
+export function checkTheorems(root, proved) {
+  const diagnostics = [];
+  const register = root ? registerOf(root) : null;
+  if (!register || register.spec !== 'template/2') return { diagnostics };
+  const idsText = readFileSync(join(root, 'model', 'ids.toml'), 'utf8');
+  for (const row of register.rows) {
+    for (const name of Array.isArray(row.theorems) ? row.theorems : []) {
+      const at = { file: 'model/ids.toml', line: lineOf(idsText, row.id), id: row.id };
+      const judged = proved.get(name);
+      if (!judged) diagnostics.push({ ...coded(new PrismCodeError('contract.theorem-unstated', 'The ID ' + row.id + ' names the theorem ' + name + ', which the model does not state.')), ...at, remediation: 'Name the theorem as Module.name, as the model states it, or state it in app/src (R3).' });
+      else if (!String(judged.status).startsWith('proved')) diagnostics.push({ ...coded(new PrismCodeError('contract.theorem-unproved', 'The ID ' + row.id + ' names the theorem ' + name + ", which Lean's kernel did not prove: " + judged.status + '.')), ...at, remediation: 'Repair the definition or the proof; never weaken the theorem to make it pass (R3).' });
+    }
+  }
+  return { diagnostics };
+}
+
+/**
+ * R5 under template/2, after the build has replayed the acceptance vectors: every row with `failure` needs at least
+ * one replayed vector whose response is exactly the failure's text. `vectors` is `[{ request, response }]` as bytes.
+ * Returns `{ diagnostics }`.
+ */
+export function checkRefusals(root, vectors) {
+  const diagnostics = [];
+  const register = root ? registerOf(root) : null;
+  if (!register || register.spec !== 'template/2') return { diagnostics };
+  const idsText = readFileSync(join(root, 'model', 'ids.toml'), 'utf8');
+  const responses = new Set(vectors.map((v) => Buffer.from(v.response).toString('hex')));
+  for (const row of register.rows) {
+    if (typeof row.failure !== 'string' || row.failure === '') continue;
+    if (!responses.has(Buffer.from(row.failure, 'utf8').toString('hex'))) diagnostics.push({ ...coded(new PrismCodeError('contract.refusal-unreplayed', 'The ID ' + row.id + ' declares the failure ' + JSON.stringify(row.failure) + ', and no replayed acceptance vector is refused with it.')), file: 'model/ids.toml', line: lineOf(idsText, row.id), id: row.id, remediation: 'Add an acceptance vector whose request the app refuses with exactly that response (R5).' });
+  }
+  return { diagnostics };
 }
 
 /** How many lexicon entries a project binds: the entry files under `language/<lexicon>/entries/`. */

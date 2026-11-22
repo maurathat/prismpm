@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Start a LexLean model from a starter, then build, check, run and deploy your first holo.
+description: Start a LexLean model from the canonical template, then build, check, run and deploy your first holo.
 available_in: "1.0-beta"
 ---
 In five minutes you create a parking fee check from one LexLean model, build it into a holo, check its proof, run it, and publish it to GitHub Pages. Every command below is one you will use every day.
@@ -22,12 +22,12 @@ npm create prism-code calculator
 ```text
 Creating calculator
   prism.toml         application calculator 0.1.0
-  prism/src/App.lex.tex  the model, from the rule-app starter
+  app/src/               the model, from the canonical template
   prismpm.lock       SDK image sha256:91ab…
 Done. Next: cd calculator && prism build
 ```
 
-`prism/src/App.lex.tex` is the whole source. It starts as the `rule-app` starter, a LexLean module named by its SHA-256, and you edit it, or have an agent write it. It says what one request holds, what the app may answer, the rules in order, and what must never or always happen, as LexLean definitions:
+`app/src/` is the whole source. It starts as the canonical template's model, every file named by its BLAKE3 label, and you replace it with your app, or have an agent write it. It says what one request holds, what the app may answer, the rules in order, and what must never or always happen, as LexLean definitions:
 
 ```tex
 definition{name: answers, parameters: [], result: (List String),
@@ -60,7 +60,7 @@ prism build
 
 ```text
 Pulling SDK image sha256:91ab… (cached)
-Checking model prism/src/App.lex.tex  semantic_id sha256:2414…
+Checking model app/src/  semantic_id sha256:2414…
 Compiling model
 Proving
   INV-001 never approved when role is clerk and amount is above limit   checked
@@ -70,7 +70,7 @@ Built calculator@sha256:3f9c… (holo, 24.8 KB)
 Provenance: recorded   Proof: 2 theorems checked   Level: P2
 ```
 
-The holo is `calculator@sha256:3f9c…`. The digest covers everything inside it, including the proof. Commit `prism/src/` with the rest of the project: the model is the one source of truth, and nothing is generated into it.
+The holo is `calculator@sha256:3f9c…`. The digest covers everything inside it, including the proof. Commit `app/src/` with the rest of the project: the model is the one source of truth, and nothing is generated into it.
 
 ## Check it
 

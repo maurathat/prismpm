@@ -909,6 +909,13 @@ pub fn run_at(root: &Path, id: &str) {
             "600000",
         ),
         // A text application's holo built with nothing compiled: the evaluator guest and the model's program.
+        // Every app from the canonical template carried by BLAKE3 label, and contract 2 (init, check).
+        "DK-51" => node_suite::verify_exact(
+            root,
+            id,
+            &[("sdk/npm/prism-code/test/canonical-template.test.mjs", 9)],
+            "600000",
+        ),
         "DK-50" => node_suite::verify_exact(
             root,
             id,

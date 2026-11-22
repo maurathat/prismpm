@@ -9,8 +9,8 @@
  *   prism/session.json        what was checked, proved and built, and where
  *   prism/...                 the LexLean and PrismPM project files of the template
  *
- * A new app starts from a starter module (templates/starters), each file named
- * by its SHA-256 in templates/starters/index.json and copied only when its
+ * A new app starts from the canonical template (template.mjs, `init`). The starter modules (test/fixtures/starters),
+ * each file named by its SHA-256 in their index.json and copied only when its
  * bytes have that address. After that the model is the author's: Prism never
  * writes it again.
  */
@@ -25,7 +25,9 @@ export const SESSION_SCHEMA = 'prism/session/2';
 const TEMPLATE_MODULE = 'TextRequest';
 const RENAMED = ['lexlean.toml', 'lakefile.toml', 'lake-manifest.json', 'prismpm.toml'];
 const UNUSED = [`src/${TEMPLATE_MODULE}.lex.tex`, 'src/Foundation/Utf8.lex.tex'];
-const STARTERS = new URL('../../templates/starters/', import.meta.url);
+// Not shipped: the starters an app was made from before the canonical template, kept as fixtures for the tests and
+// for the IDE's own rule tables.
+const STARTERS = new URL('../../test/fixtures/starters/', import.meta.url);
 
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 

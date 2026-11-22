@@ -5,7 +5,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 import { LEXLEAN_CARD } from '../src/journey/card.mjs';
 
-const root = new URL('../templates/starters/', import.meta.url);
+const root = new URL('./fixtures/starters/', import.meta.url);
 const sources = readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).flatMap((e) =>
   readdirSync(new URL(`${e.name}/src/`, root)).filter((f) => f.endsWith('.lex.tex')).map((f) => readFileSync(new URL(`${e.name}/src/${f}`, root), 'utf8')));
 const theorems = sources.flatMap((s) => [...s.matchAll(/theorem\{[\s\S]*?\n\}/g)].map((m) => m[0]));

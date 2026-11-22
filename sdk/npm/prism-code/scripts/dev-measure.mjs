@@ -26,7 +26,7 @@
  * table, and --json prints the whole result.
  */
 import { spawn } from 'node:child_process';
-import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,7 +83,7 @@ function standInProject() {
   return directory;
 }
 
-/** The first file under src/ that holds the text, or under a project's model directory. */
+/** The first file under the model's directory, src/ or app/src/, that holds the text. */
 function fileHolding(directory, text) {
   const search = (folder) => {
     for (const entry of readdirSync(folder, { withFileTypes: true })) {
@@ -95,8 +95,10 @@ function fileHolding(directory, text) {
     }
     return null;
   };
-  const found = search(join(directory, 'src'));
-  if (!found) throw new Error(`no .lex.tex file under ${directory}/src holds ${JSON.stringify(text)}`);
+  // A project's model is in src/, or in app/src/ for one made from the canonical template.
+  const root = existsSync(join(directory, 'src')) ? join(directory, 'src') : join(directory, 'app', 'src');
+  const found = search(root);
+  if (!found) throw new Error(`no .lex.tex file under ${root} holds ${JSON.stringify(text)}`);
   return found;
 }
 

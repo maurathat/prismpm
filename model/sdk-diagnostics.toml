@@ -328,9 +328,44 @@ capability = "DK-41"
 statement = "A level is not some-true, build or open, or a scenario is tagged with another level than its ID has (R2)."
 
 [[error]]
+code = "contract.negative"
+capability = "DK-51"
+statement = "A template/2 register row declares a failure whose negative is not a registered build ID, or whose failure is not the text of a refusal."
+
+[[error]]
+code = "contract.policy-drift"
+capability = "DK-51"
+statement = "A universal policy file of a template/2 workspace does not have the BLAKE3 label template.lock binds it to, or template.lock is missing or not uor/template-lock/2."
+
+[[error]]
+code = "contract.refusal-unreplayed"
+capability = "DK-51"
+statement = "A template/2 register row declares a failure that no acceptance vector of the model answers with exactly that refusal."
+
+[[error]]
 code = "contract.register"
 capability = "DK-41"
 statement = "A register of a template workspace cannot be read."
+
+[[error]]
+code = "contract.rejects-scenario"
+capability = "DK-51"
+statement = "A template/2 register row declares a failure and its scenario is not tagged @rejects."
+
+[[error]]
+code = "contract.spec"
+capability = "DK-51"
+statement = "The template register names a template spec this prism-code does not read; it reads template/1 and template/2."
+
+[[error]]
+code = "contract.theorem-unproved"
+capability = "DK-51"
+statement = "A template/2 build ID names a theorem Lean's kernel did not prove within its declared axioms in the same check."
+
+[[error]]
+code = "contract.theorem-unstated"
+capability = "DK-51"
+statement = "A template/2 build ID names a theorem, as Module.name, that the model does not state."
 
 [[error]]
 code = "contract.unregistered"
@@ -505,6 +540,11 @@ statement = "prism.images.remove named by digest an image that has more than one
 code = "images.unavailable"
 capability = "OC-11"
 statement = "prism.images reads files and registries, which this build of prism-code leaves out; use it in Node."
+
+[[error]]
+code = "init.exists"
+capability = "DK-51"
+statement = "init was asked to start an app in a folder that already holds prism.toml, so nothing was written; --force overwrites."
 
 [[error]]
 code = "init.template"
@@ -965,6 +1005,16 @@ statement = "prismpm.lock cannot be read, or this client cannot read files."
 code = "system.option"
 capability = "DK-41"
 statement = "prism.system was given options that are not a plain object, an option it does not have, or a time that is not a Date, an ISO 8601 time or milliseconds."
+
+[[error]]
+code = "template.altered"
+capability = "DK-51"
+statement = "A file of the canonical template this package carries is not the bytes its BLAKE3 label names, or the template's index is not the one its label names, so nothing was written."
+
+[[error]]
+code = "template.exists"
+capability = "DK-51"
+statement = "The folder already holds a file of the canonical template with other bytes, so init wrote nothing; --force overwrites."
 
 [[error]]
 code = "tier.project"
