@@ -173,6 +173,36 @@ The rest was tried by hand in the same browser against a stand-in on this machin
 
 `tools/kappa-registry-test.mjs` holds the client and the archive reader to this, with a registry that lies, archives with a path that leaves the folder, a link, a broken checksum, and addresses that carry a password or the wrong kind of label.
 
+### Which models prove in the tab
+
+Measured 2026-11-21 in the workbench page, built from `main` at `b65e3e8` and served from one development machine. Each model was published as a folder with its `project.json` and opened by `?project=`. The check time is LexLean's; the proof time is from the check's end to the last guarantee judged. The browser pane was not on screen while these were taken, which slows a page, so the times are upper figures.
+
+| Model | Lean | In the tab | Check | Proved | Proof |
+|---|---|---|---|---|---|
+| `model/ide-audit` | 4.32.2 | proved | 88 ms | 14 of 14 | 893 ms |
+| `model/ide-capability-gate` | 4.32.2 | proved | 146 ms | 13 of 13 | 1580 ms |
+| `model/ide-command-table` | 4.32.2 | proved | 131 ms | 5 of 5 | 204 ms |
+| `model/ide-terminal-commands` | 4.32.2 | proved | 115 ms | 19 of 19 | 6751 ms |
+| `model/ide-terminal-effects` | 4.32.2 | proved | 124 ms | 17 of 17 | 1287 ms |
+| `model/ide-terminal-flow` | 4.32.2 | proved | 99 ms | 5 of 5 | 188 ms |
+| `model/ide-terminal-reach` | 4.32.2 | proved | 145 ms | 22 of 22 | 5686 ms |
+| starter `rule-app` | 4.32.2 | proved | 127 ms | 3 of 3 | 212 ms |
+| starter `decision-app` | 4.32.2 | checked, not proved | 149 ms | none of its 3 theorems | |
+| starter `stateful-app` | 4.32.2 | checked, not proved | 169 ms | none of its 10 theorems | |
+| `model/canonical-build` | 4.32.1 | refused, `LLC0101` | 21 ms | | |
+| `model/ide-scope` | 4.32.1 | refused, `LLC0101` | 21 ms | | |
+| `model/rule-app` | 4.32.1 | refused, `LLC0101` | 32 ms | | |
+| `model/rule-judge` | 4.32.1 | refused, `LLC0101` | 29 ms | | |
+| `model/webgpu-bridge` | 4.32.1 | refused, `LLC0101` | 31 ms | | |
+
+What it says:
+
+- **Every rule table proves**, the eight of them, in 0.2 to 6.8 s. Time follows the size of the table more than the count of guarantees.
+- **A model with theorems of its own is checked and not proved.** The page says so: "It is not a rule table, so its guarantees are not proved in this tab." Two of the three starters are such models, so phase 2c's gate, that the starters prove in the tab, is met for one of three.
+- **A model on Lean 4.32.1 is not checked at all.** The LexLean this page pins takes 4.32.2 only, and answers `LLC0101` in about 25 ms. Five of this package's own models are on 4.32.1, `model/rule-app` and `model/rule-judge` among them.
+
+The three starters were started as prism-code starts an app (`startApp`); a starter is not a whole LexLean project until then.
+
 Limits of the workbench page:
 
 - Opening by label is read only: the page pushes nothing to a registry. A model gets there by `curl`, as the registry's README shows, or by a tool that can push.
@@ -331,7 +361,7 @@ Limits:
 
 - `index.html` here is a plain text area: no syntax colours, no completion, no formatting (the WASI build of LexLean refuses commands that write).
 - On the plain page one file is editable: the project's first entrypoint. The workbench page opens every file.
-- Rule tables only. A model with theorems of its own is checked, and the page says its guarantees are not proved here. `model-prove.mjs` could be tried for those; it did not finish on `model/ide-scope` in 40 minutes in Node.
+- Rule tables only; the table under "Which models prove in the tab" has each model. A model with theorems of its own is checked, and the page says its guarantees are not proved here. `model-prove.mjs` could be tried for those; it did not finish on `model/ide-scope` in 40 minutes in Node.
 - "Refused" (the kernel does not accept a guarantee that no request breaks) was never seen: no such model was tried.
 - A blank line added at the end of the file makes LexLean refuse the model. That is LexLean's rule, shown as it reports it.
 - Nothing an edit changes is saved or can be sent anywhere: the page has no way to write a model back.
