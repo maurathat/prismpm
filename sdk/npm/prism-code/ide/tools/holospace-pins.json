@@ -3,13 +3,13 @@
  "note": "The Holospace library the workbench opens and runs a built holo with, and keeps a workspace in. Each file is published beside the page only when its bytes derive to the BLAKE3 label here; nothing of it is fetched from Holospace's site at run time. The labels are those of https://hologram-technologies.github.io/holospace-shell/library.json (schema holospace/library/1) for the commit named, each file fetched and derived again before it was pinned. A newer library is taken by a pull request that changes this file.",
  "from": "https://hologram-technologies.github.io/holospace-shell/",
  "repository": "https://github.com/Hologram-Technologies/holospace-shell",
- "commit": "43d09b4a3542eff232f817f4938f33cc69fbd674",
+ "commit": "bb4232c8cffc94f33df3c6008d75098f87cfec58",
  "entry": "holospace.bundle.mjs",
  "storage": { "opfs": "holospace-store", "cache": "holospace-store" },
  "files": [
-  { "path": "holospace.bundle.mjs", "kappa": "blake3:3ff7d2b03e4e92ab00612a00e5b1306069027176b65ff4db6fd2022294218a9e", "bytes": 618716 },
+  { "path": "holospace.bundle.mjs", "kappa": "blake3:ab578931cf4861c40564cad7ed4bc18e0953f0ecfe95fc727dbc941462cb2f67", "bytes": 619572 },
   { "path": "store-worker.bundle.mjs", "kappa": "blake3:842aa2624615abef863e1e7c8b6e1c530ae9a5edc567950401dafd0a7560427e", "bytes": 7881 },
-  { "path": "kernels/kernel.json", "kappa": "blake3:d2028c14553fd1888c06ae18b50297a868beaac34c5ef2c178917295e2c6b8df", "bytes": 300 },
-  { "path": "kernels/holospace-kernel.holo", "kappa": "blake3:7cbeb1c28a410cb25e68eeb86a3309e492e67c998e6952b1cb6b1025fcb9226e", "bytes": 33470 }
+  { "path": "kernels/kernel.json", "kappa": "blake3:56c7b2beca3db2c7ac6609297d9f89161f1f05285ea64086d6152a0c2df5aea7", "bytes": 300 },
+  { "path": "kernels/holospace-kernel.holo", "kappa": "blake3:4852752961dbf141aa0e142b0efc5c15c83f2f504f5a3adb15e85c55a0d00ef2", "bytes": 35782 }
  ]
 }
