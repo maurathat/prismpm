@@ -1,7 +1,7 @@
 {
  "schema": "prism-ide/holospace-pins/1",
- "note": "The Holospace library the workbench opens and runs a built holo with, and keeps a workspace in. Each file is published beside the page only when its bytes derive to the BLAKE3 label here; nothing of it is fetched from Holospace's site at run time. The labels are those of https://hologram-technologies.github.io/holospace-shell/library.json (schema holospace/library/1) for the commit named, each file fetched and derived again before it was pinned. A newer library is taken by a pull request that changes this file.",
- "from": "https://hologram-technologies.github.io/holospace-shell/",
+ "note": "The Holospace library the workbench opens and runs a built holo with, and keeps a workspace in. Each file is published beside the page only when its bytes derive to the BLAKE3 label here; nothing of it is fetched from Holospace's site at run time. They are fetched from the release of the commit named, an address whose bytes do not change when Holospace publishes again; a release holds the files flat, under the last part of each path. The labels are those of that release's library.json (schema holospace/library/1), each file fetched and derived again before it was pinned. A newer library is taken by a pull request that changes this file.",
+ "from": "https://github.com/Hologram-Technologies/holospace-shell/releases/download/library-bb4232c8cffc94f33df3c6008d75098f87cfec58/",
  "repository": "https://github.com/Hologram-Technologies/holospace-shell",
  "commit": "bb4232c8cffc94f33df3c6008d75098f87cfec58",
  "entry": "holospace.bundle.mjs",
