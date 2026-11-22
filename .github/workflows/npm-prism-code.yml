@@ -113,13 +113,13 @@ jobs:
         run: npm install --no-package-lock --no-audit --no-fund --ignore-scripts
       - name: Unit tests
         run: npm test
-      # The skill gate setup admits every skill by: Lean's kernel proves its theorems in this process, then the
-      # skill prism-code ships is judged by it, as setup judges it before writing it.
+      # The skill gate every skill is judged by: Lean's kernel proves its theorems in this process, then the
+      # skill prism-code ships is judged by it, as copied out of the package.
       - name: The skill gate is proved, and the shipped skill passes it
         shell: bash
         run: |
-          node bin/prism-code.mjs verify --lean --project skill/gate
-          mkdir -p "$RUNNER_TEMP/skill/prism" && cp skill/SKILL.md "$RUNNER_TEMP/skill/prism/"
+          node bin/prism-code.mjs check --project skill/gate
+          node bin/prism-code.mjs skill --out "$RUNNER_TEMP/skill/prism"
           node bin/prism-code.mjs skill verify "$RUNNER_TEMP/skill/prism"
       - name: The init templates are their fixtures
         run: node scripts/sync-templates.mjs --check

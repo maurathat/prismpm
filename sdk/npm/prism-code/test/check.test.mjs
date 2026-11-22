@@ -286,21 +286,16 @@ test('the committed verdict goldens are what check prints; the Rust CLI holds it
   }
 });
 
-test('check without a holo is a usage error naming build --check, which checks the model as WebAssembly with no Docker (#584)', () => {
-  const project = mkdtempSync(join(tmpdir(), 'prism-code-lock-'));
-  writeFileSync(join(project, 'prismpm.lock'), JSON.stringify({ spec: 'prismpm/sdk-lock/2', sdk_image: IMAGE }));
-  writeFileSync(join(project, 'lexlean.toml'), 'spec = "lexlean/project/1"\n');
-  const env = { PRISM_CODE_DRY_RUN: '1', PRISM_HOME: mkdtempSync(join(tmpdir(), 'prism-home-')) };
-  const old = run(['check', '--verbose'], { cwd: project, env });
-  assert.equal(old.code, 64, old.err);
-  assert.match(old.err, /check takes a holo; the model check is prism-code build --check/);
-  assert.doesNotMatch(old.err, /0\.4\.0/);
-  assert.equal(old.out, '');
-  const current = run(['build', '--check'], { cwd: project, env });
-  assert.equal(current.code, 0, current.err);
-  assert.equal(current.err, '');
-  assert.equal(current.out, 'wasm check .\n');
-  assert.doesNotMatch(current.out, /docker|prismpm check/, 'build --check runs no image');
-  assert.equal(run(['build', '--check', '--verbose'], { cwd: project, env }).code, 64, 'prismpm check\'s own flags are gone with it');
-  assert.ok(run(['build'], { cwd: project, env }).out.includes(`${IMAGE} prismpm build`), 'a full build still runs in the image');
+test('check without a holo judges the project: its model is checked and proved in this process, and a folder with none is refused', () => {
+  const empty = mkdtempSync(join(tmpdir(), 'prism-code-empty-'));
+  const env = { PRISM_HOME: mkdtempSync(join(tmpdir(), 'prism-home-')) };
+  const unknown = run(['check', '--verbose'], { cwd: empty, env });
+  assert.equal(unknown.code, 64, unknown.err);
+  assert.match(unknown.err, /^check has no option --verbose/);
+  const none = run(['check', '--json'], { cwd: empty, env });
+  assert.equal(none.code, 2, none.err);
+  const report = JSON.parse(none.out);
+  assert.deepEqual([report.schema, report.ok, report.command], ['prism/report/1', false, 'check']);
+  assert.equal(report.diagnostics[0].code, 'tier.project');
+  for (const removed of ['--local', '--hosted', '--remote=github']) assert.equal(run(['build', removed], { cwd: empty, env }).code, 64, removed);
 });

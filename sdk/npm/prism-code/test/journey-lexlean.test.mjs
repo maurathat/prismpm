@@ -11,7 +11,6 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { appDir, sourceFiles, startApp, starters } from '../src/journey/project.mjs';
 import { build, check, prove, tryRequest } from '../src/journey/engine.mjs';
-import { INSTRUCTIONS, TOOLS, createServer } from '../src/journey/mcp.mjs';
 import { ruleTable } from '../src/journey/rule-table.mjs';
 import { PARKING, ruleAppSnapshot } from './support/snapshot.mjs';
 import { snapshotOf, startedApp } from './support/started-app.mjs';
@@ -176,38 +175,4 @@ test('a snapshot that is not a rule app\'s is refused by name, never guessed at'
   const lambda = structuredClone(good);
   lambda.modules[0].semantic.declarations[3].body = { kind: 'add', left: { kind: 'nat', value: '0' }, right: { kind: 'nat', value: '0' } };
   assert.throws(() => ruleTable(lambda), { code: 'rule-table.term' });
-});
-
-test('the server offers the LexLean path and no other: four tools named as Docker names them, no spec, and what runs without Docker said plainly', async () => {
-  assert.deepEqual(TOOLS.map((t) => t.name), ['prism_init', 'prism_build', 'prism_run', 'prism_inspect', 'prism_push', 'prism_pull']);
-  assert.deepEqual(TOOLS.find((t) => t.name === 'prism_run').inputSchema.required, ['request']);
-  assert.ok(!/spec\.json|prism\/spec|prism_spec|prism_answer/.test(JSON.stringify(TOOLS) + INSTRUCTIONS));
-  for (const name of ['prism_init', 'prism_build', 'prism_run', 'prism_inspect']) assert.ok(INSTRUCTIONS.includes(name), name);
-  assert.match(INSTRUCTIONS, /No step needs Docker, an image or a server\. LexLean runs as WebAssembly/);
-  assert.ok(!/hosted/i.test(JSON.stringify(TOOLS) + INSTRUCTIONS));
-  assert.match(INSTRUCTIONS, /Never set PRISM_CODE_TIER yourself/);
-  const sent = [];
-  const server = createServer({ cwd: mkdtempSync(join(tmpdir(), 'prism-mcp-')), send: (m) => sent.push(m) });
-  const call = async (name, args = {}) => {
-    await server.handle({ jsonrpc: '2.0', id: sent.length + 1, method: 'tools/call', params: { name, arguments: args } });
-    return sent.at(-1).result;
-  };
-  const list = (await call('prism_init')).structuredContent;
-  assert.deepEqual(list.starters.map((s) => s.starter), ['rule-app', 'decision-app', 'stateful-app']);
-  assert.match(list.next, /call prism_init again/);
-  assert.match(list.nextSteps[0], /Phase 3/);
-  assert.equal((await call('prism_build')).structuredContent.state, 'blocked');
-  assert.match((await call('prism_run')).content[0].text, /prism_run needs `request`/);
-  assert.match((await call('prism_init', { spec: {} })).content[0].text, /does not take `spec`/);
-  const started = (await call('prism_init', { starter: 'rule-app' })).structuredContent;
-  assert.equal(started.model, 'src/App.lex.tex');
-  assert.match(started.next, /then call prism_build\.$/);
-  const inspected = (await call('prism_inspect')).structuredContent;
-  assert.deepEqual([inspected.starter, inspected.files, inspected.audit], ['rule-app', ['src/App.lex.tex', 'src/Foundation/Bytes.lex.tex', 'src/Foundation/View/Text/V1/Model.lex.tex'], null]);
-  // The six tools are the only ones: an older name is not answered.
-  for (const name of ['prism_start', 'prism_check', 'prism_prove', 'prism_verify', 'prism_try', 'prism_status']) {
-    await server.handle({ jsonrpc: '2.0', id: sent.length + 1, method: 'tools/call', params: { name, arguments: {} } });
-    assert.match(sent.at(-1).error?.message ?? '', new RegExp(`Unknown tool: ${name}`), name);
-  }
-  assert.equal((await call('prism_init')).structuredContent.greeting, 'Welcome back.');
 });

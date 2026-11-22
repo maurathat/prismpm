@@ -381,8 +381,9 @@ export function formatInspection(inspection) {
     ],
     '  ',
   );
+  // A holo whose model document inspect cannot summarize has none: it is said, and nothing is guessed.
   const d = i.model;
-  const model = fields(
+  const model = !d ? '  not summarized: the model document is not one this inspection reads' : fields(
     [
       ['Schema', orNone(d.schema)],
       ['Name', d.name ?? 'unnamed'],
@@ -397,7 +398,7 @@ export function formatInspection(inspection) {
     '  ',
   );
   const p = i.provenance;
-  const provenance = fields(
+  const provenance = !p ? '  not summarized: the provenance document is not one this inspection reads' : fields(
     [
       ['Schema', orNone(p.schema)],
       ['Application', orNone(p.application_kappa)],

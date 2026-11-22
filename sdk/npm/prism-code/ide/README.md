@@ -2,7 +2,7 @@
 
 A browser-first IDE for Prism apps: the editor and extension host of `@codingame/monaco-vscode-api`, with every call an extension makes to the page judged by LexLean models before it runs.
 
-This folder is a spike. It is not in the published `prism-code` package, and `prism-code setup` does not install or open it.
+This folder is a spike. It is not in the published `prism-code` package, and `prism-code init` does not install or open it.
 
 ## What decides
 

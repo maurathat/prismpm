@@ -1,5 +1,5 @@
 /**
- * Containers: one run of a holo as an object with Docker's states (issue #348,
+ * Containers: one run of a holo as an object with the container tool's states (issue #348,
  * docs/proposals/348-container-lifecycle.md). A container is created from an
  * image and an input, is started once or again, and is kept with its exit code
  * and output until it is removed.
@@ -179,7 +179,7 @@ class Container {
     return this.#error;
   }
 
-  /** The output the guest returned, as `docker logs` serves it: from the record, so a container read back from its store has it too. Empty before any run. */
+  /** The output the guest returned, as the container tool's `logs` serves it: from the record, so a container read back from its store has it too. Empty before any run. */
   async logs(options) {
     if (options !== undefined && (options === null || typeof options !== 'object' || Object.keys(options).length > 0)) fail('container.option', 'logs takes no options: a run returns one output, kept on the record');
     if (this.#removed) fail('container.missing', `no such container: ${this.id}`);
@@ -208,7 +208,7 @@ class Container {
   /**
    * Run the holo, and resolve to this container once it has exited. A second
    * call while it runs joins that run; a call after it exited runs it again
-   * from the same input, as `docker start` does. A failure of the run is the
+   * from the same input, as the container tool's `start` does. A failure of the run is the
    * exit code, never a rejection.
    */
   start() {
@@ -287,7 +287,7 @@ class Container {
     return structuredClone(this.#record);
   }
 
-  /** Remove the container and its record. A running container is refused, as Docker refuses it without `--force`. */
+  /** Remove the container and its record. A running container is refused, as a container tool refuses it without `--force`. */
   async remove() {
     if (this.#removed) fail('container.missing', `no such container: ${this.id}`);
     if (this.#inFlight !== null) fail('container.running', `container ${this.id} is running and cannot be removed`);
@@ -301,7 +301,7 @@ const utf8Encoder = new TextEncoder();
  * The `containers` namespace over a loader and a store. `load` opens an image;
  * `store` keeps the records; `warn` receives the warning of an unverified run.
  * `onEvent` receives each lifecycle event, `{ action, id, image, exitCode }` with
- * Docker's actions `create`, `start`, `die` and `destroy`; the client passes the
+ * The container tool's actions `create`, `start`, `die` and `destroy`; the client passes the
  * bus `system.events` reads (#446). An `onEvent` that throws does not stop a run.
  */
 export function createContainers({ load, store = memoryContainerStore(), warn = (message) => console.warn(`prism-code: ${message}`), onEvent = null, volumes: volumeScope = {} }) {
@@ -320,7 +320,7 @@ export function createContainers({ load, store = memoryContainerStore(), warn = 
   /**
    * Open the image and make a container in state `created`. An image that
    * cannot be opened makes no container: this rejects with its typed error, as
-   * `docker create` fails on an image it cannot find.
+   * The container tool's `create` fails on an image it cannot find.
    */
   async function create(image, input, options = {}) {
     const { policy, allowUnverified = false, rm = false, volumes, ...loadOptions } = options;
@@ -376,7 +376,7 @@ export function createContainers({ load, store = memoryContainerStore(), warn = 
     return container;
   }
 
-  /** Every container in the store, oldest first: running ones only, as `docker ps`, unless `all`. */
+  /** Every container in the store, oldest first: running ones only, as the container tool's `ps`, unless `all`. */
   async function list(options = {}) {
     const { all = false, ...rest } = options;
     if (Object.keys(rest).length > 0) fail('container.option', `containers.list has no option ${Object.keys(rest).join(', ')}; it takes all`);
@@ -391,7 +391,7 @@ export function createContainers({ load, store = memoryContainerStore(), warn = 
 
   /**
    * Remove every exited container, or those that finished before `until`
-   * (milliseconds since the epoch), as `docker container prune` does. A created or
+   * (milliseconds since the epoch), as the container tool's `container prune` does. A created or
    * running container is kept. `spaceReclaimed` is the bytes of the records' JSON.
    */
   async function prune(options = {}) {

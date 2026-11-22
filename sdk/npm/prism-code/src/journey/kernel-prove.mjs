@@ -1,6 +1,6 @@
 /**
  * Check a rule app's guarantees with Lean's own kernel, in this process: no
- * Docker, no Lean toolchain, no server.
+ * A container tool, no Lean toolchain, no server.
  *
  * The kernel is Lean 4.32.1's C++ kernel compiled to WebAssembly, and the
  * library is the export of one lemma Lean proved once for every rule app

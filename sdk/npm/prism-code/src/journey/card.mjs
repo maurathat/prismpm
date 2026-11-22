@@ -1,8 +1,8 @@
 /**
  * The LexLean an agent needs to write a Prism app, on one card: the forms the starters use, the rules LexLean holds
  * them to, and the one proof the kernel finds for a guarantee. LexLean's vocabulary is closed, so a guessed form is
- * refused; this card is what prism_init hands the agent before its first edit. Every form here is a starter's. Its
- * examples, put in the decision-app starter's two modules as written, check and are proved by prism_build (one
+ * refused; this card is what the Prism skill hands the agent before its first edit (skill/references/lexlean-1.2.md). Every form here is a starter's. Its
+ * examples, put in the decision-app starter's two modules as written, check and are proved by prism-code check (one
  * theorem, 2026-11-20); test/card.test.mjs holds the card's rules to the starters' own text.
  */
 export const LEXLEAN_CARD = `LexLean, as a Prism app uses it. Edit the starter; keep its header lines as they are.
@@ -43,4 +43,4 @@ theorem{
 - Declare axioms: [Quot.sound, propext]. A proof that needs fewer is still proved, and said.
 - Lean's kernel proves linear_arithmetic, decide and reflexivity proofs here; any other proof kind is reported not proved.
 
-After every edit: prism_build. It returns the first problem with the exact fix, or every theorem with whether Lean proved it.`;
+After every edit: npx prism-code check --json. It returns the first problem with the exact fix, or how many theorems Lean proved.`;

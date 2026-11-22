@@ -37,3 +37,5 @@ sdk/npm/prism-code/skill/gate/lean-toolchain text eol=lf
 
 # The IDE kernels are locked and verified over their exact bytes, and LexLean refuses CRLF.
 sdk/npm/prism-code/model/ide-*/** text eol=lf
+# The files prism-code pins and ships: each is admitted by the BLAKE3 label of its exact bytes, so none is text.
+sdk/npm/prism-code/wasm/pinned/** -text

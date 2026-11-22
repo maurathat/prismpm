@@ -29,7 +29,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LEXLEAN_WASM, ensureLexleanWasm, lexleanWasmFile } from '../../src/journey/lexlean-wasm.mjs';
 import { ensureKernel, hasKernel, readKernelFile } from '../../src/journey/kernel-store.mjs';
-import { pinnedFile } from '../../src/journey/kappa-store.mjs';
+import { keptFile } from '../../src/journey/kappa-store.mjs';
 import { MODEL_KERNEL_FILES, ensureModelKernel } from '../../src/journey/model-prove.mjs';
 import { EVALUATOR_GUEST } from '../../src/journey/model-guest.mjs';
 import { appDir, startApp } from '../../src/journey/project.mjs';
@@ -69,7 +69,7 @@ await ensureModelKernel();
 mkdirSync(join(site, 'model-kernel'));
 const modelPin = (name) => ({ kappa: MODEL_KERNEL_FILES[name].kappa, url: name, encoding: MODEL_KERNEL_FILES[name].encoding });
 for (const name of Object.keys(MODEL_KERNEL_FILES)) {
-  const kept = process.env.PRISM_MODEL_KERNEL_DIR ? join(process.env.PRISM_MODEL_KERNEL_DIR, name) : pinnedFile(MODEL_KERNEL_FILES[name].kappa);
+  const kept = process.env.PRISM_MODEL_KERNEL_DIR ? join(process.env.PRISM_MODEL_KERNEL_DIR, name) : keptFile(MODEL_KERNEL_FILES[name].kappa);
   cpSync(kept, join(site, 'model-kernel', name));
 }
 writeFileSync(join(site, 'model-kernel', 'pins.json'), JSON.stringify({ loader: modelPin('lean-kernel.mjs'), kernel: modelPin('lean-kernel.wasm.gz'), library: modelPin('base.ndjson.gz') }) + '\n');

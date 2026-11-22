@@ -7,7 +7,7 @@
  * from the container records instead: a record's `created`, `startedAt` and
  * `finishedAt` are its create, start and die, and a record that goes away while
  * the stream is open is its destroy. Without `--until` it follows the store, as
- * `docker events` follows the daemon, until interrupted.
+ * The container tool's `events` follows the daemon, until interrupted.
  */
 import { resolve } from 'node:path';
 import { Prism } from '../node.mjs';
@@ -58,7 +58,7 @@ export function context(io = {}) {
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
-/** Docker's `--since` and `--until`: an ISO 8601 time, Unix seconds, or a duration before now (`90s`, `10m`, `2h`). */
+/** The container tool's `--since` and `--until`: an ISO 8601 time, Unix seconds, or a duration before now (`90s`, `10m`, `2h`). */
 export function parseTime(name, value, now = Date.now()) {
   if (value === undefined) return undefined;
   const ago = /^(\d+(?:\.\d+)?)(ms|s|m|h)$/.exec(value);
@@ -157,7 +157,7 @@ async function events(argv, io) {
       if (!quiet) emit(e);
     }
   };
-  // Without --since only what happens from now on is new, as with `docker events`.
+  // Without --since only what happens from now on is new, as with the container tool's `events`.
   show(seen, since === undefined);
   // Follow the store until --until, or until interrupted (Ctrl-C, or `io.signal`).
   let stop = io.signal?.aborted === true;

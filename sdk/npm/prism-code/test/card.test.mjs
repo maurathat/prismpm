@@ -44,3 +44,8 @@ test('the card\'s forms are the starters\': constants, records, fields, comparis
   // As types: the words may appear in a title or a string, never where a type is written.
   assert.doesNotMatch(all, /(result|type): (Boolean|Natural)\b/);
 });
+
+test('the skill reference an agent reads is this card, whole', () => {
+  const reference = readFileSync(new URL('../skill/references/lexlean-1.2.md', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  assert.ok(reference.includes(LEXLEAN_CARD), 'skill/references/lexlean-1.2.md no longer holds the card; write it again from src/journey/card.mjs');
+});

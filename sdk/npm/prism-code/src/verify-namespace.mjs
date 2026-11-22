@@ -3,7 +3,7 @@
  * (issue #449, design proposal #440). Every trust decision is meant to live in
  * this module, and in no other.
  *
- * Each member is the existing code under a Docker-SDK shaped name, so a verdict
+ * Each member is the existing code under a container-SDK shaped name, so a verdict
  * from here equals the one `experimental_verify`, `check` and `@prism-code/verify`
  * return. The one rule this file adds is `withoutEvidence`. Nothing that exists is
  * renamed; that is #347. `createPrism` does not expose this yet; that is #441.

@@ -534,7 +534,7 @@ pub fn run_at(root: &Path, id: &str) {
                 ("sdk/npm/prism-code/test/archive.test.mjs", 12),
                 ("sdk/npm/prism-code/test/blake3.test.mjs", 3),
                 ("sdk/npm/prism-code/test/canonical.test.mjs", 2),
-                ("sdk/npm/prism-code/test/cli.test.mjs", 9),
+                ("sdk/npm/prism-code/test/cli.test.mjs", 7),
                 ("sdk/npm/prism-code/test/closure.test.mjs", 5),
                 ("sdk/npm/prism-code/test/node.test.mjs", 2),
             ],
@@ -884,7 +884,7 @@ pub fn run_at(root: &Path, id: &str) {
         "DK-46" => node_suite::verify_exact(
             root,
             id,
-            &[("sdk/npm/prism-code/test/journey-lexlean.test.mjs", 12)],
+            &[("sdk/npm/prism-code/test/journey-lexlean.test.mjs", 11)],
             "600000",
         ),
         // LexLean's front end as WebAssembly in prism-code (Phase 3).
@@ -901,11 +901,11 @@ pub fn run_at(root: &Path, id: &str) {
             &[("sdk/npm/prism-code/test/webgpu-bridge-model.test.mjs", 6)],
             "600000",
         ),
-        // The six agent tools and an app as one BLAKE3-addressed bundle (prism_push, prism_pull).
+        // An app as one BLAKE3-addressed bundle, pushed and pulled by its address.
         "DK-49" => node_suite::verify_exact(
             root,
             id,
-            &[("sdk/npm/prism-code/test/agent-tools.test.mjs", 8)],
+            &[("sdk/npm/prism-code/test/app-bundle.test.mjs", 5)],
             "600000",
         ),
         // A text application's holo built with nothing compiled: the evaluator guest and the model's program.

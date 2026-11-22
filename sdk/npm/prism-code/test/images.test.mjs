@@ -18,10 +18,9 @@ import { experimental_verify } from '../src/verify.mjs';
 import { inspect as inspectHolo } from '../src/inspect.mjs';
 import { experimental_pull, experimental_push } from '../src/push-pull.mjs';
 import { createPrism } from '../src/index.mjs';
-import { hostDockerArguments } from '../src/host.mjs';
 
-// The client's Docker host, without probing this machine for a daemon, as `PRISM_CODE_DRY_RUN` does for the CLI.
-const hostDocker = (request) => hostDockerArguments({ ...request, probe: false });
+// The builder a caller hands the client. prism-code starts none of its own, so this is a stand-in.
+const hostDocker = (request) => ({ command: 'builder', args: [request.image, 'prismpm', request.command, ...request.args], display: `builder ${request.image}` });
 import { createImages, images, IMAGE_BUILD_SCHEMA, IMAGE_INSPECTION_SCHEMA, IMAGE_PULL_SCHEMA, IMAGE_PUSH_SCHEMA } from '../src/images-namespace.mjs';
 import { startRegistry } from './support/registry.mjs';
 
@@ -561,7 +560,7 @@ test('build runs the builder image the lock pins and returns the image it made, 
   const { root, calls, images: built } = project({ result: BUILD_RESULT, logs: 'compiling\n', write: (at) => { folder = buildDirectory(at); } });
   const result = await built.build({ path: root });
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].command, 'docker');
+  assert.equal(calls[0].command, 'builder');
   assert.equal(calls[0].options.cwd, root);
   assert.ok(calls[0].args.includes(IMAGE));
   assert.deepEqual(calls[0].args.slice(calls[0].args.indexOf(IMAGE) + 1), ['prismpm', 'build', '--json']);
@@ -576,7 +575,7 @@ test('build runs the builder image the lock pins and returns the image it made, 
   assert.equal((await images.push('app:1', { source: result.bytes, store })).digest, result.digest);
 });
 
-test('build passes Docker\'s flag names as prismpm\'s, each as one argument, and the docker call is the CLI\'s', async () => {
+test('build passes Docker\'s flag names as prismpm\'s, each as one argument', async () => {
   const { root, calls, images: built } = project({ result: BUILD_RESULT, write: (at) => buildDirectory(at) });
   await built.build({ path: root, file: 'other.toml', locked: true, update: true, release: 'stable' });
   const args = calls[0].args.slice(calls[0].args.indexOf(IMAGE) + 1);
@@ -585,10 +584,6 @@ test('build passes Docker\'s flag names as prismpm\'s, each as one argument, and
   await built.build({ path: root, tag: '--update' }).catch(() => {});
   assert.ok(calls[1].args.includes('--tag=--update'));
   assert.ok(!calls[1].args.slice(calls[1].args.indexOf(IMAGE)).includes('--update'));
-
-  const cli = spawnSync(process.execPath, [bin, 'build', '--json', '--config=other.toml', '--release=stable', '--locked', '--update'], { cwd: root, encoding: 'utf8', env: { ...process.env, PRISM_CODE_DRY_RUN: '1' } });
-  assert.equal(cli.status, 0, cli.stderr);
-  assert.equal(cli.stdout.trim(), `docker ${calls[0].args.join(' ')}`);
 });
 
 test('a tagged build returns the image of the verified release it made', async () => {

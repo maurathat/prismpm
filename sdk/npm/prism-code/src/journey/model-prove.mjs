@@ -1,6 +1,6 @@
 /**
  * Prove any app's theorems in this process, with no Lean toolchain, no
- * Docker and no server: the kernel path.
+ * A container tool and no server: the kernel path.
  *
  * LexLean (WebAssembly, lexlean-wasm.mjs) gives the model's semantic snapshot.
  * The snapshot is lowered to Lean kernel declarations (vendor/kernel-path/lower.mjs),
@@ -13,9 +13,10 @@
  * the lowering decides is what each statement means, and every declaration it
  * writes is the one LexLean's model names.
  *
- * The kernel, its loader and the base library are fetched once per machine
- * into the pinned store, each admitted only when it decodes to its BLAKE3
- * label, or read from `PRISM_MODEL_KERNEL_DIR` by name. The request names no
+ * The kernel, its loader and the base library ship in the package (`wasm/pinned/`),
+ * each admitted only when it decodes to its BLAKE3 label. A package without them
+ * fetches each once per machine into the pinned store; `PRISM_MODEL_KERNEL_DIR`
+ * names a folder to read them from by name. The request names no
  * app and carries nothing of the user's.
  */
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -24,7 +25,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { buildFetch } from './hosts.mjs';
-import { admittedLabel, kappaDirectory, pinnedFile, writeAtomic } from './kappa-store.mjs';
+import { admittedLabel, kappaDirectory, keptFile, pinnedFile, writeAtomic } from './kappa-store.mjs';
 // The UOR content-addressed label, BLAKE3: what this machine keeps is named by it.
 import { kappa } from '../blake3.mjs';
 import { COVERED } from '../vendor/kernel-path/plan.mjs';
@@ -50,7 +51,8 @@ const fileOf = (name, env) => (env.PRISM_MODEL_KERNEL_DIR ? join(env.PRISM_MODEL
 
 /** One kept file's decoded bytes, admitted when they have its κ-label. Throws `ModelKernelMissing` otherwise. */
 function readFile(name, env) {
-  const file = fileOf(name, env);
+  // Read from the store, else from the package's own copy; a fetched file is written to the store only (fileOf).
+  const file = env.PRISM_MODEL_KERNEL_DIR ? fileOf(name, env) : keptFile(MODEL_KERNEL_FILES[name].kappa, env);
   if (!existsSync(file)) throw new ModelKernelMissing(`${name} is not on this machine yet`);
   const bytes = readFileSync(file);
   if (admittedLabel(bytes) !== MODEL_KERNEL_FILES[name].kappa) throw new ModelKernelMissing(`${file} is not the pinned ${name}`);

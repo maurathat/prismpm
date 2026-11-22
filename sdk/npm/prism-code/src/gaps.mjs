@@ -21,7 +21,7 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
-import { prismHome } from './agents.mjs';
+import { prismHome } from './home.mjs';
 import { VERSION } from './version.mjs';
 
 export const GAPS_SCHEMA = 'prism/gaps/1';

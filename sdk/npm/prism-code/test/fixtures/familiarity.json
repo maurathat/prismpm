@@ -12,7 +12,7 @@
     { "prism": "prism-code push $IMAGE $REGISTRY/calc:1", "why": "a registry that holds the Calculator image; Docker's push takes no file" }
   ],
   "cli": [
-    { "task": "build", "docker": "docker build", "exit": 0, "stdout": "^docker run .* prismpm build$", "note": "PrismPM builds in the builder image the lock pins; the check runs it as PRISM_CODE_DRY_RUN, which prints the Docker command" },
+    { "task": "build", "docker": "docker build", "exit": 0, "stdout": "^ok +build", "note": "prism-code builds in this process: the model is checked, every theorem proved and the app written with nothing compiled; the check runs it in a starter project" },
     { "task": "pull", "docker": "docker pull $REGISTRY/calc:1", "exit": 0, "stdout": "blake3:[0-9a-f]{64}" },
     { "task": "list images", "docker": "docker images", "exit": 0, "stdout": "calc" },
     { "task": "list images", "docker": "docker image ls", "exit": 0, "stdout": "calc" },
