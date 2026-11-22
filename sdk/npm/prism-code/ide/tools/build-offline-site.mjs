@@ -2,6 +2,10 @@
 // Usage: node tools/build-offline-site.mjs <out dir> [commit]
 //
 //   <out>/offline.json   every file of the site with its BLAKE3 label and size: { schema, commit, files: { path: { kappa, bytes } } }
+//   <out>/ide.json       the one label of the whole site: the BLAKE3 label of offline.json's bytes, with their size, the
+//                        commit and the page the IDE starts at. An app, a frame or a shell names the IDE by this label:
+//                        it reads offline.json, takes it only when its bytes derive to the label, and then takes each
+//                        file only as the bytes the listing names. Nothing here checks itself.
 //   <out>/sw.js          the service worker: prism-code's blake3.mjs, then ide/offline/sw-body.js
 //
 // The worker is one classic script, since not every browser starts a worker written as a module. prism-code's
@@ -13,6 +17,15 @@ import { fileURLToPath } from 'node:url';
 import { kappa } from '../../src/blake3.mjs';
 
 export const OFFLINE_SCHEMA = 'prism-ide/offline-site/1';
+export const IDE_SCHEMA = 'prism-ide/label/1';
+/** The page of the site the IDE starts at, as a path of the listing. */
+export const IDE_ENTRY = 'edit/ide/index.html';
+
+/** What names the whole site by one label: `listingBytes` are offline.json exactly as it is published. */
+export function ideLabel(listingBytes, commit) {
+  const listing = JSON.parse(new TextDecoder().decode(listingBytes));
+  return { schema: IDE_SCHEMA, kappa: kappa(listingBytes), bytes: listingBytes.length, listing: 'offline.json', entry: listing.files?.[IDE_ENTRY] ? IDE_ENTRY : null, files: Object.keys(listing.files ?? {}).length, commit };
+}
 const ide = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** The worker's source: blake3.mjs with nothing exported, then the worker's own body. */
@@ -34,7 +47,8 @@ export function offlineListing(out, commit) {
       if (statSync(at).isDirectory()) { walk(at); continue; }
       const path = relative(out, at).split('\\').join('/');
       // A static host publishes no dot-file, and the worker cannot be the one to check itself or its listing.
-      if (path === 'offline.json' || path === 'sw.js' || path.split('/').some((part) => part.startsWith('.'))) continue;
+      // Nor can the listing hold the file that names the listing by its label.
+      if (path === 'offline.json' || path === 'ide.json' || path === 'sw.js' || path.split('/').some((part) => part.startsWith('.'))) continue;
       const bytes = readFileSync(at);
       files[path] = { kappa: kappa(bytes), bytes: bytes.length };
     }
@@ -48,8 +62,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (!outArg) { console.error('usage: node tools/build-offline-site.mjs <out dir> [commit]'); process.exit(64); }
   const out = resolve(outArg);
   const listing = offlineListing(out, commit);
-  writeFileSync(join(out, 'offline.json'), JSON.stringify(listing) + '\n');
+  const listingBytes = new TextEncoder().encode(JSON.stringify(listing) + '\n');
+  writeFileSync(join(out, 'offline.json'), listingBytes);
+  const label = ideLabel(listingBytes, commit);
+  writeFileSync(join(out, 'ide.json'), JSON.stringify(label) + '\n');
   writeFileSync(join(out, 'sw.js'), workerSource());
   const total = Object.values(listing.files).reduce((sum, file) => sum + file.bytes, 0);
   console.log(`offline: ${Object.keys(listing.files).length} files, ${(total / 1048576).toFixed(1)} MiB, each named by its BLAKE3 label; commit ${commit}`);
+  console.log(`ide: ${label.kappa} names the whole site (offline.json, ${label.bytes} bytes)`);
 }

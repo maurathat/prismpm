@@ -100,7 +100,7 @@ async function unlisted(request, path) {
 async function answer(request) {
   const url = new URL(request.url);
   const path = listedPath(url);
-  if (path === null || path === LISTING || path === 'sw.js') return fetch(request);
+  if (path === null || path === LISTING || path === 'ide.json' || path === 'sw.js') return fetch(request);
   if (request.mode === 'navigate' || listing === null) await refreshListing();
   const entry = listing?.files?.[path];
   if (!entry) return unlisted(request, path);
