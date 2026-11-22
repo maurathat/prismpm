@@ -22,7 +22,8 @@ This directory contains Architecture Decision Records for PrismPM, documenting s
 | [014](014-bootstrap-digest-pin-scope.md) | Partial Bootstrap Digest Pin Scope (PP5008) | Proposed | 2026-09-22 |
 | [015](015-dual-digests.md) | Dual Digests, BLAKE3 Native Plus sha256 | Superseded by 017 | 2026-10-23 |
 | [016](016-holo-canonical-bytes-and-version-policy.md) | `.holo` Normative Home, Canonical Bytes, and Version Policy | Proposed, amended by 017 | 2026-10-29 |
-| [017](017-holo-v5-uorc-archive.md) | Holo v5, a Prism Application Is a UORC Archive Named by κ | Proposed | 2026-11-13 |
+| [017](017-holo-v5-uorc-archive.md) | Holo v5, a Prism Application Is a UORC Archive Named by κ | Proposed, amended by 018 | 2026-11-13 |
+| [018](018-blake3-content-address.md) | BLAKE3 Is the Content Address of Every Prism App | Proposed | 2026-11-21 |
 
 ## Summary of Resolved Dissonance
 
