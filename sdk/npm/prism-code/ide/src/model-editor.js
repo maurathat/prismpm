@@ -59,7 +59,10 @@ if ('serviceWorker' in navigator) {
 // The edit page's files, served beside this page. Plain URLs, so the bundler leaves the workers as they are.
 // This page lives in the edit page's folder, at ide/, wherever that folder is published.
 const EDIT = new URL('../', location.href).href;
-const json = async (url) => (await fetch(url, { cache: 'no-store' })).json();
+// A fresh copy when the network gives one; when that request fails, as it does in a browser switched to work offline,
+// the same address asked plainly, which the site's worker answers from what it keeps.
+const fresh = (url) => fetch(url, { cache: 'no-store' }).catch(() => fetch(url));
+const json = async (url) => (await fresh(url)).json();
 // ?project=<address of a folder> opens the model published there: its project.json lists its files, which are
 // fetched from that folder. Without it, the model that came with the page is opened.
 const asked = new URLSearchParams(location.search).get('project');
@@ -88,7 +91,7 @@ if (BY_LABEL) {
 } else try {
   [listing, pin] = await Promise.all([json(PROJECT ? PROJECT + 'project.json' : EDIT + 'project.json'), json(EDIT + 'pin.json')]);
   await Promise.all(listing.files.map(async (path) => {
-    const response = await fetch((PROJECT ?? EDIT + 'project/') + path, { cache: 'no-store' });
+    const response = await fresh((PROJECT ?? EDIT + 'project/') + path);
     if (!response.ok) throw new Error(path + ' answered ' + response.status);
     files['/' + path] = await response.text();
   }));
