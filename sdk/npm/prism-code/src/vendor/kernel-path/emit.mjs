@@ -36,6 +36,9 @@ const E = {
 };
 const Prop = () => E.sort(L.zero);
 const apps = (f, ...args) => args.reduce((acc, a) => E.app(acc, a), f);
+// A debugging switch from the environment. A browser worker has no `process`: there every switch is off, as in Node
+// with the variable unset, so the same model gets the same proofs in a page as in Node.
+const envFlag = (name) => globalThis.process?.env?.[name];
 
 // ---------- the library: names, levels, expressions, constant types ----------
 export function loadLibrary(text) {
@@ -682,6 +685,8 @@ export function emitter(base) {
       const [g, a] = spine(P);
       if (g.k === "const" && g.name === "Eq" && a.length === 3 && (isType(a[0], "Int") || isType(a[0], "Nat"))) {
         const ty = a[0].name, A = intR(views[ty](a[1])), B = intR(views[ty](a[2]));
+        // Kept as it is too: a goal it states is closed by it, with no lemma and so no axiom of its own.
+        eqs.set(P, h);
         fact(A, B, lemma(ty === "Int" ? "le_of_eq'" : "nat_eq_le", a[1], a[2], h)); return fact(B, A, lemma(ty === "Int" ? "ge_of_eq'" : "nat_eq_ge", a[1], a[2], h));
       }
       if (g.k === "const" && g.name === "Eq" && a.length === 3 && isType(a[0], "Bool") && a[2] === c0("Bool.true")) {
@@ -715,7 +720,7 @@ export function emitter(base) {
         if (e.name === "Nat.blt" && b.length === 2) return hypothesis(truth ? ltN(b[0], b[1]) : leN(b[1], b[0]), lemma(truth ? "nat_blt_t" : "nat_blt_f", b[0], b[1], h));
         if (e.name === "Nat.ble" && b.length === 2) return hypothesis(truth ? leN(b[0], b[1]) : ltN(b[1], b[0]), lemma(truth ? "nat_ble_t" : "nat_ble_f", b[0], b[1], h));
         if (e.name === "Nat.beq" && b.length === 2) {
-          if (truth) return hypothesis(eqN(b[0], b[1]), lemma("nat_beq_t", b[0], b[1], h));
+          if (truth) return hypothesis(eqN(b[0], b[1]), apps(c0("Nat.eq_of_beq_eq_true"), b[0], b[1], h));
           return split(lemma("nat_beq_f", b[0], b[1], h), ltN(b[0], b[1]), ltN(b[1], b[0]));
         }
         return;
@@ -748,6 +753,11 @@ export function emitter(base) {
       P = norm(P);
       const held = hyps.find((h) => h.type === P); // the goal is a hypothesis
       if (held) return { closed: held };
+      if (eqs.has(P)) return { closed: eqs.get(P) }; // an equation a hypothesis gives
+      {
+        const [g, a] = spine(P), flipped = g.k === "const" && g.name === "Eq" && a.length === 3 ? norm(apps(g, a[0], a[2], a[1])) : null;
+        if (flipped && eqs.has(flipped)) return { closed: apps(E.const("Eq.symm", g.us), a[0], a[2], a[1], eqs.get(flipped)) };
+      }
       const unfolded = unfoldHead(P);
       if (unfolded) return plan0(unfolded); // a proof of the unfolded goal is a proof of the goal
       const [g, a] = spine(P);
@@ -800,6 +810,8 @@ export function emitter(base) {
       fail("unsupported: this form of goal");
     }
     const hyps = [];
+    // The integer and natural equations the hypotheses give, by their normal form, each with its proof.
+    const eqs = new Map();
     const propHeads = ["Eq", "LE.le", "LT.lt", "And", "Or", "Not", "Iff"];
     for (const fv of fvs) if (!dataType(fv.type)) {
       const head = spine(fv.type)[0];
@@ -868,7 +880,7 @@ export function emitter(base) {
         rows = next;
         if (rows.length > 20000) fail("the search grew too large");
       }
-      if (!hit && process.env.TRACE) console.error("TRACE no certificate:", th.name, "facts", hs.length, "goal", JSON.stringify(g, (k, v) => typeof v === "bigint" ? String(v) : v).slice(0, 200), "atoms", atoms.map((t) => show(t)).join(" | ").slice(0, 1500));
+      if (!hit && envFlag("TRACE")) console.error("TRACE no certificate:", th.name, "facts", hs.length, "goal", JSON.stringify(g, (k, v) => typeof v === "bigint" ? String(v) : v).slice(0, 200), "atoms", atoms.map((t) => show(t)).join(" | ").slice(0, 1500));
       if (!hit) fail("no certificate found");
       // Keep only the cuts the refutation uses, and write multipliers in the order the checker holds its rows:
       // newest cut first, then the denied goal, then the hypotheses.
@@ -969,7 +981,7 @@ export function emitter(base) {
       if (p.and) return apps(c0("And.intro"), p.args[0], p.args[1], build(p.and[0]), build(p.and[1]));
       if (p.deferred) return fusion(p.P, p.deferred);
       if (p.parts) return p.join(build(p.parts[0]), build(p.parts[1]));
-      try { return p.wrap(p.cores.map((c) => core(c, facts, process.env.NOSPLIT ? signSites : [...splits, ...signSites]))); } catch (e) { if (th.cert) throw e; return fusion(p.P, e); }
+      try { return p.wrap(p.cores.map((c) => core(c, facts, envFlag("NOSPLIT") ? signSites : [...splits, ...signSites]))); } catch (e) { if (th.cert) throw e; return fusion(p.P, e); }
     };
     const proof = map(build(goalPlan), (n) => (n === rho ? tree(atoms) : null));
     let value = under(proof, fvs.length);
