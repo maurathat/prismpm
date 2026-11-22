@@ -113,6 +113,17 @@ forge_verified() {
     echo "event $(forge_event)"
   } > "$out"
   local dir receipt bundle kappa verdict name
+  # Sigstore's trusted root, fetched once for the run. Without it every `gh attestation verify` fetches and checks
+  # the root again, several seconds a receipt, and a run with a few hundred kept receipts outlasts its job.
+  # It is the root gh itself would fetch: the same check of the same bundle against the same signer.
+  # If it cannot be fetched, each receipt is verified as before, with gh fetching the root itself.
+  local root=target/factory/trusted-root.jsonl
+  local -a trusted=()
+  if gh attestation trusted-root > "$root" 2>/dev/null && [ -s "$root" ]; then
+    trusted=(--custom-trusted-root "$root")
+  else
+    echo "factory: the trusted root could not be fetched once; gh fetches it for each receipt" >&2
+  fi
   for dir in "$@"; do
     [ -d "$dir" ] || continue
     for receipt in "$dir"/*.receipt; do
@@ -120,7 +131,7 @@ forge_verified() {
       bundle=${receipt%.receipt}.jsonl
       [ -e "$bundle" ] || { echo "factory: $receipt has no bundle; ignored" >&2; continue; }
       if ! why=$(gh attestation verify "$receipt" --bundle "$bundle" --repo "$repo" \
-           --signer-workflow "$subject" 2>&1); then
+           --signer-workflow "$subject" "${trusted[@]}" 2>&1); then
         printf 'factory: %s does not verify; ignored:\n%s\n' "$receipt" "$why" >&2
         continue
       fi
