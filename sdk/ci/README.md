@@ -25,7 +25,7 @@ python3 -m unittest discover -s sdk/ci -p 'test_passive_readme_scope.py' -v
 cargo test --locked -p repo-conformance --test conformance conformance_rp_13 -- --exact
 ```
 
-`RP-13` checks the complete currently pinned **30-case** fixture inventory and refuses skipped/omitted cases. Additional repository conformance, model generation, Windows runner tests, reference-style Markdown links, HTML link interpretation, duplicate heading slugs, Unicode, symlink changes and trust-root forgery remain production-admission review targets. A green fixture run is *algorithm evidence*, not an independently released tool.
+`RP-13` checks the complete currently pinned **36-case** fixture inventory and refuses skipped/omitted cases. Additional repository conformance, model generation, Windows runner tests, reference-style Markdown links, HTML link interpretation, duplicate heading slugs, Unicode, symlink changes and trust-root forgery remain production-admission review targets. A green fixture run is *algorithm evidence*, not an independently released tool.
 
 ## Integration and release gates
 
