@@ -18,15 +18,16 @@ use super::{
     REVISION_2026_11_18, SOURCE_MANIFEST_VERSION,
 };
 use crate::holo::archive::{
-    declared_contract, encode_json, layers_v5, schemas_of, v5_entry, ManifestV5, ObjectV5,
-    CONTENT_OBJECTS, ROLES_V5, ROLE_ATTESTATIONS,
+    declared_contract, encode_json, layers_v5, optional_roles, schemas_of, snapshot_problem,
+    sources_problem, v5_entry, ManifestV5, ObjectV5, CONTENT_OBJECTS, ROLES_V5, ROLE_ATTESTATIONS,
 };
 use crate::holo::v5;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-fn row(format: v5::Format, index: usize, role: &str, bytes: &[u8]) -> Row {
-    let content = CONTENT_OBJECTS.contains(&index);
+fn row(format: v5::Format, index: usize, role: &str, bytes: &[u8], optional: usize) -> Row {
+    let content = CONTENT_OBJECTS.contains(&index)
+        || (ROLES_V5.len()..ROLES_V5.len() + optional).contains(&index);
     let kind = match index {
         0 => KIND_APP_MANIFEST,
         1 => KIND_METADATA,
@@ -58,13 +59,25 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
     let format = v5::format_of(bytes).unwrap_or(v5::Format::V5);
     let (manifest_schema, provenance_schema) = schemas_of(format);
     let seal_name = format.seal_name();
-    let roles_of = |index: usize| ROLES_V5.get(index).copied().unwrap_or(ROLE_ATTESTATIONS);
+    // A v6 may carry the optional snapshot and sources after `model`; its manifest's rows say which (ADR-018).
+    let optional = objects
+        .first()
+        .map(|manifest| optional_roles(format, manifest))
+        .unwrap_or_default();
+    let base = ROLES_V5.len() + optional.len();
+    let roles_of = |index: usize| {
+        ROLES_V5
+            .get(index)
+            .copied()
+            .or_else(|| optional.get(index - ROLES_V5.len()).copied())
+            .unwrap_or(ROLE_ATTESTATIONS)
+    };
     let rows = objects
         .iter()
         .enumerate()
-        .map(|(index, bytes)| row(format, index, roles_of(index), bytes))
+        .map(|(index, bytes)| row(format, index, roles_of(index), bytes, optional.len()))
         .collect::<Vec<_>>();
-    let layout_known = rows.len() == ROLES_V5.len() || rows.len() == ROLES_V5.len() + 1;
+    let layout_known = rows.len() == base || rows.len() == base + 1;
     let at = |index: usize| layout_known.then(|| &rows[index]);
 
     let mut findings = Vec::new();
@@ -158,8 +171,9 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         // object but the provenance.
         let expected = [1, 3, 4, 5, 6]
             .into_iter()
+            .chain(ROLES_V5.len()..base)
             .map(|index| ObjectV5 {
-                role: ROLES_V5[index].to_owned(),
+                role: roles_of(index).to_owned(),
                 kappa: kappa(index),
                 length: rows[index].bytes.len() as u64,
             })
@@ -266,6 +280,14 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
                 ));
             }
         }
+        for (i, role) in optional.iter().enumerate() {
+            let object = &rows[ROLES_V5.len() + i].bytes;
+            let problem = match *role {
+                "snapshot" => snapshot_problem(&rows[1].bytes, object),
+                _ => sources_problem(object),
+            };
+            problems.extend(problem);
+        }
         add(
             "references",
             problems.is_empty(),
@@ -297,8 +319,8 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         differences.push(format!(
             "the archive holds {} objects, expected {} or {} when signed",
             rows.len(),
-            ROLES_V5.len(),
-            ROLES_V5.len() + 1
+            base,
+            base + 1
         ));
     }
     // An archive carries no date: it is of the first revision whose
@@ -377,7 +399,7 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         .iter()
         .filter_map(|row| Some((row.label.clone()?, row.content.clone())))
         .collect::<BTreeMap<_, _>>();
-    let attestations = match rows.get(ROLES_V5.len()) {
+    let attestations = match rows.get(base) {
         Some(row) if layout_known => {
             attestation::decode_section(&row.bytes, &blob_map).map_err(|error| error.message)
         }

@@ -344,8 +344,27 @@ export const HOLO_V6 = freeze({
   MANIFEST_SCHEMA: 'prism/holo/6',
   PROVENANCE_SCHEMA: 'prismpm/model-provenance/3',
   ROLES: HOLO_V5.ROLES,
+  /**
+   * The optional objects after `model`, in this order, each present only when the manifest's `objects` rows list
+   * it: the model's LexLean semantic snapshot, and its sources. The attestations object, when any statement is
+   * present, comes after them, always last. A reader takes the layout from the manifest's rows, not the count.
+   */
+  OPTIONAL_ROLES: freeze(['snapshot', 'sources']),
   ROLE_ATTESTATIONS: 'attestations',
   KAPPA_PREFIX: 'blake3:',
+  /** The source manifest's row that names the snapshot; its sha256 must equal the snapshot object's. */
+  SNAPSHOT_SOURCE_KIND: 'lexlean-semantic-snapshot',
+  /**
+   * The sources object: a nested holo v6 container (same magic, BLAKE3 seal) whose object 0 is the canonical JSON
+   * index `{ schema, files: [{ path, kappa, length }] }`, paths unique and sorted by their bytes, and whose objects
+   * 1..n are the files' bytes in index order. Only the files that decide the model, as `PATHS` states them; a
+   * project file outside them is left out by a writer and refused by a reader. An empty index is not a sources object.
+   */
+  SOURCES: freeze({
+    SCHEMA: 'prism/model-sources/1',
+    /** Exact paths and path patterns, forward-slashed: `**` is any number of path segments, `*` any part of one. */
+    PATHS: freeze(['prism.toml', 'lexlean.toml', 'lexlean.lock', 'src/**/*.lex.tex', 'language/**']),
+  }),
 });
 /**
  * Build provenance of a holo, issue #268 (docs/proposals/268-build-provenance.md). The predicate is SLSA

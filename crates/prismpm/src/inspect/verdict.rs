@@ -2558,10 +2558,19 @@ pub(super) fn inspection_v5(bytes: &[u8]) -> Result<Value, PrismError> {
     };
     let kappa_of = |content: &[u8]| uorc::label(format, content);
     let base = bytes.as_ptr() as usize;
+    let optional = objects
+        .first()
+        .map(|manifest| crate::holo::archive::optional_roles(format, manifest))
+        .unwrap_or_default();
     let role_of = |index: usize| {
         crate::holo::archive::ROLES_V5
             .get(index)
             .copied()
+            .or_else(|| {
+                optional
+                    .get(index - crate::holo::archive::ROLES_V5.len())
+                    .copied()
+            })
             .unwrap_or(crate::holo::archive::ROLE_ATTESTATIONS)
     };
     let sections = objects

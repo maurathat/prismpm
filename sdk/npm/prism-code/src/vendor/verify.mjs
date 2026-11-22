@@ -47,6 +47,17 @@ const __vendor_assurance_levels = (() => {
       proof: 'https://uor.foundation/prism/proof/v1',
       replay: 'https://uor.foundation/prism/replay/v1',
     }),
+    /**
+     * Claims reported beside the level, never rungs on it: each is on its own axis, and a policy requires it by name
+     * (`require`), independent of `minimum`. Each is granted only by the check run again on the verifier's machine,
+     * never from a record the holo carries. `reproved`: Lean's kernel accepted, just now, a proof of every theorem the
+     * holo's snapshot states, within its declared axioms. `sources`: LexLean, run on the holo's sources, gave the
+     * holo's snapshot.
+     */
+    CLAIMS: freeze(['reproved', 'sources']),
+    CLAIM_NAMES: freeze({ reproved: 're-proved by the kernel', sources: 'sources give the snapshot' }),
+    /** The predicate type of the statement a claim's check reads: the kernel-proof statement a `reprove` re-checks. */
+    CLAIM_PREDICATES: freeze({ reproved: 'https://uor.foundation/prism/kernel-proof/v1' }),
     /** The default policy: this level or above, and the declared world within the granted capabilities. */
     DEFAULT_MINIMUM: 'P2',
     DEFAULT_POLICY: 'default',
@@ -407,8 +418,27 @@ const __vendor_spec = (() => {
     MANIFEST_SCHEMA: 'prism/holo/6',
     PROVENANCE_SCHEMA: 'prismpm/model-provenance/3',
     ROLES: HOLO_V5.ROLES,
+    /**
+     * The optional objects after `model`, in this order, each present only when the manifest's `objects` rows list
+     * it: the model's LexLean semantic snapshot, and its sources. The attestations object, when any statement is
+     * present, comes after them, always last. A reader takes the layout from the manifest's rows, not the count.
+     */
+    OPTIONAL_ROLES: freeze(['snapshot', 'sources']),
     ROLE_ATTESTATIONS: 'attestations',
     KAPPA_PREFIX: 'blake3:',
+    /** The source manifest's row that names the snapshot; its sha256 must equal the snapshot object's. */
+    SNAPSHOT_SOURCE_KIND: 'lexlean-semantic-snapshot',
+    /**
+     * The sources object: a nested holo v6 container (same magic, BLAKE3 seal) whose object 0 is the canonical JSON
+     * index `{ schema, files: [{ path, kappa, length }] }`, paths unique and sorted by their bytes, and whose objects
+     * 1..n are the files' bytes in index order. Only the files that decide the model, as `PATHS` states them; a
+     * project file outside them is left out by a writer and refused by a reader. An empty index is not a sources object.
+     */
+    SOURCES: freeze({
+      SCHEMA: 'prism/model-sources/1',
+      /** Exact paths and path patterns, forward-slashed: `**` is any number of path segments, `*` any part of one. */
+      PATHS: freeze(['prism.toml', 'lexlean.toml', 'lexlean.lock', 'src/**/*.lex.tex', 'language/**']),
+    }),
   });
   /**
    * Build provenance of a holo, issue #268 (docs/proposals/268-build-provenance.md). The predicate is SLSA
@@ -934,7 +964,7 @@ const __vendor_schemas = (() => {
     "schemas/holo/app-manifest.schema.json": {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://schemas.uor.foundation/prism/holo/app-manifest/1","title":"HoloAppManifest","description":"The decoded 356-byte application manifest, section kind 15 (Foundation.Holo.V1.Wire.validAppManifest).","type":"object","additionalProperties":false,"required":["uri","labels","suffix"],"properties":{"uri":{"const":"https://hologram.foundation/realization/app-manifest"},"labels":{"description":"The capability set, the Core-Wasm guest and the HOLOVIEW bundle, in that order.","type":"array","minItems":3,"maxItems":3,"prefixItems":[{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"}],"items":false},"suffix":{"description":"The fixed 86-byte layer suffix as lowercase hex (wireManifestSuffix).","const":"5200000000000000020000000008000000686f6c6f5f72756e1a000000686f6c6f6772616d3a67756573742f636f72652d7761736d4031030a000000696e6465782e68746d6c08000000706f727461626c6500000000"}}},
     "schemas/holo/application-directory.schema.json": {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://schemas.uor.foundation/prism/holo/application-directory/1","title":"HoloApplicationDirectory","description":"The application-directory/v1 extension payload, section row 2, as PrismPM writes it (Directory in crates/prismpm/src/holo/archive.rs). Hologram owns the extension. Blobs are sorted by kappa.","type":"object","additionalProperties":false,"required":["schema_version","primary_layer","requires_kappa","layers","children","blobs"],"properties":{"schema_version":{"const":1},"primary_layer":{"const":0},"requires_kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"layers":{"type":"array","minItems":2,"maxItems":2,"prefixItems":[{"type":"object","additionalProperties":false,"required":["position","kind","content_kappa","entry","contract","architecture","surface","engine"],"properties":{"position":{"const":0},"kind":{"const":"wasm"},"content_kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"entry":{"const":"holo_run"},"contract":{"const":"hologram:guest/core-wasm@1"},"architecture":{"const":null},"surface":{"const":null},"engine":{"const":null}}},{"type":"object","additionalProperties":false,"required":["position","kind","content_kappa","entry","contract","architecture","surface","engine"],"properties":{"position":{"const":1},"kind":{"const":"view"},"content_kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"entry":{"const":"index.html"},"contract":{"const":null},"architecture":{"const":null},"surface":{"const":"portable"},"engine":{"const":null}}}],"items":false},"children":{"type":"array","maxItems":0},"blobs":{"type":"array","minItems":4,"maxItems":4,"uniqueItems":true,"items":{"type":"object","additionalProperties":false,"required":["kappa","byte_length"],"properties":{"kappa":{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"},"byte_length":{"type":"integer","minimum":0,"maximum":9007199254740991}}}}}},
     "schemas/holo/archive.schema.json": {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://schemas.uor.foundation/prism/holo/archive/1","title":"HoloArchive","description":"The decoded header, section table and footer of a holo, format revision 2026-10-23 (Foundation.Holo.V1.Wire). Sections are contiguous from offset 202 and end 32 bytes before the end of the file; JSON Schema cannot state that, so readers check it.","type":"object","additionalProperties":false,"required":["magic","version","flags","sections","footer"],"properties":{"magic":{"const":"HOLO"},"version":{"const":4},"flags":{"const":0},"sections":{"type":"array","minItems":8,"maxItems":8,"prefixItems":[{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":15},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991,"const":202},"length":{"type":"integer","minimum":0,"maximum":9007199254740991,"const":356}}},{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":8},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"length":{"type":"integer","minimum":0,"maximum":9007199254740991}}},{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":14},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"length":{"type":"integer","minimum":0,"maximum":9007199254740991}}},{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":14},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"length":{"type":"integer","minimum":0,"maximum":9007199254740991}}},{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":16},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"length":{"type":"integer","minimum":71,"maximum":9007199254740991}}},{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":16},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"length":{"type":"integer","minimum":71,"maximum":9007199254740991}}},{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":16},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"length":{"type":"integer","minimum":71,"maximum":9007199254740991}}},{"type":"object","additionalProperties":false,"required":["kind","offset","length"],"properties":{"kind":{"const":16},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"length":{"type":"integer","minimum":71,"maximum":9007199254740991}}}],"items":false},"footer":{"type":"string","pattern":"^[0-9a-f]{64}$","description":"The 32-byte BLAKE3 footer as lowercase hex: the archive fingerprint."}}},
-    "schemas/holo/source-manifest.schema.json": {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://schemas.uor.foundation/prism/holo/source-manifest/4","title":"HoloSourceManifest","description":"The metadata section, kind 8: canonical JSON naming the proof and build inputs by SHA-256 (source_manifest in crates/prismpm/src/application_build.rs).","type":"object","additionalProperties":false,"required":["files","semantic_id","source_id","version"],"properties":{"files":{"type":"array","minItems":4,"maxItems":4,"prefixItems":[{"type":"object","additionalProperties":false,"required":["kind","sha256"],"properties":{"kind":{"const":"lexlean-build-manifest"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}},{"type":"object","additionalProperties":false,"required":["kind","sha256"],"properties":{"kind":{"const":"lean4-prod-coverage"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}},{"type":"object","additionalProperties":false,"required":["kind","sha256"],"properties":{"kind":{"const":"lean4-prod-kernel-ir"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}},{"type":"object","additionalProperties":false,"required":["kind","sha256"],"properties":{"kind":{"const":"model-document"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}}],"items":false},"semantic_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"source_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"version":{"const":4}}},
+    "schemas/holo/source-manifest.schema.json": {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://schemas.uor.foundation/prism/holo/source-manifest/4","title":"HoloSourceManifest","description":"The metadata section, kind 8: canonical JSON naming the proof and build inputs by SHA-256 (source_manifest in crates/prismpm/src/application_build.rs).","type":"object","additionalProperties":false,"required":["files","semantic_id","source_id","version"],"properties":{"files":{"type":"array","description":"The four inputs of a build, in this order, and in a holo v6 that carries its semantic snapshot a fifth row naming it, whose sha256 is the snapshot object's (ADR-018).","minItems":4,"maxItems":5,"prefixItems":[{"type":"object","additionalProperties":false,"required":["kind","sha256"],"properties":{"kind":{"const":"lexlean-build-manifest"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}},{"type":"object","additionalProperties":false,"required":["kind","sha256"],"properties":{"kind":{"const":"lean4-prod-coverage"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}},{"type":"object","additionalProperties":false,"required":["kind","sha256"],"properties":{"kind":{"const":"lean4-prod-kernel-ir"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}},{"type":"object","additionalProperties":false,"required":["kind","sha256"],"properties":{"kind":{"const":"model-document"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}},{"type":"object","additionalProperties":false,"required":["kind","sha256"],"properties":{"kind":{"const":"lexlean-semantic-snapshot"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}}],"items":false},"semantic_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"source_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},"version":{"const":4}}},
   });
   return Object.freeze({ SCHEMA_FILES });
 })();
@@ -1225,7 +1255,69 @@ const __holo5 = (() => {
   const ROLES = Object.freeze(['manifest', 'source-manifest', 'provenance', 'capabilities', 'guest', 'view', 'model']);
   const ROLE_ATTESTATIONS = 'attestations';
   const CONTENT = Object.freeze({ capabilities: 3, guest: 4, view: 5, model: 6 });
+  /** A holo v6's optional objects after `model`, in this order, present when the manifest's rows list them (ADR-018). */
+  const OPTIONAL_ROLES = Object.freeze(['snapshot', 'sources']);
+  const SOURCES_SCHEMA = 'prism/model-sources/1';
+  const SNAPSHOT_SOURCE_KIND = 'lexlean-semantic-snapshot';
+
+  /** The optional roles a v6 manifest's `objects` rows list, in OPTIONAL_ROLES order; none for anything unreadable. */
+  function optionalRolesOf(manifestBytes) {
+    try {
+      const rows = JSON.parse(utf8.decode(manifestBytes))?.objects;
+      if (!Array.isArray(rows)) return [];
+      const listed = new Set(rows.map((row) => row?.role));
+      return OPTIONAL_ROLES.filter((role) => listed.has(role));
+    } catch {
+      return [];
+    }
+  }
+
+  /** Whether a sources path is one that decides the model: forward-slashed, confined, and of the stated set. */
+  function isSourcePath(path) {
+    if (typeof path !== 'string' || path.length === 0 || path.length > 1024 || path.includes('\\') || /[\u0000-\u001f]/.test(path)) return false;
+    const parts = path.split('/');
+    if (parts.some((part) => part === '' || part === '.' || part === '..')) return false;
+    if (['prism.toml', 'lexlean.toml', 'lexlean.lock'].includes(path)) return true;
+    if (parts[0] === 'src' && parts.length >= 2 && path.endsWith('.lex.tex') && parts[parts.length - 1] !== '.lex.tex') return true;
+    return parts[0] === 'language' && parts.length >= 2;
+  }
+
+  const compareBytes = (a, b) => {
+    const x = new TextEncoder().encode(a);
+    const y = new TextEncoder().encode(b);
+    for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i] - y[i];
+    return x.length - y.length;
+  };
+
+  /**
+   * The problem with a holo v6's sources object, or null when it holds: a sealed v6 container whose object 0 is the
+   * canonical `prism/model-sources/1` index, every path confined to the stated set, unique and sorted by its bytes,
+   * and every file's κ and length those of the object at its place. An empty index is not a sources object.
+   */
+  function sourcesProblem(bytes) {
+    if (versionOf(bytes) !== 6) return 'the sources object is not a holo v6 container';
+    const nested = readArchive(bytes, SOURCES_BUDGET);
+    if (nested.problem) return `the sources object does not read: ${nested.problem}`;
+    if (!nested.sealed) return 'the sources object\'s BLAKE3 seal does not match';
+    const decoded = decode(nested.objects[0].bytes);
+    if (decoded.error) return `the sources index ${decoded.error}`;
+    const index = decoded.value;
+    if (canonical(index) !== utf8.decode(nested.objects[0].bytes)) return 'the sources index is not canonical JSON';
+    if (index.schema !== SOURCES_SCHEMA || !Array.isArray(index.files) || Object.keys(index).length !== 2) return `the sources index is not ${SOURCES_SCHEMA}`;
+    if (index.files.length === 0) return 'the sources index lists no file';
+    if (index.files.length !== nested.objects.length - 1) return `the sources index lists ${index.files.length} files and the container holds ${nested.objects.length - 1}`;
+    for (const [i, file] of index.files.entries()) {
+      if (!file || typeof file !== 'object' || Object.keys(file).sort().join() !== 'kappa,length,path') return `sources file ${i} is not { path, kappa, length }`;
+      if (!isSourcePath(file.path)) return `sources file ${JSON.stringify(file.path)} is not a file that decides the model`;
+      if (i > 0 && compareBytes(index.files[i - 1].path, file.path) >= 0) return 'the sources paths are not unique and sorted by their bytes';
+      const content = nested.objects[i + 1].bytes;
+      if (file.kappa !== kappa(content, 6) || file.length !== content.length) return `sources file ${file.path} is not the bytes the index names`;
+    }
+    return null;
+  }
   const BUDGET = Object.freeze({ objects: 16, bytes: 2 ** 30 });
+  /** A sources object's budget: one index and up to 4096 files, not the application's sixteen objects. */
+  const SOURCES_BUDGET = Object.freeze({ objects: 4097, bytes: 2 ** 28 });
   const SEAL_LENGTH = 32;
   const TAG = Uint8Array.from('UORC-SHA256-CHAIN-v1\0', (c) => c.charCodeAt(0));
   const utf8 = new TextDecoder('utf-8', { fatal: true });
@@ -1281,7 +1373,7 @@ const __holo5 = (() => {
    * with each object `{ index, offset, length, bytes }`, or `{ problem, check }`
    * when its header cannot be read. The seal is reported, not enforced.
    */
-  function readArchive(bytes) {
+  function readArchive(bytes, budget = BUDGET) {
     const refuse = (problem, check = 'archive.table') => ({ problem, check });
     const version = versionOf(bytes);
     if (version === null) return refuse('a holo v5 or v6 file is a UORC archive (format 2, profile 1 or 2)', 'archive.version');
@@ -1292,7 +1384,7 @@ const __holo5 = (() => {
     let read = readUleb(preimage, 8);
     if (!read) return refuse('the object count is not a ULEB128');
     const [count] = read;
-    if (count === 0 || count > BUDGET.objects) return refuse(`the archive declares ${count} objects; a holo holds 1 to ${BUDGET.objects}`);
+    if (count === 0 || count > budget.objects) return refuse(`the archive declares ${count} objects; a holo holds 1 to ${budget.objects}`);
     let at = read[1];
     const lengths = [];
     let total = 0;
@@ -1300,7 +1392,7 @@ const __holo5 = (() => {
       read = readUleb(preimage, at);
       if (!read) return refuse('an object length is not a ULEB128');
       total += read[0];
-      if (total > BUDGET.bytes) return refuse('the archive exceeds the decode budget');
+      if (total > budget.bytes) return refuse('the archive exceeds the decode budget');
       lengths.push(read[0]);
       at = read[1];
     }
@@ -1390,10 +1482,14 @@ const __holo5 = (() => {
       archive.sealed ? `the seal is the ${format.seal} of the archive, ${archive.seal}` : `the seal ${archive.seal} is not the ${format.seal} of the archive: the archive was altered`,
     );
 
-    const known = archive.objects.length === ROLES.length || archive.objects.length === ROLES.length + 1;
-    const contentRoles = new Map(Object.entries(CONTENT).map(([role, index]) => [index, role]));
+    // A v6 may carry the optional snapshot and sources after `model`; its manifest's rows say which (ADR-018).
+    const optional = version === 6 ? optionalRolesOf(archive.objects[0]?.bytes ?? new Uint8Array()) : [];
+    const base = ROLES.length + optional.length;
+    const known = archive.objects.length === base || archive.objects.length === base + 1;
+    const contentRoles = new Map([...Object.entries(CONTENT).map(([role, index]) => [index, role]), ...optional.map((role, i) => [ROLES.length + i, role])]);
+    const roleAt = (index) => ROLES[index] ?? (index < base ? optional[index - ROLES.length] : ROLE_ATTESTATIONS);
     facts.sections = archive.objects.map((object) => {
-      const role = ROLES[object.index] ?? ROLE_ATTESTATIONS;
+      const role = roleAt(object.index);
       const section = { index: object.index, kind: null, kindName: role, role, offset: object.offset, length: object.length, payload: object.bytes };
       if (contentRoles.has(object.index)) {
         section.label = kappa(object.bytes, version);
@@ -1429,7 +1525,7 @@ const __holo5 = (() => {
       add('documents', 'manifest.wire', problems.length === 0, problems.length === 0 ? `the holo manifest is canonical ${format.manifest}` : problems.join('; '));
       if (manifest && problems.length === 0) {
         // The provenance names the manifest, so the manifest lists every object but the provenance.
-        const expected = [1, 3, 4, 5, 6].map((i) => ({ kappa: labelOf(i), length: at(i).length, role: ROLES[i] }));
+        const expected = [1, 3, 4, 5, 6, ...optional.map((_, i) => ROLES.length + i)].map((i) => ({ kappa: labelOf(i), length: at(i).length, role: roleAt(i) }));
         const ok = canonical(manifest.objects) === canonical(expected) && manifest.requires === labelOf(3) && canonical(manifest.layers) === canonical(layersOf(labelOf(4), labelOf(5), manifest.layers[0]?.contract));
         add('archive', 'blob.labels', ok, ok ? `all ${expected.length} objects match the κ the manifest gives them` : "the manifest's κ-labels and lengths are not those of the objects in their roles");
       } else skip('archive', 'blob.labels', 'not checked: manifest.wire failed');
@@ -1479,6 +1575,21 @@ const __holo5 = (() => {
       }
       const binding = provenance.view_binding;
       if (binding?.tag === 'present' && binding.view_content_kappa !== labelOf(5)) problems.push(`the provenance view ${binding.view_content_kappa} is not the view object ${labelOf(5)}`);
+      const optionalAt = (role) => (optional.includes(role) ? at(ROLES.length + optional.indexOf(role)) : undefined);
+      const snapshot = optionalAt('snapshot');
+      if (snapshot) {
+        // Read from the source manifest's own JSON: the row binds the snapshot whether or not the document meets its schema.
+        const files = at(1) ? decode(at(1).payload).value?.files : undefined;
+        const row = Array.isArray(files) ? files.find((f) => f?.kind === SNAPSHOT_SOURCE_KIND) : undefined;
+        if (!row) problems.push(`the holo carries a snapshot, and its source manifest names no ${SNAPSHOT_SOURCE_KIND}`);
+        else if (row.sha256 !== sha256Hex(snapshot.payload)) problems.push(`the snapshot object's sha256 is not the source manifest's ${SNAPSHOT_SOURCE_KIND} ${row.sha256}`);
+      }
+      const sources = optionalAt('sources');
+      if (sources) {
+        const problem = sourcesProblem(sources.payload);
+        if (problem) problems.push(problem);
+        else facts.sourcesPresent = true;
+      }
       add('documents', 'references', problems.length === 0, problems.length === 0 ? 'the manifest and the provenance name the same objects' : problems.join('; '));
     }
 
@@ -1510,7 +1621,7 @@ const __holo5 = (() => {
         const differences = [];
         if (!known) differences.push(`the archive holds ${archive.objects.length} objects, expected ${ROLES.length} or ${ROLES.length + 1} when signed`);
         // As for v4: this package judges the unsigned holo, and `check` reads the attestations and strips them first.
-        if (archive.objects.length === ROLES.length + 1) differences.push(`the archive carries an ${ROLE_ATTESTATIONS} object, which this package does not read; check reads it`);
+        if (archive.objects.length === base + 1) differences.push(`the archive carries an ${ROLE_ATTESTATIONS} object, which this package does not read; check reads it`);
         if (contract && !revision.coreWasmContracts.includes(contract)) differences.push(`the guest contract is ${contract}, expected one of ${revision.coreWasmContracts.join(', ')}`);
         const modelDocument = facts.documents.modelDocument;
         if (modelDocument?.schema && !revision.modelDocumentSchemas.includes(modelDocument.schema)) differences.push(`the model document schema ${modelDocument.schema} is not packed by this revision`);
@@ -1535,7 +1646,7 @@ const __holo5 = (() => {
         if (date === spec.FORMAT_REVISION) differences = found;
       }
       // A signed holo has no layout revision, so verdict refuses it as for v4; check strips the attestations first.
-      if (known && archive.objects.length === ROLES.length) facts.layoutRevision = matched ?? spec.FORMAT_REVISION;
+      if (known && archive.objects.length === base) facts.layoutRevision = matched ?? spec.FORMAT_REVISION;
       if (matched !== null) {
         facts.revision = matched;
         differences = [];
@@ -1547,7 +1658,7 @@ const __holo5 = (() => {
     checks.sort((a, b) => context.order.indexOf(a.id) - context.order.indexOf(b.id));
     return { checks, facts };
   }
-  return Object.freeze({ MANIFEST_SCHEMA, PROVENANCE_SCHEMA, ROLES, ROLE_ATTESTATIONS, isUorc, kappa, versionOf, chainHex, readArchive, analyzeV5 });
+  return Object.freeze({ MANIFEST_SCHEMA, PROVENANCE_SCHEMA, ROLES, ROLE_ATTESTATIONS, OPTIONAL_ROLES, isSourcePath, sourcesProblem, isUorc, kappa, versionOf, chainHex, readArchive, analyzeV5 });
 })();
 
 // src/asn1.mjs
@@ -4990,16 +5101,16 @@ const __index = (() => {
   function checkPolicy(policy) {
     const { LEVELS, DEFAULT_POLICY } = ASSURANCE;
     // `program` is the policy that decides; `minimum` is only ever a caller's override of the default policy's.
-    if (policy === undefined || policy === null) return { name: DEFAULT_POLICY, program: policies.shippedPolicy(DEFAULT_POLICY), minimum: null, digests: {}, world: undefined, capabilities: null, effects: null };
+    if (policy === undefined || policy === null) return { name: DEFAULT_POLICY, program: policies.shippedPolicy(DEFAULT_POLICY), minimum: null, digests: {}, world: undefined, capabilities: null, effects: null, require: [] };
     if (typeof policy !== 'object') throw new VerifyError('policy.invalid', 'the policy must be an object');
     for (const key of Object.keys(policy)) {
-      if (!['name', 'rego', 'minimum', 'digests', 'world', 'capabilities', 'effects', 'replay', 'statements'].includes(key)) throw new VerifyError('policy.invalid', `unknown policy member ${key}; expected name, rego, minimum, digests, world, capabilities or effects`);
+      if (!['name', 'rego', 'minimum', 'digests', 'world', 'capabilities', 'effects', 'replay', 'statements', 'require'].includes(key)) throw new VerifyError('policy.invalid', `unknown policy member ${key}; expected name, rego, minimum, digests, world, capabilities, effects or require`);
     }
     if (policy.rego !== undefined) {
       // A policy file is the whole policy. What it decides, a level or a pin, it says in Rego, where a reader can see it.
       const other = Object.keys(policy).find((key) => !['name', 'rego', 'capabilities', 'replay', 'statements'].includes(key));
       if (other) throw new VerifyError('policy.invalid', `policy.${other} cannot be given with policy.rego; a Rego policy states it itself`);
-      return { name: checkName(policy.name ?? 'policy'), program: parsePolicy(policy.rego), minimum: null, digests: {}, world: undefined, capabilities: checkCapabilities(policy.capabilities), effects: null, replay: policy.replay, statements: policy.statements };
+      return { name: checkName(policy.name ?? 'policy'), program: parsePolicy(policy.rego), minimum: null, digests: {}, world: undefined, capabilities: checkCapabilities(policy.capabilities), effects: null, replay: policy.replay, statements: policy.statements, require: checkRequire(policy.require) };
     }
     const name = checkName(policy.name ?? DEFAULT_POLICY);
     const minimum = policy.minimum ?? null;
@@ -5022,7 +5133,7 @@ const __index = (() => {
       if (!Array.isArray(effects) || effects.some((e) => !IMPURE_EFFECTS.includes(e))) throw new VerifyError('policy.invalid', `policy.effects must be an array of ${IMPURE_EFFECTS.join(', ')}`);
       if (new Set(effects).size !== effects.length) throw new VerifyError('policy.invalid', 'policy.effects repeats an effect');
     }
-    return { name, program: policies.shippedPolicy(DEFAULT_POLICY), minimum, digests, world: checkWorldPin(policy.world), capabilities, effects, replay: policy.replay, statements: policy.statements };
+    return { name, program: policies.shippedPolicy(DEFAULT_POLICY), minimum, digests, world: checkWorldPin(policy.world), capabilities, effects, replay: policy.replay, statements: policy.statements, require: checkRequire(policy.require) };
   }
 
   /**
@@ -5192,6 +5303,69 @@ const __index = (() => {
     return inputOf(bytes, evidenceOf(bytes, capabilities, options?.replay, options?.statements), capabilities);
   }
 
+  /** The claims a policy requires beside its minimum: none, or a list of ASSURANCE.CLAIMS, each once. */
+  function checkRequire(require) {
+    if (require === undefined || require === null) return [];
+    if (!Array.isArray(require) || require.some((claim) => !ASSURANCE.CLAIMS.includes(claim)) || new Set(require).size !== require.length) {
+      throw new VerifyError('policy.invalid', `policy.require must list each of ${ASSURANCE.CLAIMS.join(', ')} at most once`);
+    }
+    return [...require];
+  }
+
+  const LABEL = /^blake3:[0-9a-f]{64}$/;
+  const ID = /^[0-9a-f]{64}$/;
+  const orNullOf = (pattern, value) => (typeof value === 'string' && pattern.test(value) ? value : null);
+
+  /**
+   * The `reproved` claim from a caller's `reprove(holoBytes)`, in the verdict's shape. Lean's kernel runs in the
+   * caller's function, not in this package, so a function that throws or answers in another shape gives a claim that
+   * did not pass, with the reason, never a verdict that trusts it.
+   */
+  async function reprovedOf(reprove, bytes) {
+    const refused = (reason) => ({ passed: false, theorems: [], semantic_id: null, kernel: null, library: null, reason });
+    let result;
+    try {
+      result = await reprove(bytes);
+    } catch (error) {
+      return refused(sentence(`the re-proof did not finish: ${error?.message ?? error}`));
+    }
+    if (!result || typeof result !== 'object' || typeof result.passed !== 'boolean' || !Array.isArray(result.theorems)) {
+      return refused('The re-proof returned no result of the stated shape.');
+    }
+    const theorems = result.theorems.map((t) => ({
+      name: String(t?.name ?? ''),
+      status: ['proved', 'refused', 'unsupported'].includes(t?.status) ? t.status : 'refused',
+      axioms: Array.isArray(t?.axioms) ? [...new Set(t.axioms.map(String))].sort() : [],
+    }));
+    // A pass the theorems do not carry is not a pass: every theorem proved, and at least one theorem.
+    const passed = result.passed === true && theorems.length > 0 && theorems.every((t) => t.status === 'proved');
+    const reason = passed ? null : typeof result.reason === 'string' && result.reason !== '' ? result.reason : 'The kernel did not accept a proof of every theorem.';
+    return { passed, theorems, semantic_id: orNullOf(ID, result.semantic_id), kernel: orNullOf(LABEL, result.kernel), library: orNullOf(LABEL, result.library), reason };
+  }
+
+  /** The `sources` claim: whether the holo carries sources, and, with a caller's `relex(holoBytes)`, whether they give its snapshot. */
+  async function sourcesOf(relex, bytes, present) {
+    const claim = { present, matchesSnapshot: null, semantic_id: null, lexlean: null, reason: present ? null : 'The holo carries no sources object.' };
+    if (typeof relex !== 'function' || !present) return claim;
+    let result;
+    try {
+      result = await relex(bytes);
+    } catch (error) {
+      return { ...claim, matchesSnapshot: false, reason: sentence(`LexLean did not finish on the sources: ${error?.message ?? error}`) };
+    }
+    if (!result || typeof result !== 'object' || typeof result.matchesSnapshot !== 'boolean') {
+      return { ...claim, matchesSnapshot: false, reason: 'LexLean on the sources returned no result of the stated shape.' };
+    }
+    const matches = result.matchesSnapshot === true;
+    return {
+      present,
+      matchesSnapshot: matches,
+      semantic_id: orNullOf(ID, result.semantic_id),
+      lexlean: orNullOf(LABEL, result.lexlean),
+      reason: matches ? null : typeof result.reason === 'string' && result.reason !== '' ? result.reason : "The sources do not give the holo's snapshot.",
+    };
+  }
+
   /**
    * Check a holo and return its verdict, a `prism/verdict/1` object
    * (docs/proposals/269-assurance-levels.md). The level is computed from the
@@ -5209,10 +5383,17 @@ const __index = (() => {
    * format revision this package does not know. Asynchronous so that bundle
    * signature verification (issue #267), which needs WebCrypto, can join without an API change.
    *
+   * The claims beside the level (ASSURANCE.CLAIMS) are checks run again on this machine, by functions the caller
+   * supplies, so this package never loads a kernel or a compiler: `reprove(holoBytes)` runs Lean's kernel on the
+   * holo's carried snapshot and gives the `reproved` member, and `relex(holoBytes)` runs LexLean on its carried sources
+   * and fills `sources.matchesSnapshot`. Without them there is no `reproved` member and `matchesSnapshot` is null, and
+   * a policy that requires the claim fails with a reason that names it.
+   *
    * @param {Uint8Array | ArrayBuffer} source the whole holo
-   * @param {{ name?: string, rego?: string, minimum?: 'P0' | 'P1' | 'P2' | 'P3', digests?: Record<string, { sha256?: string, blake3?: string }>, world?: { contract?: string, sha256?: string, blake3?: string } | null }} [policy]
+   * @param {{ name?: string, rego?: string, minimum?: 'P0' | 'P1' | 'P2' | 'P3', digests?: Record<string, { sha256?: string, blake3?: string }>, world?: { contract?: string, sha256?: string, blake3?: string } | null, require?: Array<'reproved' | 'sources'> }} [policy]
+   * @param {{ reprove?: (holo: Uint8Array) => Promise<object>, relex?: (holo: Uint8Array) => Promise<object> }} [options]
    */
-  async function verify(source, policy) {
+  async function verify(source, policy, options = {}) {
     const bytes = asBytes(source);
     const wanted = checkPolicy(policy);
     const evidence = evidenceOf(bytes, wanted.capabilities, wanted.replay, wanted.statements);
@@ -5268,12 +5449,34 @@ const __index = (() => {
 
     for (const { rule, message } of decision.denials) reasons.push({ check: rule, withholds: null, message: sentence(message) });
 
+    // The claims beside the level: each from its check run again here, never from what the holo records.
+    const reproved = typeof options?.reprove === 'function' ? await reprovedOf(options.reprove, bytes) : undefined;
+    const sources = facts.sourcesPresent || typeof options?.relex === 'function' ? await sourcesOf(options?.relex, bytes, facts.sourcesPresent === true) : undefined;
+    for (const claim of wanted.require) {
+      const held = claim === 'reproved' ? reproved?.passed === true : sources?.matchesSnapshot === true;
+      if (held) continue;
+      passed = false;
+      const why =
+        claim === 'reproved'
+          ? reproved
+            ? reproved.reason
+            : "the verifier did not run Lean's kernel on the holo (no reprove)"
+          : sources?.present
+            ? sources.matchesSnapshot === null
+              ? 'the verifier did not run LexLean on the sources (no relex)'
+              : sources.reason
+            : 'the holo carries no sources object';
+      reasons.push({ check: `policy.${claim}`, withholds: null, message: sentence(`the policy requires ${ASSURANCE.CLAIM_NAMES[claim]}, and ${why}`) });
+    }
+
     return {
       schema: ASSURANCE.VERDICT,
       holo: facts.fingerprint,
       level,
-      policy: { name: wanted.name, minimum },
+      policy: wanted.require.length > 0 ? { name: wanted.name, minimum, require: wanted.require } : { name: wanted.name, minimum },
       passed,
+      ...(reproved ? { reproved } : {}),
+      ...(sources ? { sources } : {}),
       reasons,
     };
   }

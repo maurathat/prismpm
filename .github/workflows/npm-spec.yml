@@ -79,7 +79,8 @@ jobs:
             // to 356 KiB for the checkpoint world: worlds/core-wasm-3.wit, CORE_WASM_CHECKPOINT, its WORLDS row and types (HO-47), 1.4 KiB over 352 measured,
             // and to 388 KiB for format revision 2026-11-18 and the binary application document: model-document-v9.schema.json and its fixtures (HO-49, HO-50), 383 KiB measured from a Linux checkout,
             // and to 396 KiB for holo v6 (ADR-018): HOLO_V6, model-provenance-v3.schema.json and its fixture, 391.2 KiB measured from a Linux checkout.
-            if (pack.unpackedSize > 405504) throw new Error("package exceeds 396 KiB");
+            // 412 KiB for the kernel-proof predicate, its schema and type, the reproved and sources claims, v6's optional snapshot and sources rules, and the verdict's two new members (ADR-018): 405.1 KiB measured.
+            if (pack.unpackedSize > 421888) throw new Error("package exceeds 412 KiB");
             const stray = pack.files.map((f) => f.path).filter((p) => /^(test|scripts)\//.test(p));
             if (stray.length) throw new Error(`tests or scripts in the package: ${stray}`);
             const paths = pack.files.map((f) => f.path);

@@ -826,6 +826,175 @@ pub const ROLES_V5: [&str; 7] = [
 ];
 /// Role of the optional last object: attestation bundles, one per line.
 pub const ROLE_ATTESTATIONS: &str = "attestations";
+/// A holo v6's optional objects after `model`, in this order, each present when
+/// the manifest's `objects` rows list it (ADR-018): the model's LexLean semantic
+/// snapshot, and its sources. The attestations object, when present, follows them.
+pub const OPTIONAL_ROLES_V6: [&str; 2] = ["snapshot", "sources"];
+/// The source manifest's row that names the snapshot.
+const SNAPSHOT_SOURCE_KIND: &str = "lexlean-semantic-snapshot";
+/// The schema of a sources object's index, object 0 of its nested container.
+const SOURCES_SCHEMA: &str = "prism/model-sources/1";
+/// The decode budget of a sources object: one index and up to 4096 files.
+const SOURCES_BUDGET: v5::Budget = v5::Budget {
+    objects: 4097,
+    bytes: 1 << 28,
+};
+
+/// The optional roles a v6 manifest's `objects` rows list, in
+/// [`OPTIONAL_ROLES_V6`] order; none for a v5 or a manifest that does not read.
+pub(crate) fn optional_roles(format: v5::Format, manifest: &[u8]) -> Vec<&'static str> {
+    if format != v5::Format::V6 {
+        return Vec::new();
+    }
+    let listed = serde_json::from_slice::<serde_json::Value>(manifest)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("objects")
+                .and_then(|rows| rows.as_array())
+                .cloned()
+        })
+        .unwrap_or_default();
+    OPTIONAL_ROLES_V6
+        .iter()
+        .copied()
+        .filter(|role| {
+            listed
+                .iter()
+                .any(|row| row.get("role").and_then(|r| r.as_str()) == Some(*role))
+        })
+        .collect()
+}
+
+/// Whether a sources path is one that decides the model: forward-slashed,
+/// confined, and one of `prism.toml`, `lexlean.toml`, `lexlean.lock`,
+/// `src/**/*.lex.tex` or `language/**`.
+pub(crate) fn is_source_path(path: &str) -> bool {
+    if path.is_empty()
+        || path.len() > 1024
+        || path.contains('\\')
+        || path.chars().any(char::is_control)
+    {
+        return false;
+    }
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.iter().any(|part| matches!(*part, "" | "." | "..")) {
+        return false;
+    }
+    if matches!(path, "prism.toml" | "lexlean.toml" | "lexlean.lock") {
+        return true;
+    }
+    if parts[0] == "src"
+        && parts.len() >= 2
+        && path.ends_with(".lex.tex")
+        && parts[parts.len() - 1] != ".lex.tex"
+    {
+        return true;
+    }
+    parts[0] == "language" && parts.len() >= 2
+}
+
+/// The problem with a holo v6's sources object, or `None` when it holds: a
+/// sealed v6 container whose object 0 is the canonical `prism/model-sources/1`
+/// index, every path confined to the stated set, unique and sorted by its
+/// bytes, and every file's κ and length those of the object at its place.
+pub(crate) fn sources_problem(bytes: &[u8]) -> Option<String> {
+    if v5::format_of(bytes) != Some(v5::Format::V6) {
+        return Some("the sources object is not a holo v6 container".to_owned());
+    }
+    let objects = match v5::read_objects(bytes, SOURCES_BUDGET) {
+        Ok(objects) => objects,
+        Err(error) => {
+            return Some(format!(
+                "the sources object does not read: {}",
+                error.message
+            ))
+        }
+    };
+    let Ok(index) = serde_json::from_slice::<serde_json::Value>(objects[0]) else {
+        return Some("the sources index is not JSON".to_owned());
+    };
+    let canonical = encode_value(&index).ok();
+    if canonical.as_deref() != Some(objects[0])
+        || index.get("schema").and_then(|s| s.as_str()) != Some(SOURCES_SCHEMA)
+        || index.as_object().map(|o| o.len()) != Some(2)
+    {
+        return Some(format!(
+            "the sources index is not canonical {SOURCES_SCHEMA}"
+        ));
+    }
+    let Some(files) = index.get("files").and_then(|f| f.as_array()) else {
+        return Some(format!(
+            "the sources index is not canonical {SOURCES_SCHEMA}"
+        ));
+    };
+    if files.is_empty() {
+        return Some("the sources index lists no file".to_owned());
+    }
+    if files.len() != objects.len() - 1 {
+        return Some(
+            "the sources index and the container hold different numbers of files".to_owned(),
+        );
+    }
+    let mut previous: Option<&str> = None;
+    for (i, file) in files.iter().enumerate() {
+        let shape = file.as_object().is_some_and(|row| {
+            row.len() == 3
+                && row.contains_key("path")
+                && row.contains_key("kappa")
+                && row.contains_key("length")
+        });
+        let path = file.get("path").and_then(|p| p.as_str());
+        let (true, Some(path)) = (shape, path) else {
+            return Some(format!("sources file {i} is not {{ path, kappa, length }}"));
+        };
+        if !is_source_path(path) {
+            return Some(format!(
+                "sources file {path:?} is not a file that decides the model"
+            ));
+        }
+        if previous.is_some_and(|before| before >= path) {
+            return Some("the sources paths are not unique and sorted by their bytes".to_owned());
+        }
+        previous = Some(path);
+        let content = objects[i + 1];
+        if file.get("kappa").and_then(|k| k.as_str())
+            != Some(v5::label(v5::Format::V6, content).as_str())
+            || file.get("length").and_then(|l| l.as_u64()) != Some(content.len() as u64)
+        {
+            return Some(format!(
+                "sources file {path} is not the bytes the index names"
+            ));
+        }
+    }
+    None
+}
+
+/// The problem with a holo v6's snapshot object, or `None`: its sha256 is the
+/// source manifest's `lexlean-semantic-snapshot` row.
+pub(crate) fn snapshot_problem(source_manifest: &[u8], snapshot: &[u8]) -> Option<String> {
+    let row = serde_json::from_slice::<serde_json::Value>(source_manifest)
+        .ok()
+        .and_then(|value| value.get("files").and_then(|f| f.as_array()).cloned())
+        .and_then(|files| {
+            files.into_iter().find(|file| {
+                file.get("kind").and_then(|k| k.as_str()) == Some(SNAPSHOT_SOURCE_KIND)
+            })
+        });
+    match row
+        .as_ref()
+        .and_then(|row| row.get("sha256"))
+        .and_then(|s| s.as_str())
+    {
+        None => Some(format!(
+            "the holo carries a snapshot, and its source manifest names no {SNAPSHOT_SOURCE_KIND}"
+        )),
+        Some(sha256) if sha256 != content_id(snapshot) => Some(format!(
+            "the snapshot object's sha256 is not the source manifest's {SNAPSHOT_SOURCE_KIND}"
+        )),
+        Some(_) => None,
+    }
+}
 pub(crate) const CONTENT_OBJECTS: std::ops::Range<usize> = 3..7;
 
 /// Object 0 of a v5 holo: what the application is and what each object is.
@@ -1061,14 +1230,20 @@ fn parse_application_v5(bytes: &[u8]) -> Result<ParsedApplicationArchive, PrismE
     let content_kappa = |bytes: &[u8]| v5::label(format, bytes);
     let (manifest_schema, provenance_schema) = schemas_of(format);
     let objects = v5::read_objects(bytes, v5::APPLICATION_BUDGET)?;
-    if objects.len() != ROLES_V5.len() && objects.len() != ROLES_V5.len() + 1 {
+    // A v6 may carry the optional snapshot and sources after `model`; its manifest's rows say which (ADR-018).
+    let optional = objects
+        .first()
+        .map(|manifest| optional_roles(format, manifest))
+        .unwrap_or_default();
+    let base = ROLES_V5.len() + optional.len();
+    if objects.len() != base && objects.len() != base + 1 {
         return Err(PrismError::new(
             "PP3003",
             format!(
                 "a v{} application holo holds {} objects, or {} when signed; this one holds {}",
                 format.number(),
-                ROLES_V5.len(),
-                ROLES_V5.len() + 1,
+                base,
+                base + 1,
                 objects.len()
             ),
         ));
@@ -1088,6 +1263,14 @@ fn parse_application_v5(bytes: &[u8]) -> Result<ParsedApplicationArchive, PrismE
         .iter()
         .zip([capabilities, guest, view, model])
     {
+        expected_objects.push(ObjectV5 {
+            role: (*role).to_owned(),
+            kappa: content_kappa(bytes),
+            length: bytes.len() as u64,
+        });
+    }
+    for (i, role) in optional.iter().enumerate() {
+        let bytes = objects[ROLES_V5.len() + i];
         expected_objects.push(ObjectV5 {
             role: (*role).to_owned(),
             kappa: content_kappa(bytes),
@@ -1187,7 +1370,27 @@ fn parse_application_v5(bytes: &[u8]) -> Result<ParsedApplicationArchive, PrismE
             ));
         }
     }
-    if let Some(payload) = objects.get(ROLES_V5.len()) {
+    // The optional objects: each a blob a statement may name, and each held to its own rule.
+    for (i, role) in optional.iter().enumerate() {
+        let object = objects[ROLES_V5.len() + i];
+        let problem = match *role {
+            "snapshot" => snapshot_problem(objects[1], object).map(|p| ("PP3014", p)),
+            _ => sources_problem(object).map(|p| ("PP3008", p)),
+        };
+        if let Some((code, problem)) = problem {
+            return Err(PrismError::new(code, problem));
+        }
+        if blobs
+            .insert(content_kappa(object), object.to_vec())
+            .is_some()
+        {
+            return Err(PrismError::new(
+                "PP3008",
+                "two content objects of the holo have the same κ",
+            ));
+        }
+    }
+    if let Some(payload) = objects.get(base) {
         attestation::decode_section(payload, &blobs)?;
     }
     let identities = HoloIdentities {
@@ -1373,7 +1576,9 @@ fn split_v5(bytes: &[u8]) -> Result<SplitV5, PrismError> {
         .into_iter()
         .map(<[u8]>::to_vec)
         .collect();
-    let attestations = (objects.len() > ROLES_V5.len()).then(|| objects.remove(ROLES_V5.len()));
+    let format = v5::format_of(bytes).unwrap_or(v5::Format::V5);
+    let base = ROLES_V5.len() + optional_roles(format, &objects[0]).len();
+    let attestations = (objects.len() > base).then(|| objects.remove(base));
     Ok((objects, attestations))
 }
 

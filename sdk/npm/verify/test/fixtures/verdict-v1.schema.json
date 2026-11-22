@@ -25,10 +25,62 @@
           "minLength": 1,
           "maxLength": 1024
         },
-        "minimum": { "$ref": "#/$defs/level" }
+        "minimum": { "$ref": "#/$defs/level" },
+        "require": {
+          "description": "Claims the policy requires beside its minimum, by name. A required claim that is absent or did not pass fails the verdict with a reason naming it.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["reproved", "sources"] }
+        }
       }
     },
     "passed": { "type": "boolean" },
+    "reproved": {
+      "description": "Present only when the verifier ran Lean's kernel again on the holo's carried snapshot (a reprove option). Never granted from the carried kernel-proof statement alone.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "theorems", "semantic_id", "kernel", "library", "reason"],
+      "properties": {
+        "passed": {
+          "description": "True only when the holo carries a kernel-proof statement and a snapshot, the snapshot is the source manifest's row, every theorem the snapshot states is in the statement, and the kernel accepted a proof of each within its declared axioms just now.",
+          "type": "boolean"
+        },
+        "theorems": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "status", "axioms"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 1024 },
+              "status": { "enum": ["proved", "refused", "unsupported"] },
+              "axioms": { "type": "array", "maxItems": 256, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 1024 } }
+            }
+          }
+        },
+        "semantic_id": { "description": "The model the theorems were judged for.", "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "kernel": { "description": "The BLAKE3 label of the kernel that judged them.", "type": ["string", "null"], "pattern": "^blake3:[0-9a-f]{64}$" },
+        "library": { "description": "The BLAKE3 label of the base library it loaded.", "type": ["string", "null"], "pattern": "^blake3:[0-9a-f]{64}$" },
+        "reason": { "description": "Why it did not pass, or null when it passed.", "type": ["string", "null"], "maxLength": 4096 }
+      }
+    },
+    "sources": {
+      "description": "Present when the holo carries a sources object, or the verifier ran LexLean on it (a relex option).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["present", "matchesSnapshot", "semantic_id", "lexlean", "reason"],
+      "properties": {
+        "present": { "description": "The holo carries a sources object that reads.", "type": "boolean" },
+        "matchesSnapshot": {
+          "description": "True or false when the verifier ran LexLean on the sources and compared its semantic_id with the snapshot's; null when it did not run it.",
+          "type": ["boolean", "null"]
+        },
+        "semantic_id": { "description": "What LexLean gave from the sources, or null when it did not run.", "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "lexlean": { "description": "The BLAKE3 label of the LexLean that ran, or null when none did.", "type": ["string", "null"], "pattern": "^blake3:[0-9a-f]{64}$" },
+        "reason": { "description": "Why the sources do not match, or null.", "type": ["string", "null"], "maxLength": 4096 }
+      }
+    },
     "reasons": {
       "description": "Every check that did not pass, in evaluation order.",
       "type": "array",

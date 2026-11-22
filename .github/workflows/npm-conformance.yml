@@ -98,7 +98,8 @@ jobs:
             const pack = JSON.parse(require("fs").readFileSync("pack.json", "utf8"))[0];
             console.log(`unpacked size: ${pack.unpackedSize} bytes, ${pack.entryCount} files`);
             // 256 KiB, then 264 KiB for the holo v6 reference, corpus/Calculator.v6.holo, 23.3 KiB (ADR-018): 257.9 KiB measured.
-            if (pack.unpackedSize > 270336) throw new Error("package exceeds 264 KiB");
+            // 272 KiB for the derived v6 archives carrying a snapshot and sources, and their scenarios (ADR-018): 267.8 KiB measured.
+            if (pack.unpackedSize > 278528) throw new Error("package exceeds 272 KiB");
             const paths = pack.files.map((f) => f.path);
             const stray = paths.filter((p) => /^(test|scripts)\//.test(p) || p === "runtimes.json" || p === "format-gate.json");
             if (stray.length) throw new Error(`repository files in the package: ${stray}`);

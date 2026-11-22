@@ -933,6 +933,7 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `archive.metadata` |  | `AL-07` | The .holo archive has more than one metadata section. |
 | `archive.model` |  | `AL-07` | The model document of the .holo archive is not JSON, or names no application. |
 | `archive.provenance` |  | `AL-07` | The .holo archive has no model extension, or its model extension names no model_content_kappa, so the model cannot be bound to the archive. |
+| `archive.sources` |  | `AL-07` | The sources object of a holo v6 does not read, lists no file, names a file that does not decide the model, or holds other bytes than its index names. |
 | `archive.version` |  | `AL-07` | The .holo archive has a physical version other than the one this version reads. |
 | `attest.unavailable` |  | `AL-07` | Signing or verifying an attestation needs the optional Sigstore packages, which are not installed or need a newer Node; no signature was made or checked. |
 | `attestation.bundle` |  | `AL-07` | An attestation line is not a UTF-8 JSON object with the Sigstore bundle media type. |

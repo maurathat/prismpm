@@ -14,8 +14,9 @@
   "properties": {
     "files": {
       "type": "array",
+      "description": "The four inputs of a build, in this order, and in a holo v6 that carries its semantic snapshot a fifth row naming it, whose sha256 is the snapshot object's (ADR-018).",
       "minItems": 4,
-      "maxItems": 4,
+      "maxItems": 5,
       "prefixItems": [
         {
           "type": "object",
@@ -78,6 +79,23 @@
           "properties": {
             "kind": {
               "const": "model-document"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "sha256"
+          ],
+          "properties": {
+            "kind": {
+              "const": "lexlean-semantic-snapshot"
             },
             "sha256": {
               "type": "string",
