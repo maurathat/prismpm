@@ -1,0 +1,4 @@
+{
+  "kib": 3,
+  "reason": "A LexLean run that traps is run again, first on the same module and then on its admitted bytes compiled again, because WebKit at times compiles LexLean wrongly when Lean's kernel is open in the same page (both starters' in-browser build passed 6 of 6 WebKit runs with it, 3 of 6 without): the retry in src/journey/lexlean-core.mjs, about 2.4 KiB, and src/journey/module-source.mjs, which keeps each admitted module's bytes beside it, about 0.8 KiB."
+}

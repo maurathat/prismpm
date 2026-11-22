@@ -8,15 +8,57 @@
  */
 import { PrismCodeError } from '../errors.mjs';
 import { runWasi } from './wasi-memory.mjs';
+import { rememberSource, sourceOf } from './module-source.mjs';
 
 const dec = new TextDecoder();
 const enc = new TextEncoder();
 
-/** Run `lexlean <args>`. Resolves `{ exit, stdout, stderr, ms }`: stdout as bytes, stderr as text. */
+/** Runs of one module after a trap, before its admitted bytes are compiled again. */
+const SAME_MODULE_TRIES = 3;
+/** Runs of a module compiled again from its admitted bytes. */
+const FRESH_MODULE_TRIES = 3;
+
+/**
+ * Modules found to trap, mapped to the module compiled again in their place, so later runs start from that one.
+ * WebKit compiles LexLean wrongly at times (seen with Lean's kernel open in the same page): a run then traps at
+ * its start, with "Out of bounds memory access" or "Unreachable code", and the module can keep trapping.
+ */
+const replaced = new WeakMap();
+
+/**
+ * Run `lexlean <args>`. Resolves `{ exit, stdout, stderr, ms, retried }`: stdout as bytes, stderr as text, and
+ * how many runs trapped before this one answered.
+ *
+ * A trap (`WebAssembly.RuntimeError`) is not an answer: a run that traps writes nothing a caller reads, and every
+ * run is a new instance with new memory over the same read-only files, so running again is the same request and
+ * cannot change what LexLean answers. A trapped run is run again on the same module, then on the same admitted
+ * bytes compiled again (when toolchain.mjs admitted the module), and the trap is thrown only after both are spent.
+ * Any other error is thrown at once.
+ */
 export async function lexleanRun(module, files, args) {
   const started = performance.now();
-  const r = await runWasi(module, { files, args });
-  return { exit: r.exit, stdout: new Uint8Array(r.stdout), stderr: dec.decode(new Uint8Array(r.stderr)), ms: Math.round(performance.now() - started) };
+  let current = replaced.get(module) ?? module;
+  let retried = 0;
+  let fresh = false;
+  for (;;) {
+    try {
+      const r = await runWasi(current, { files, args });
+      return { exit: r.exit, stdout: new Uint8Array(r.stdout), stderr: dec.decode(new Uint8Array(r.stderr)), ms: Math.round(performance.now() - started), retried };
+    } catch (error) {
+      if (!(error instanceof WebAssembly.RuntimeError)) throw error;
+      retried += 1;
+      const source = sourceOf(current);
+      if (!fresh && retried >= SAME_MODULE_TRIES && source) {
+        current = rememberSource(await WebAssembly.compile(source), source);
+        replaced.set(module, current);
+        fresh = true;
+        continue;
+      }
+      if (retried >= (fresh ? SAME_MODULE_TRIES + FRESH_MODULE_TRIES : SAME_MODULE_TRIES)) {
+        throw new PrismCodeError('lexlean.wasm-failed', `LexLean as WebAssembly trapped ${retried} times running \`${args.join(' ')}\` (${error.message}). This is the engine, not the model.`);
+      }
+    }
+  }
 }
 
 /** `lexlean --diagnostic-format json check --all`: the command result, parsed, with how long it took. */
