@@ -15,7 +15,7 @@
       "project": "tests/fixtures/holo/ho-11-text-application/project",
       "cargo_name": "prism-text-request",
       "vector_indexes": [0, 2, 3],
-      "journeys": ["attachment-assets", "modeled-vectors", "input-validation-recovery", "transport-failure-recovery", "pre-init-privacy", "delayed-init", "intent-boundaries", "text-response-bounds", "text-safe-rendering", "detached-session"]
+      "journeys": ["attachment-assets", "modeled-vectors", "text-textarea-normalized-vectors", "input-validation-recovery", "transport-failure-recovery", "pre-init-privacy", "delayed-init", "intent-boundaries", "text-response-bounds", "text-safe-rendering", "detached-session"]
     }
   ],
   "triggers": ["click", "keyboard"],

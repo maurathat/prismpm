@@ -1589,7 +1589,8 @@ test('portable oracle owns the complete two-profile and two-trigger boundary inv
   const common = ['attachment-assets', 'modeled-vectors', 'input-validation-recovery',
     'transport-failure-recovery', 'pre-init-privacy', 'delayed-init', 'intent-boundaries'];
   assert.deepEqual(matrix.profiles[0].journeys, [...common, 'detached-session']);
-  assert.deepEqual(matrix.profiles[1].journeys, [...common, 'text-response-bounds', 'text-safe-rendering', 'detached-session']);
+  assert.deepEqual(matrix.profiles[1].journeys, [...common.slice(0, 2), 'text-textarea-normalized-vectors', ...common.slice(2),
+    'text-response-bounds', 'text-safe-rendering', 'detached-session']);
 });
 
 test('the existing interoperability binary owns both complete acceptances and one fresh matrix', () => {

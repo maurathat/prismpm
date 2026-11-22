@@ -395,7 +395,13 @@ function applicable(vector) {
     }
     return true;
   }
-  if (text) return vector.request.length <= app.request_maximum;
+  if (text) {
+    if (vector.request.length > app.request_maximum) return false;
+    // A textarea's API value turns CR and CRLF into LF, so the rendered View
+    // cannot carry these request bytes. They take an exact invocation instead.
+    if (request.includes('\r')) { textareaNormalizedIndexes.push(app.acceptance_vectors.indexOf(vector)); return false; }
+    return true;
+  }
   const fields = request.split('\t');
   const canonical = value => {
     if (!/^-?(0|[1-9][0-9]*)$/.test(value)) return false;
@@ -611,6 +617,22 @@ async function journey(name, work) {
     }
     await submit(recovery, page, true);
   });
+  if (text && !workbench) {
+    await journey('text-textarea-normalized-vectors', async () => {
+      for (const index of textareaNormalizedIndexes) {
+        const vector = app.acceptance_vectors[index];
+        const payload = decode.decode(Uint8Array.from(vector.request));
+        await page.locator('#request').fill(payload);
+        assert.notEqual(await page.locator('#request').inputValue(), payload,
+          'a normalization exception must actually change the rendered input');
+        const reply = await fetch(`${origin}/_hologram/intent`, {method: 'POST', headers: {'content-type': 'application/json', origin},
+          body: JSON.stringify({version: 1, name: 'application.invoke', payload})});
+        assert.equal(reply.status, 200);
+        assert.deepEqual(await reply.json(), {version: 1, outputs: [decode.decode(Uint8Array.from(vector.response))]});
+        directVectorIndexes.push(index);
+      }
+    });
+  }
   if (workbench) {
     await journey('workbench-direct-vectors', async () => {
       for (const [index, vector] of app.acceptance_vectors.entries()) {
@@ -950,7 +972,8 @@ async function journey(name, work) {
   process.stdout.write(`${JSON.stringify({schema: 'prismpm/portable-browser-oracle/1', profile,
     engine: browser.browserType().name(), browser_version: browser.version(), playwright: '1.62.1', cases, vector_indexes: vectorIndexes,
     ...(workbench ? {direct_vector_indexes: directVectorIndexes, ui_transport_rejected_indexes: transportRejectedIndexes,
-      textarea_normalized_vector_indexes: textareaNormalizedIndexes, unrepresentable_frame_vector_indexes: unrepresentableFrameIndexes} : {}),
+      textarea_normalized_vector_indexes: textareaNormalizedIndexes, unrepresentable_frame_vector_indexes: unrepresentableFrameIndexes}
+      : text ? {direct_vector_indexes: directVectorIndexes, textarea_normalized_vector_indexes: textareaNormalizedIndexes} : {}),
     browser_timing: browserTimings,
     skipped: 0, retries: 0, status: 'passed'})}\n`);
 } catch (error) {

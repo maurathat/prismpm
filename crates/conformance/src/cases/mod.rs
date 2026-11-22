@@ -3575,6 +3575,7 @@ fn verify_portable_view_report(root: &Path) {
     let cases = [
         "attachment-assets",
         "modeled-vectors",
+        "text-textarea-normalized-vectors",
         "input-validation-recovery",
         "transport-failure-recovery",
         "pre-init-privacy",
@@ -3603,6 +3604,8 @@ fn verify_portable_view_report(root: &Path) {
             "playwright":"1.62.1",
             "cases":cases,
             "vector_indexes":[0,2,3],
+            "direct_vector_indexes":[],
+            "textarea_normalized_vector_indexes":[],
             "skipped":0,
             "retries":0,
             "status":"passed"

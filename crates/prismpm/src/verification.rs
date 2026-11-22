@@ -711,6 +711,7 @@ pub(crate) fn validate_hologram_oracle_report(
     }
     let workbench = application.workbench();
     let mut indexes = Vec::new();
+    let mut normalized = Vec::new();
     for (index, vector) in vectors.iter().enumerate() {
         let Ok(request) = std::str::from_utf8(&vector.request) else {
             continue;
@@ -736,7 +737,15 @@ pub(crate) fn validate_hologram_oracle_report(
                     "a binary application has no Hologram oracle: hologram-live does not run its guest (#630, maintainer decision 1)",
                 ));
             }
-            Application::Text(value) => vector.request.len() <= value.request_maximum as usize,
+            Application::Text(value) => {
+                // A textarea's API value turns CR and CRLF into LF. The browser
+                // driver sends these request bytes as an exact invocation.
+                let bounded = vector.request.len() <= value.request_maximum as usize;
+                if bounded && request.contains('\r') {
+                    normalized.push(index);
+                }
+                bounded && !request.contains('\r')
+            }
             Application::Legacy(value) => {
                 let fields = request.split('\t').collect::<Vec<_>>();
                 fields.len() == 4
@@ -763,6 +772,8 @@ pub(crate) fn validate_hologram_oracle_report(
     let mut names = vec!["attachment-assets", "modeled-vectors"];
     if workbench.is_some() {
         names.extend(["workbench-direct-vectors", "workbench-ui-input-boundaries"]);
+    } else if matches!(application, Application::Text(_)) {
+        names.push("text-textarea-normalized-vectors");
     }
     names.extend([
         "input-validation-recovery",
@@ -818,6 +829,9 @@ pub(crate) fn validate_hologram_oracle_report(
         expected["ui_transport_rejected_indexes"] = json!(selected.transport_rejected);
         expected["textarea_normalized_vector_indexes"] = json!(selected.normalized);
         expected["unrepresentable_frame_vector_indexes"] = json!(selected.unrepresentable);
+    } else if matches!(application, Application::Text(_)) {
+        expected["direct_vector_indexes"] = json!(normalized);
+        expected["textarea_normalized_vector_indexes"] = json!(normalized);
     }
     // `browser_timing` is a measurement: it varies per run and must not
     // participate in the identity comparison. Remove it from a clone before

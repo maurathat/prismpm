@@ -65,7 +65,7 @@ fn test_hologram_oracle_pinned_source_identities() {
     );
     assert_eq!(
         sha256_file(&r.join("crates/prismpm/src/embedded/hologram-oracle.browser.mjs")),
-        "35b282789fed82efcebf22479d4cfc63b0e282d55c1ff8c294dfae94381280e8",
+        "0fe5599c609d2f535d45569ec93b1330b116eded471e25163f6330f9ed29150d",
         "hologram-oracle browser.mjs checksum changed"
     );
 
@@ -294,9 +294,11 @@ fn text_application_hologram_oracle_interoperability_acceptance() -> VerifiedSub
     assert_eq!(browser["skipped"], 0);
     assert_eq!(browser["retries"], 0);
     assert_eq!(browser["vector_indexes"], json!([0, 2, 3]));
+    assert_eq!(browser["direct_vector_indexes"], json!([]));
+    assert_eq!(browser["textarea_normalized_vector_indexes"], json!([]));
 
     let cases = browser["cases"].as_array().expect("browser cases array");
-    assert_eq!(cases.len(), 10);
+    assert_eq!(cases.len(), 11);
     for case in cases {
         assert_eq!(case["status"], "passed");
         assert_eq!(case["attempts"], 1);
@@ -386,6 +388,7 @@ fn test_hologram_oracle_negative_probes_reject_wrong_subject_edition_and_mutatio
     let cases = [
         "attachment-assets",
         "modeled-vectors",
+        "text-textarea-normalized-vectors",
         "input-validation-recovery",
         "transport-failure-recovery",
         "pre-init-privacy",
@@ -410,6 +413,7 @@ fn test_hologram_oracle_negative_probes_reject_wrong_subject_edition_and_mutatio
         "portable_browser": {
             "browser_version": "157.0.8099.0",
             "cases": cases,
+            "direct_vector_indexes": [],
             "engine": "chromium",
             "playwright": "1.62.1",
             "profile": "utf8-text",
@@ -417,6 +421,7 @@ fn test_hologram_oracle_negative_probes_reject_wrong_subject_edition_and_mutatio
             "schema": "prismpm/portable-browser-oracle/1",
             "skipped": 0,
             "status": "passed",
+            "textarea_normalized_vector_indexes": [],
             "vector_indexes": [0, 2, 3],
         },
         "resident_vectors": 6,
@@ -546,6 +551,40 @@ fn test_hologram_oracle_negative_probes_reject_wrong_subject_edition_and_mutatio
         }
         let err = validate_hologram_oracle_report(&valid_report, &bad_app, &identities)
             .expect_err("over-limit application bounds must be rejected");
+        assert_eq!(err.code, "PP5301");
+    }
+
+    // 11. A text request containing CR cannot pass through a textarea, whose
+    // API value turns CR into LF. It is an exact invocation, never a vector
+    // the rendered View is claimed to have submitted.
+    let mut cr_value: Value = serde_json::from_slice(
+        &std::fs::read(r.join("tests/data/text-model-document.json")).unwrap(),
+    )
+    .unwrap();
+    cr_value["application"]["acceptance_vectors"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"request": b"a\rb".to_vec(), "response": b"Accepted: a\rb".to_vec()}));
+    let cr_doc: ModelDocument = serde_json::from_value(cr_value).unwrap();
+    let cr_app = cr_doc.application.as_ref().unwrap();
+    let mut cr_report = valid_report.clone();
+    cr_report["direct_vectors"] = json!(7);
+    cr_report["resident_vectors"] = json!(7);
+    cr_report["intent_vectors"] = json!(6);
+    cr_report["portable_browser"]["direct_vector_indexes"] = json!([6]);
+    cr_report["portable_browser"]["textarea_normalized_vector_indexes"] = json!([6]);
+    validate_hologram_oracle_report(&cr_report, cr_app, &identities)
+        .expect("a CR request reported as an exact invocation must pass");
+    let mut cr_typed = cr_report.clone();
+    cr_typed["portable_browser"]["vector_indexes"] = json!([0, 2, 3, 6]);
+    cr_typed["portable_browser"]["direct_vector_indexes"] = json!([]);
+    cr_typed["portable_browser"]["textarea_normalized_vector_indexes"] = json!([]);
+    let mut cr_omitted = cr_report.clone();
+    cr_omitted["portable_browser"]["direct_vector_indexes"] = json!([]);
+    cr_omitted["portable_browser"]["textarea_normalized_vector_indexes"] = json!([]);
+    for bad in [&cr_typed, &cr_omitted] {
+        let err = validate_hologram_oracle_report(bad, cr_app, &identities)
+            .expect_err("a CR request must be reported as an exact invocation");
         assert_eq!(err.code, "PP5301");
     }
 }

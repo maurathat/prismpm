@@ -118,7 +118,7 @@ export function submissionDiagnosticSummary(row,representation='driver'){
   if(representation==='driver')assert(['prismpm/browser-submission-diagnostic/1','prismpm/browser-submission-diagnostic/2'].includes(row.schema));
   const network=representation==='driver'?row.schema==='prismpm/browser-submission-diagnostic/2':Object.hasOwn(row,'network');
   const field=(value,driver,summary)=>value?.[representation==='driver'?driver:summary];
-  return{journey:choice(row.journey,['attachment-assets','modeled-vectors','input-validation-recovery','transport-failure-recovery',
+  return{journey:choice(row.journey,['attachment-assets','modeled-vectors','text-textarea-normalized-vectors','input-validation-recovery','transport-failure-recovery',
     'pre-init-privacy','delayed-init','intent-boundaries','text-response-bounds','text-safe-rendering','detached-session']),
    phase:choice(row.phase,['initial-readiness','fill','submission','response-body','rendered-result','completed-readiness','completed']),
    failure:choice(row.failure,['assertion','timeout','unexpected','response-body-failed','response-body-unavailable']),
