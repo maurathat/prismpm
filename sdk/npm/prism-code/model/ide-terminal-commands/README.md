@@ -2,19 +2,19 @@
 
 2026-11-21. Model: `src/App.lex.tex`, written by `tools/gen_commands.py`. A rule table, proved by `../ide-prove-rule-app.mjs` with this checkout's prism-code. Nothing is sent anywhere.
 
-The terminal that asks it is `../../ide/edit/terminal` (`shell.mjs`), in the plain edit page and in the workbench's terminal panel. Version 1 listed nine commands and let none of them name a file that was not there. Version 2 lists 32 and adds the target `new`.
+The terminal that asks it is `../../ide/edit/terminal` (`shell.mjs`), in the plain edit page and in the workbench's terminal panel. Version 1 listed nine commands and let none of them name a file that was not there. Version 2 lists 34 and adds the target `new`.
 
 ## What it decides
 
 How the Prism IDE's embedded terminal answers one command: `refuse`, `builtin`, `run` or `reuse`.
 
-The terminal is xterm.js. xterm.js draws what a program writes and reports keys; it runs nothing. A browser tab has no operating system, so what runs is a small interpreter in the page with a fixed list of commands. This table is that list. A line may hold several commands (`a | b`, `a ; b`, `a > file`); each is put to this table on its own, and `> file`, `>> file` and `< file` are put to it as `write file`, `append file` and `cat file`.
+The terminal is xterm.js. xterm.js draws what a program writes and reports keys; it runs nothing. A browser tab has no operating system, so what runs is a small interpreter in the page with a fixed list of commands. This table is that list. A line may hold several commands (`a | b`, `a ; b`, `a > file`), loop and choose over them (`for`, `while`, `if`, `case`), name some as a function and run some inside a word (`$( … )`); each command is put to this table on its own, wherever in the line it stands, and `> file`, `>> file` and `< file` are put to it as `write file`, `append file` and `cat file`.
 
 A request is four words, in order:
 
 | Field | Values | Meaning |
 |---|---|---|
-| command | other, help, clear, ls, cat, kappa, check, snapshot, prove, audit, echo, pwd, set, unset, env, history, sessions, restore, save, grep, head, tail, wc, sort, uniq, diff, cd, append, mv, cp, write, touch, rm | the command's first word; any word not listed is `other` |
+| command | other, help, clear, ls, cat, kappa, check, snapshot, prove, audit, echo, pwd, set, unset, env, history, sessions, restore, save, grep, head, tail, wc, sort, uniq, diff, cd, run, test, append, mv, cp, write, touch, rm | the command's first word; any word not listed is `other` |
 | target | none, outside, model, new | where the command's paths point: it names none; one leaves the open model; each names a file or folder of the model; all are inside the model and one names no file yet |
 | bytes | absent, mismatch, pinned | the executable the command needs, as held in this tab: not there, hashing to another label, or hashing to its pinned BLAKE3 label |
 | stored | no, yes | the reuse rule admitted a kept output for this program label and this input label |
@@ -22,9 +22,11 @@ A request is four words, in order:
 | Commands | Kind | What they do |
 |---|---|---|
 | help, clear, history, set, unset, env | builtin | the terminal itself: list the commands, clear the screen, the lines entered, variables |
+| run | builtin | enter the lines of a file of the model; each command of each line is put to this table on its own |
 | save, restore, sessions | builtin | keep this session's transcript in this browser, print one, list them |
 | ls, cd, pwd, cat, kappa | builtin | the model's files: list, move about, print, print a `blake3:` label |
 | echo, grep, head, tail, wc, sort, uniq, diff | builtin | text, from files of the model or from the command before in a pipe |
+| test | builtin | say by its status whether a comparison holds; `[ … ]` is the same command |
 | write, append, touch, cp, mv | builtin | make or change a file of the model; these five may name a file that is not there yet |
 | rm | builtin | remove a file of the model |
 | check, snapshot | program | `lexlean check` and `lexlean snapshot`: LexLean's front end as WebAssembly, pinned in `src/journey/lexlean-wasm.mjs` |
@@ -47,7 +49,7 @@ Rule 5 comes before rule 6 on purpose: a kept output is shown without fetching o
 
 ## Proved
 
-Lean's kernel accepted all 19, for every request (792 of them).
+Lean's kernel accepted all 19, for every request (840 of them).
 
 1. An unlisted command is always refused.
 2. A path outside the open model is always refused, whatever the command.
@@ -63,21 +65,21 @@ Lean's kernel accepted all 19, for every request (792 of them).
 15. Each of the five that make a file, with a path that names no file yet, is always answered.
 16. to 19. Each builtin that names no path, or only paths in the model, is always answered.
 
-Version 1 stated guarantees 6 to 12 once for each command, 23 lines for nine commands. Stated that way the 32 commands need 105, and Lean's kernel takes about five seconds for each, so they are stated over runs of the list. What they say is the same.
+Version 1 stated guarantees 6 to 12 once for each command, 23 lines for nine commands. Stated that way the 34 commands need over 105, and Lean's kernel takes about five seconds for each, so they are stated over runs of the list. What they say is the same.
 
-Model identity: `sha256:4032b15a67d80ef59f92d6f4e01bafa7273ab3076ceddab0894f081a1cff375a`.
-Built app: `sha256:0797f2a52b08e4a25e93ce9367c6ff1bc36b111a8b98db5cb53dc5e622087637`.
+Model identity: `sha256:ca11471ef368c523a4000c8f8a16aa0f533a976f6978d0c3d03d48201b513eb2`.
+Built app: `sha256:5dd5828e1050b0b08f9f458cdb79a0cb2f5c5a97db95f42b2f44b717bccadfe7`.
 These names are SHA-256 because that is what prism-code emits today.
 
 ## Tested, not proved
 
-33 of 33 acceptance vectors pass through the built judge.
+37 of 37 acceptance vectors pass through the built judge.
 A planted defect (run bytes that hash to another label) is refused in CI, and the step checks that the kernel names guarantee 4 and the request `check none mismatch no`.
 
 ## Not covered
 
 The four words are the page's to compute, and that is unproved: splitting the line into commands, expanding its words, resolving each path, hashing the executable, asking the reuse rule. It is tested in `ide/tools/terminal-test.mjs`.
-That a line's redirections reach this table as `write`, `append` and `cat` is the interpreter's doing, tested, not proved.
+That a line's redirections reach this table as `write`, `append` and `cat`, and that every command inside a loop, a `case`, a function, a `$( … )` or a script reaches it at all, is the interpreter's doing, tested, not proved.
 `stored` is the answer of `reuseAdmits`, which is proved in `../rule-app` (`RuleAppProofs.lex.tex`), not here. The terminal asks it with the program's label and the input's label as the derivation key (`src/journey/kappa-rules.mjs`, `derivationKey`).
 That a kept output is still the right output rests on the programs being deterministic. `check` and `snapshot` were built twice to the same bytes; that their output is the same for the same input is not proved.
 `prove` is held to the SHA-256 names in the kernel's manifest; only the label of the whole list is BLAKE3.
