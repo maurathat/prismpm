@@ -947,8 +947,7 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `attestation.subject` |  | `AL-07` | A statement subject has no digest set, or its digests are not exactly blake3 and sha256 as 64 lowercase hex characters (ADR-015). |
 | `attestation_not_found` | `AttestationNotFoundError` | `CT-12` | Verify-attestation found no attestation bundle for the holo. |
 | `auth.unavailable` |  | `SE-09` | prism.auth reads and writes Docker's credential stores, which this build of prism-code leaves out; use it in Node. |
-| `axioms.probe` |  | `DK-41` | Lean refused the axiom probe, said nothing about a declaration, or left no audit records. |
-| `axioms.project` |  | `DK-41` | The project has no .lex.tex file under its source roots, so there is nothing to audit. |
+| `build.failed` |  | `DK-41` | A build did not produce an app it can stand behind, and the step that failed named no code of its own. |
 | `build.frontend-unavailable` |  | `DK-46` | LexLean's front end is not available: LexLean as WebAssembly is not on this machine and could not be fetched, or PRISM_CODE_TIER=offline fetches nothing. Nothing about the app is sent anywhere instead. |
 | `build.guest-differs` |  | `DK-50` | The app's holo is not built: its guest answered a request otherwise than the model's own definitions do. This is a fault of the builder and says nothing about the app. |
 | `build.guest-uncovered` |  | `DK-50` | The app's holo is not built: its model uses a construct, a profile or a capability the evaluator guest does not run yet, named in the message. Lean's kernel proved its theorems; this is a limit of the builder, not a verdict on the app. |
@@ -963,7 +962,6 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `bundle.reference` |  | `DK-49` | A reference is not a κ-label, dir://<folder>#<κ> or https://<site>#<κ>, or a pull names no app. |
 | `bundle.schema` |  | `DK-49` | A pulled manifest is not a prism/app-bundle/1 manifest. |
 | `bundle.store-off` |  | `DK-49` | This machine keeps no Prism store (PRISM_KAPPA=0), so an app is pushed only to a dir:// folder. |
-| `bundle.unproved` |  | `DK-49` | prism_push publishes only an app whose proof is current; call prism_build first. |
 | `canonical.algorithm` |  | `DK-41` | The digest algorithm needs node:crypto, which this host does not have; sha256 stays available. |
 | `capabilities.invalid` |  | `AL-07` | A capability file or capability set is malformed, or a set was named without a capability file. |
 | `capabilities.kind` |  | `AL-07` | A capability names a kind this version does not know. |
@@ -994,8 +992,6 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `dev.port` |  | `DK-41` | The port the studio serves on is in use; the studio never moves to another port by itself. |
 | `dev.project` |  | `DK-41` | The directory has no prism.toml or prismpm.toml and no --build command was given, so there is nothing to build. |
 | `digest_mismatch` | `DigestMismatchError` | `CT-12` | Bytes read from a registry or a remote build differ from the digest they were named by. |
-| `docker.missing` |  | `DK-41` | No Docker invocation could be resolved on this machine, from the config setup wrote or a fresh probe, so a delegated command cannot run. |
-| `docker.mount` |  | `OC-11` | The Docker mount style is not one of the styles prism-code knows, from an option or PRISM_DOCKER_MOUNT. |
 | `export.directory` |  | `OC-11` | The export directory or the release tarball cannot be read: the directory is absent or unreadable, or the tarball is not a well-formed ustar archive. |
 | `export.exists` |  | `OC-11` | A file or directory the export would write already exists; an export never replaces one. |
 | `export.reference` |  | `OC-11` | The release reference given to export is not a registry-qualified immutable reference, NAME@sha256:DIGEST. |
@@ -1007,9 +1003,7 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `generate.output` |  | `DK-41` | generate has no output directory, or a file there was not written by prism-code generate; generate never writes to a default place or over a file it did not write. |
 | `generate.wit` |  | `DK-41` | The WIT file holds something outside the subset generate reads. |
 | `generate.world` |  | `DK-41` | The world has no WIT file, or the writer has no binding for it, such as a world with imports. |
-| `hosted.coverage` |  | `DK-41` | The hosted verifier did not prove every declaration the project asks it to. |
-| `hosted.layout` |  | `DK-41` | lexlean.toml cannot be read or has a layout the hosted profile does not take. |
-| `hosted.unreachable` |  | `DK-41` | The hosted verifier did not answer, or refused the call. |
+| `holo.identities` |  | `DK-41` | The identities a holo states are not the identities of its bytes. |
 | `identity_mismatch` | `IdentityMismatchError` | `CT-12` | The attestation was signed by an identity other than the one required. |
 | `image.ambiguous` |  | `OC-12` | An image id prefix names more than one stored image; nothing was read or changed. |
 | `image.corrupt` |  | `OC-12` | The bytes the local image store keeps for an image no longer match its digests, or are missing; they are never served. |
@@ -1053,6 +1047,7 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `middleware.shape` |  | `DK-41` | A middleware is not a function (next, context) => handler, or its tags are not an array of strings. |
 | `middleware.step` |  | `DK-41` | A middleware names a step that is not one of the middleware steps. |
 | `middleware_failed` | `MiddlewareError` | `CT-12` | A middleware on the stack threw something that is not a PrismError. |
+| `model.unchecked` |  | `DK-41` | The model does not check, and the check named no code of its own. |
 | `mount.environment` |  | `DK-41` | mount() needs a DOM, which this host does not have. |
 | `networks.exists` |  | `DK-39` | prism.networks.create named a network the capability file already holds; a grant is never widened by creating it again. |
 | `networks.not-found` |  | `DK-39` | The capability file has no network of that name: no set with an outbound-hosts member. |
@@ -1060,18 +1055,11 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `networks.protected` |  | `DK-39` | prism.networks.remove named the default set, which a capability file must have. |
 | `networks.store` |  | `DK-39` | prism.networks has no store to read the capability file from, or none to write it to, so nothing changed. |
 | `networks.unavailable` |  | `DK-39` | The call needs host effects (#216, #217), which this version does not have; nothing changed and no traffic can flow. |
-| `open.agent` |  | `DK-41` | The holo:// link names no agent and none is preferred, or names an agent prism-code does not open. |
-| `open.clipboard` |  | `DK-41` | The clipboard command could not set the clipboard. |
-| `open.host` |  | `DK-41` | The holo:// link names a host other than build. |
-| `open.parameter` |  | `DK-41` | The holo:// link has a parameter other than agent and q, or one given twice. |
-| `open.sentence` |  | `DK-41` | The holo:// link carries no sentence, one too long, or one with a control or bidirectional character. |
-| `open.terminal` |  | `DK-41` | No terminal was found to open the agent in; set TERMINAL or install one. |
-| `open.ticket` |  | `DK-41` | The open ticket cannot be read, is not JSON, or has the wrong schema. |
-| `open.url` |  | `DK-41` | The link is not a holo:// URL, or carries a user, password, port or fragment. |
 | `policy_denied` | `PolicyDeniedError` | `CT-12` | A rule of a policy file denied the holo. |
 | `policy_evaluation_failed` | `PolicyEvaluationError` | `CT-12` | A policy file could not be evaluated, so no verdict was reached. |
 | `policy_parse_failed` | `PolicyParseError` | `CT-12` | A policy file could not be parsed, so no verdict was reached. |
 | `prism_error` | `PrismError` | `CT-12` | The base class of every error prism-code throws; a code of its own is set only where no subclass fits. |
+| `proof.rejected` |  | `DK-41` | Lean's kernel did not accept a proof of a theorem of the model. |
 | `proof_mismatch` | `ProofMismatchError` | `CT-12` | A proof.* check of a verdict failed. |
 | `provenance.archive` |  | `OC-11` | The archive does not verify, so no provenance statement is made about it. |
 | `provenance.duplicate` |  | `OC-11` | The archive already carries a provenance statement. |
@@ -1089,25 +1077,8 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `referrers_unsupported` | `ReferrersUnsupportedError` | `CT-12` | The registry has no referrers API and the tag fallback is turned off. |
 | `registry_auth_failed` | `RegistryAuthError` | `CT-12` | The registry refused the credentials, or asked for credentials that were not given. |
 | `registry_failed` | `RegistryError` | `CT-12` | The registry did not answer, or answered with an error. |
-| `remote.api` |  | `DK-41` | The GitHub API did not answer or answered with an HTTP error. |
-| `remote.artifact` |  | `DK-41` | The artifact of the remote build is not a zip archive, or lacks the files a build leaves. |
-| `remote.attestation` |  | `DK-41` | The provenance signature of the remote build cannot be checked here, or the check refused it. |
-| `remote.auth` |  | `DK-41` | No GitHub token was found for the remote build. |
-| `remote.commit` |  | `DK-41` | The remote build was made from a commit other than the one asked for. |
-| `remote.digest` |  | `DK-41` | The holo's SHA-256 differs from the one the runner recorded: the bytes changed in transit. |
-| `remote.dirty` |  | `DK-41` | The working tree has uncommitted changes, which a remote build cannot see. |
-| `remote.fingerprint` |  | `DK-41` | The holo of the remote build has a fingerprint other than the one the runner recorded. |
-| `remote.permission` |  | `DK-41` | The GitHub token cannot push to the repository, which starting a remote build needs. |
-| `remote.provenance` |  | `DK-41` | The provenance of the remote build is not a Sigstore bundle with a DSSE envelope holding a SLSA statement. |
-| `remote.push` |  | `DK-41` | The commit could not be pushed to the remote build ref. |
-| `remote.ref` |  | `DK-41` | The ref given to the remote build is not a commit of the repository. |
-| `remote.repository` |  | `DK-41` | The repository for the remote build cannot be named: --repo is malformed, or origin is missing or not on github.com. |
-| `remote.run` |  | `DK-41` | No run of the build workflow started for the commit within two minutes of the push. |
-| `remote.signer` |  | `DK-41` | The remote build was made in a repository other than the one asked for. |
-| `remote.subject` |  | `DK-41` | The provenance of the remote build is about bytes other than the holo. |
-| `remote.timeout` |  | `DK-41` | The run of the remote build did not end in time; it goes on, and --ref picks it up later. |
-| `remote.workflow` |  | `DK-41` | The commit holds no build workflow, so no remote build can start. |
 | `replay_failed` | `ReplayError` | `CT-12` | A replay could not be carried out or its statement failed. |
+| `report.uncoded` |  | `DK-41` | A diagnostic of a check, build or verify report whose source named no code. |
 | `rule-table.index` |  | `DK-46` | A field, operator or answer index of the rule app names nothing. |
 | `rule-table.module` |  | `DK-46` | No module, or more than one, of the snapshot defines every definition of a rule app. |
 | `rule-table.range` |  | `DK-46` | A number of the rule app lies outside its field or outside what the rule judge reads in one request. |
@@ -1119,8 +1090,6 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `session.closed` |  | `HO-45` | A step was started on a session that was closed or that a failed step ended; nothing ran, and a new session must be opened. |
 | `session.required` |  | `HO-45` | dispatch was called on an application whose guest is the session world hologram:guest/core-wasm@2; its steps are taken on a session opened with open(). |
 | `session.unsupported` |  | `HO-45` | open was called on an application whose guest is the stateless world hologram:guest/core-wasm@1, which has no sessions. |
-| `setup.agent` |  | `DK-41` | setup was asked for an agent it does not know. |
-| `setup.command` |  | `DK-41` | A setup step's command failed. |
 | `signature_invalid` | `SignatureInvalidError` | `CT-12` | The attestation's signature does not verify. |
 | `signing_failed` | `SigningError` | `CT-12` | Attest could not produce a signature. |
 | `skill.missing` |  | `DK-41` | The folder skill verify was given holds no SKILL.md. |
@@ -1136,7 +1105,11 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `transparency_failed` | `TransparencyError` | `CT-12` | The attestation's transparency log entry does not verify. |
 | `trust_root_invalid` | `TrustRootError` | `CT-12` | The trusted root is missing or malformed. |
 | `try.unbuilt` |  | `DK-46` | No app is built yet, so no request is answered; Prism answers only from a built app. |
+| `vectors.failed` |  | `DK-41` | An acceptance vector answers otherwise than the model states. |
+| `vectors.none` |  | `DK-41` | An artifact carries no acceptance vector, so verify replayed nothing. |
 | `verification_failed` | `VerificationError` | `CT-12` | No verdict could be reached, or the holo failed a check about the archive itself, its documents or its provenance. |
+| `verify.stale` |  | `DK-41` | What is built is the build of an earlier model: the sources changed since, so verify refuses it until it is built again. |
+| `verify.unbuilt` |  | `DK-41` | The model checks and is proved, and nothing is built from it yet, so verify has nothing to replay. |
 | `view.bounds` |  | `OC-11` | The HOLOVIEW bundle is shorter than its header, or an entry or file overruns it. |
 | `view.entry` |  | `OC-11` | The HOLOVIEW entry is not one of the bundled files. |
 | `view.magic` |  | `OC-11` | The bytes are not a HOLOVIEW bundle. |
