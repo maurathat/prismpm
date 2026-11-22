@@ -526,6 +526,9 @@ fn v5_composition_declares_the_session_world_and_a_static_view() {
     let stateless = compose_application(&application_input()).unwrap();
     let manifest: Value = serde_json::from_slice(&v5_objects(&stateless.bytes)[0]).unwrap();
     assert_eq!(manifest["layers"][0]["entry"], "holo_run");
+    let mut unbound = application_input();
+    unbound.provenance.browser_projection_sha256 = None;
+    assert_eq!(compose_application(&unbound).unwrap_err().code, "PP3015");
     let mut unknown = application_input();
     unknown.core_contract = "hologram:guest/core-wasm@4".to_owned();
     assert_eq!(compose_application(&unknown).unwrap_err().code, "PP3010");

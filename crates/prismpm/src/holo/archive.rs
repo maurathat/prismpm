@@ -1103,12 +1103,24 @@ fn parse_application_v5(bytes: &[u8]) -> Result<ParsedApplicationArchive, PrismE
     let application_kappa = content_kappa(manifest_bytes);
     let provenance: ModelProvenanceV1 = serde_json::from_slice(objects[2])
         .map_err(|error| PrismError::new("PP3015", format!("model provenance: {error}")))?;
+    // A session or checkpoint guest's View is static: it runs nothing, so it
+    // binds no browser projection (#630 decision 2a). A stateless View must.
+    let static_view = declared_contract(&manifest.layers) != wire::contractName();
     let (view_model_id, browser_sha256) = match &provenance.view_binding {
         ViewBinding::Present {
             view_model_id,
             view_content_kappa,
-            browser_projection: BrowserProjection::Present { sha256 },
-        } if *view_content_kappa == view_kappa => (view_model_id, sha256),
+            browser_projection,
+        } if *view_content_kappa == view_kappa => match browser_projection {
+            BrowserProjection::Present { sha256 } => (view_model_id, Some(sha256)),
+            BrowserProjection::None if static_view => (view_model_id, None),
+            _ => {
+                return Err(PrismError::new(
+                    "PP3015",
+                    "a stateless View application requires a bound browser projection",
+                ));
+            }
+        },
         _ => {
             return Err(PrismError::new(
                 "PP3015",
@@ -1131,7 +1143,6 @@ fn parse_application_v5(bytes: &[u8]) -> Result<ParsedApplicationArchive, PrismE
         &provenance.generated_core_sha256,
         &provenance.cargo_crate_sha256,
         view_model_id,
-        browser_sha256,
     ];
     if provenance.schema != PROVENANCE_SCHEMA_V5
         || provenance.core_wasm_contract != declared_contract(&manifest.layers)
@@ -1143,6 +1154,7 @@ fn parse_application_v5(bytes: &[u8]) -> Result<ParsedApplicationArchive, PrismE
         || content_id(model) != provenance.model_id
         || digest_fields
             .into_iter()
+            .chain(browser_sha256)
             .any(|digest| !digest_is_valid(digest))
         || !revision_is_valid(&provenance.lexlean_commit)
         || !revision_is_valid(&provenance.lean4_prod_commit)
