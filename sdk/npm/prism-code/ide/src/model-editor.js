@@ -45,10 +45,26 @@ const strip = document.getElementById('strip');
 const state = (window.prismModel = { ready: false, checks: 0, last: null, proof: null, error: null, markers: 0 });
 const say = (text, kind) => { strip.textContent = text; strip.dataset.state = kind ?? ''; };
 
+// Inside an app's holospace. Holospace's page loads this IDE by its one label into a frame of its own page, on the
+// same origin, and hands it that app's things and nothing else, on the page that holds the frame:
+//
+//   holospaceHost = { space: { id, address, workspace, storage, grants }, app: { address, name, holo },
+//                     files: { workbench }, run: { open, runner }, view: { viewFiles, viewDocument, serveIntents },
+//                     replace, store: { writable, onWritable, persisted, persist } }
+//
+// Under a host this page registers no service worker (the host's serves its files by label), loads no copy of
+// Holospace's library, takes the model from the app's holospace, and asks the host to replace the running app after
+// a build. The IDE is inside the trust of that origin: the host's gate decides for apps and extensions, not for
+// this page's own code. Read once; a page with no host is the published site, unchanged.
+const HOST = (() => {
+  try { return window.holospaceHost ?? (window.parent !== window ? window.parent.holospaceHost : null) ?? null; } catch { return null; }
+})();
+state.host = HOST !== null;
+
 // Offline, by content: the site's service worker, where the site was assembled with one (tools/build-offline-site.mjs).
 // It serves each published file only as the bytes its BLAKE3 label names, from this browser once it has them. This
 // page loaded before the worker could take over, so it tells the worker what it loaded.
-if ('serviceWorker' in navigator) {
+if (!HOST && 'serviceWorker' in navigator) {
   navigator.serviceWorker.register(new URL('../../sw.js', location.href)).then(async () => {
     const worker = (await navigator.serviceWorker.ready).active;
     navigator.serviceWorker.addEventListener('message', ({ data }) => { if (data && 'warmed' in data) state.offline = data; });
@@ -65,7 +81,14 @@ const fresh = (url) => fetch(url, { cache: 'no-store' }).catch(() => fetch(url))
 const json = async (url) => (await fresh(url)).json();
 // ?project=<address of a folder> opens the model published there: its project.json lists its files, which are
 // fetched from that folder. Without it, the model that came with the page is opened.
-const asked = new URLSearchParams(location.search).get('project');
+// Under a host the model is the app's own: the folder model/ beside the holo the host opened. A holo does not carry
+// its sources yet, so they are read from where the app publishes them, which the host hands over as `app.from`: the
+// address its link named, and nothing more. Nothing is trusted for coming from there; what is read is compared with
+// the holo's own label (holo-match.mjs). What was edited before is in the app's holospace.
+const hostedModel = () => {
+  try { return typeof HOST.app.from === 'string' ? new URL('model/', HOST.app.from).href : null; } catch { return null; }
+};
+const asked = HOST ? hostedModel() : new URLSearchParams(location.search).get('project');
 const PROJECT = asked ? new URL(asked.replace(/\/?$/, '/'), location.href).href : null;
 const files = {};
 let listing, pin;
@@ -142,8 +165,27 @@ function compare(table, edited) {
 // Holospace's library, published beside this page and held to its labels when the site was built. It is opened
 // once, by whichever needs it first: a workspace kept in its store, or the run panel.
 let holospace = null;
-const holospaceModule = () => import(/* @vite-ignore */ EDIT + 'holospace/holospace.bundle.mjs');
-const library = () => (holospace ??= holospaceModule().then((m) => m.openHolospace()));
+/** Every file and folder under a provider's root, as Holospace's own \`walk\` gives them: \`{ path, dir }\`. */
+async function walkProvider(provider, { limit = 5000 } = {}) {
+  const out = [];
+  const visit = async (folder) => {
+    for (const entry of await provider.readDirectory(folder === '' ? '/' : '/' + folder)) {
+      if (out.length >= limit) return;
+      const at = folder === '' ? entry.name : `${folder}/${entry.name}`;
+      out.push({ path: at, dir: entry.dir === true });
+      if (entry.dir) await visit(at);
+    }
+  };
+  await visit('');
+  return out;
+}
+const holospaceModule = HOST
+  ? async () => ({ ...HOST.view, walk: (provider, options) => walkProvider(provider, options) })
+  : () => import(/* @vite-ignore */ EDIT + 'holospace/holospace.bundle.mjs');
+// Under a host there is one app and its things; nothing else of the library is reachable from here.
+const library = HOST
+  ? async () => ({ open: (bytes) => HOST.run.open(bytes), run: (opened) => HOST.run.runner(opened), workbench: (provider, options) => HOST.files.workbench(provider, options), app: async () => HOST.space, store: HOST.store })
+  : () => (holospace ??= holospaceModule().then((m) => m.openHolospace()));
 
 // ?workspace=<name> keeps the model's files in a workspace of Holospace's store, in this browser, and mounts them in
 // the workbench through Holospace's own file provider. The first visit puts the model there as fetched, in one
@@ -153,9 +195,10 @@ const WORKSPACE = (() => { const name = new URLSearchParams(location.search).get
 // BLAKE3 label of the holo the app publishes: the same on every visit and for every rebuild of that app, and apart
 // from every other app's. The label is the one the app's record names, taken only because the published holo's
 // bytes derive to it (holo-match.mjs). A library that gives an app no holospace leaves the page as it was.
-const APP_ADDRESS = !WORKSPACE && holoBeside?.holo === 'same' ? holoBeside.record.holo : null;
+const APP_ADDRESS = HOST ? HOST.space.address : !WORKSPACE && holoBeside?.holo === 'same' ? holoBeside.record.holo : null;
 // What the page read of the app, kept with what is later said of the model against it (state.app).
-const APP_FACTS = holoBeside ? { address: holoBeside.holo === 'same' ? holoBeside.record.holo : null, from: holoBeside.app, id: null, space: null }
+const APP_FACTS = HOST ? { address: HOST.space.address, from: asked, id: HOST.space.id ?? null, space: null, hosted: true }
+  : holoBeside ? { address: holoBeside.holo === 'same' ? holoBeside.record.holo : null, from: holoBeside.app, id: null, space: null }
   : beside ? { address: null, from: PROJECT ? new URL('../', PROJECT).href : null, id: null, space: null } : null;
 let stored = null;
 let storedBench = null;
@@ -166,8 +209,11 @@ const PLACE = () => (space ? "This app's own holospace" : `Workspace "${WORKSPAC
 const READ_ONLY = 'This workspace is open for editing in another tab; this one is read-only until that tab closes. ';
 // Measured in Chromium with the library at ea96397: when the writing tab closes, this tab is told it may write, but
 // a save from the workbench already open here still does not reach the store. After a reload it does. So the page
-// asks for the reload instead of saying it can save.
-const RELOAD = 'The tab that was editing this workspace has closed. Reload this tab to edit it here. ';
+// asks for the reload instead of saying it can save. A later library (holospace-shell 0e2d04e) tells the workbench
+// to look at its open files again when the lock passes, and with it a save does reach the store, measured the same
+// way; such a provider has `announceReadonly`, and then no reload is asked for.
+const passesLock = () => typeof storedBench?.announceReadonly === 'function';
+const RELOAD ='The tab that was editing this workspace has closed. Reload this tab to edit it here. ';
 // Files of the model that a saved workspace no longer has: they were removed there on an earlier visit.
 const goneFromWorkspace = [];
 // The reader's changes from an earlier visit, kept in this browser under BLAKE3 labels for exactly this model.
@@ -215,7 +261,7 @@ const draftLine = document.getElementById('draft');
 const draftText = document.getElementById('draftText');
 state.draft = { base, off: drafts.off, restored: Object.keys(restored), dropped: kept.dropped, kept: Object.keys(restored) };
 // When the tab that was writing closes, the line says so.
-store?.onWritable?.((writable) => { if (state.workspace) { state.workspace.writable = writable && state.workspace.writable === false ? 'after a reload' : writable; sayDraft(state.draft?.kept ?? []); } });
+store?.onWritable?.((writable) => { if (state.workspace) { state.workspace.writable = writable && state.workspace.writable === false && !passesLock() ? 'after a reload' : writable; sayDraft(state.draft?.kept ?? []); } });
 function sayDraft(paths) {
   if (stored) {
     // In a workspace the files are saved by the workbench into the store; there is no draft apart from them.
@@ -505,6 +551,17 @@ try {
     took.append(`Built in this tab in ${reply.ms} ms, with nothing compiled: ${name}, ${built.holo.bytes.length} bytes, ${built.holo.label}. `
       + (built.theorems ? `Proved: Lean's kernel accepted all ${built.theorems.length} of its theorems. ` : '')
       + (built.vectors ? `Tested: ${built.vectors.passed} of ${built.vectors.total} examples give their recorded answer through it. ` : ''), link);
+    // Under a host, the running app is the holospace's to replace. It judges the bytes itself and says what it
+    // did, or why it did nothing; this page's own account of the build is not what decides.
+    if (HOST) {
+      let said;
+      try { said = await HOST.replace(built.holo.bytes); } catch (error) { said = { replaced: false, reason: String(error?.code ?? error?.message ?? error) }; }
+      state.replaced = { replaced: said?.replaced === true, kept: said?.kept ?? null, reason: said?.reason ?? null, address: said?.address ?? null, judged: said?.judged ?? null };
+      const WHY = { 'proof.unjudged': "its holospace cannot yet check the proof itself, and does not take this page's word for it", 'replace.unbuilt': 'its holospace judged the build and cannot replace a running app yet' };
+      took.append(said?.replaced === true
+        ? ` The running app was replaced${said.kept === 'restarted' ? `, and restarted: ${said.reason ?? 'no reason given'}` : ', and kept its state'}.`
+        : ` The running app was not replaced: ${WHY[said?.reason] ?? said?.reason ?? 'no reason given'}.`);
+    }
     return state.built;
   };
   buildButton.addEventListener('click', () => { window.prismModel.build().catch((error) => { buildButton.disabled = false; took.textContent = 'Not built: ' + String(error?.message ?? error); took.hidden = false; }); });
