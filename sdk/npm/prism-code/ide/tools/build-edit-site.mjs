@@ -11,9 +11,11 @@
 //   <out>/edit/holospace/            the Holospace library a built holo is opened and run with, each file the one
 //                                    tools/holospace-pins.json names by its BLAKE3 label
 //   <out>/edit/project/              the model the page opens when it is given no other, and project.json listing it
-//   <out>/edit/template/             the one template every Prism app starts from, as `prism-code init` writes its
-//                                    app, with project.json and template.json (the template's BLAKE3 label), so
-//                                    the page can start an app that builds and runs: ?project=../template/
+//   <out>/edit/app/                  the one template every Prism app starts from, as an app: what `prism-code init`
+//                                    then `prism-code build` write for a person with the package, run here. It holds
+//                                    app.holo, app.holo.json and model/ (the folder the build publishes), and
+//                                    template.json naming the template's BLAKE3 label. The page starts a new app
+//                                    from it (?project=../app/model/), and a holospace can open it by its holo.
 //   <out>/edit/ide/                  the same loop in the VS Code workbench, when dist-model/ has been built
 //   <out>/edit/vendor/xterm/         xterm.js and its addons, the files npm ships, each the one terminal/pins.json names
 //   <out>/edit/terminal/tables.json  the proved tables the terminal asks, read from model/ide-terminal-* and model/ide-audit
@@ -33,7 +35,8 @@ import { ensureKernel, hasKernel, readKernelFile } from '../../src/journey/kerne
 import { keptFile } from '../../src/journey/kappa-store.mjs';
 import { MODEL_KERNEL_FILES, ensureModelKernel } from '../../src/journey/model-prove.mjs';
 import { EVALUATOR_GUEST } from '../../src/journey/model-guest.mjs';
-import { APP_FOLDER, writeTemplate } from '../../src/journey/template.mjs';
+import { spawnSync } from 'node:child_process';
+import { canonicalTemplate } from '../../src/journey/template.mjs';
 import { projectListing } from './edit-project.mjs';
 import { kappa } from '../../src/blake3.mjs';
 import { terminalTables, vendorFiles } from './terminal-site.mjs';
@@ -105,17 +108,25 @@ const listing = projectListing(project);
 for (const path of listing.files) cpSync(join(project, path), join(site, 'project', path));
 writeFileSync(join(site, 'project.json'), JSON.stringify(listing) + '\n');
 
-// The one template every Prism app starts from, written here by the function `prism-code init` calls, which admits
-// each of its files by its BLAKE3 label. What the page opens is its app, the LexLean project under app/, so a
-// person starting in the tab starts where a person with the package does. The model above need not declare an app;
-// the template's does, and builds.
+// The one template every Prism app starts from, made here into an app by the package's own two commands, as a
+// person with the package makes it: `prism-code init` in an empty folder, then `prism-code build`, which checks the
+// model, has Lean's kernel prove its theorems, and writes the holo and the folder an app publishes (app.holo,
+// app.holo.json, model/). Nothing is fetched for it and nothing here stands in for either command. The page starts
+// a new app from its model, and a holospace can open the app by its holo's label. The model above need not declare
+// an app; the template's does, and builds.
 const started = mkdtempSync(join(tmpdir(), 'prism-template-'));
-const templateWritten = writeTemplate(started);
-const templateApp = join(started, APP_FOLDER);
-const template = projectListing(templateApp);
-for (const path of template.files) cpSync(join(templateApp, path), join(site, 'template', path));
-writeFileSync(join(site, 'template', 'project.json'), JSON.stringify(template) + '\n');
-writeFileSync(join(site, 'template', 'template.json'), JSON.stringify({ schema: 'prism-ide/template/1', label: templateWritten.label, folder: APP_FOLDER, files: template.files.length }) + '\n');
+const cli = join(pkg, 'bin', 'prism-code.mjs');
+const ran = (...args) => {
+  const done = spawnSync(process.execPath, [cli, ...args], { cwd: started, encoding: 'utf8' });
+  if (done.status !== 0) throw new Error(`prism-code ${args.join(' ')} stopped with ${done.status}: ${(done.stdout + done.stderr).trim().slice(-600)}`);
+  return done.stdout;
+};
+ran('init');
+const built = JSON.parse(ran('build', '--json'));
+if (built.ok !== true || typeof built.summary?.site !== 'string') throw new Error('prism-code build did not write the app: ' + JSON.stringify(built.diagnostics ?? built).slice(0, 400));
+if (built.summary.theoremsVerified !== built.summary.theoremsDeclared || built.summary.vectorsPassed !== built.summary.vectorsTotal) throw new Error('the template was built with a theorem unproved or an example failing');
+cpSync(join(started, built.summary.site), join(site, 'app'), { recursive: true });
+writeFileSync(join(site, 'app', 'template.json'), JSON.stringify({ schema: 'prism-ide/template/2', label: canonicalTemplate().label, holo: built.summary.address, theorems: built.summary.theoremsVerified, vectors: built.summary.vectorsPassed }) + '\n');
 rmSync(started, { recursive: true, force: true });
 
 // The workbench is built apart (npx vite build -c vite.model.config.js). Without that build the site has the plain page only.
