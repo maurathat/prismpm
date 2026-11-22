@@ -57,8 +57,7 @@ test('the skill is refused when its frontmatter is wrong', () => {
   assert.match(problems(good.replace(/^---\n[\s\S]*?\n---\n/, '')).join('\n'), /no frontmatter/);
 });
 
-test('the skill is refused when a marker is missing, including the MCP spot', () => {
-  assert.match(problems(good.replace('<!-- mcp:begin -->', '')).join('\n'), /marker mcp:begin appears 0 times/);
+test('the skill is refused when a marker is missing', () => {
   assert.match(problems(good.replace('<!-- generated:docs:end -->', '')).join('\n'), /marker docs:end appears 0 times/);
   assert.throws(() => fillSkill(good.replace('<!-- generated:try:begin -->', ''), skillBlocks({ cli, pages, exampleRun: { source: '', output: '' } })), /needs exactly one/);
 });

@@ -20,7 +20,7 @@ import { PrismCodeError } from '../errors.mjs';
 import { fromFile } from '../node.mjs';
 import { VERSION } from '../version.mjs';
 import { gapLedger } from '../gaps.mjs';
-import { NO_DOCKER_FREE_BUILD, frontendWhere, proverWhere } from './frontend.mjs';
+import { NO_SERVER_BUILD, frontendWhere, proverWhere } from './frontend.mjs';
 import { fromHosted, holoFromSnapshot, isWarning } from './build-core.mjs';
 import { lexleanReady, wasmCheck, wasmDeclare, wasmSnapshot } from './lexlean-wasm.mjs';
 import { collectIfUpgraded, withStoreHeld } from './store-gc.mjs';
@@ -57,9 +57,9 @@ function repair(diagnostics, dir = null) {
   if (fixes.length) return `Lean observed other axioms than ${fixes.map((f) => `${f.name} declares`).join(', ')}; set each theorem's axioms to ${fixes.map((f) => `[${f.axioms.join(', ')}] for ${f.name}`).join('; ')}.`;
   // The first problem, when its hint names the fix: the replacement, and where to write it.
   const first = dir ? shown(diagnostics, dir)[0] : null;
-  if (first?.didYouMean?.length && first.at) return `\`${first.name}\` is not in scope: at ${first.at} write ${first.didYouMean.map((n) => `\`${n}\``).join(' or ')} instead, then call the same tool again.`;
-  if (first?.at && first.line) return `Fix ${first.at}, \`${first.line}\`, then call the same tool again.`;
-  return 'Fix the model at the lines named, then call the same tool again.';
+  if (first?.didYouMean?.length && first.at) return `\`${first.name}\` is not in scope: at ${first.at} write ${first.didYouMean.map((n) => `\`${n}\``).join(' or ')} instead, then run the same command again.`;
+  if (first?.at && first.line) return `Fix ${first.at}, \`${first.line}\`, then run the same command again.`;
+  return 'Fix the model at the lines named, then run the same command again.';
 }
 
 /**
@@ -241,7 +241,7 @@ async function proveRuleApp(dir, session, { log, where, snapshot, gaps, kernel, 
  */
 async function buildUnheld(dir, session, { log = () => {}, env = process.env, snapshot = null, gaps = gapLedger(), kernel = null, modelKernel = null, remote = null, wasm = null } = {}) {
   wasm ??= wasmProbe(await lexleanReady({ env, log }));
-  if (remote === 'github') return { ...failure(new PrismCodeError('build.publish-unavailable', `Publishing to GitHub writes the template's ID rows, scenarios and tests, and this prism-code does not yet write them from the model's semantic snapshot. ${NO_DOCKER_FREE_BUILD}`)), stage: 'build' };
+  if (remote === 'github') return { ...failure(new PrismCodeError('build.publish-unavailable', `Publishing to GitHub writes the template's ID rows, scenarios and tests, and this prism-code does not yet write them from the model's semantic snapshot. ${NO_SERVER_BUILD}`)), stage: 'build' };
   if (isRuleApp(session)) return buildRuleApp(dir, session, { log, env, snapshot, gaps, kernel, wasm });
   return buildModelApp(dir, session, { log, env, snapshot, gaps, kernel: modelKernel, wasm });
 }
@@ -389,7 +389,7 @@ export async function tryRequest(dir, session, request) {
       return { ok: false, request, code: error.code, message: `The built rule app is refused: ${error.message}` };
     }
   }
-  return { ...failure(new PrismCodeError('try.unbuilt', 'Nothing is built yet, so nothing answers: call prism_run, which builds first. Prism answers only from a built app, never from a second reading of the model.')), request };
+  return { ...failure(new PrismCodeError('try.unbuilt', 'Nothing is built yet, so nothing answers: run prism-code build first. Prism answers only from a built app, never from a second reading of the model.')), request };
 }
 
 /**

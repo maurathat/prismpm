@@ -23,7 +23,7 @@ export const DEV_USAGE = `Usage: dev [<dir>] [--port <n>] [--no-open] [--policy 
   --port <n>          the studio's port; default ${STUDIO_PORT}. A port in use is an error, not a move
   --no-open           do not open the studio in a browser
   --policy <file>     the policy the Check tab judges by, a file or a shipped name, as for check; an edit to a file re-checks
-  --build <command>   the build to run, in a shell; default [model].build of prism.toml, then prism-code build --update,
+  --build <command>   the build to run, in a shell; default [model].build of prism.toml, then prism-code build,
                       which rewrites the model's pins in prismpm.lock
   --image <path>      the file the build writes; default the one the build reports
 `;
@@ -120,7 +120,7 @@ export async function runDev(argv) {
     }),
     judge: (holo) => judgeHolo({ directory, holo, policy: options.policy, hasManifest: project.hasManifest }),
     replay: ({ holo, verdict }) => readReplay({ holo, directory, verdict }),
-    initial: { project: { name, directory, watch: patterns, build: command ?? 'prism-code build --update', policy: options.policy ?? null } },
+    initial: { project: { name, directory, watch: patterns, build: command ?? 'prism-code build', policy: options.policy ?? null } },
     onState: (state) => {
       studio?.publish(state);
       if (state.phase === 'building') process.stdout.write(state.cycle.files.length > 0 ? `Changed ${state.cycle.files.join(', ')}; rebuilding\n` : 'Building\n');
@@ -144,7 +144,6 @@ export async function runDev(argv) {
 
   process.stdout.write(`Watching ${patterns.join(', ')}\n`);
   process.stdout.write(`Studio at ${studio.url}  tabs: Check, Replay\n`);
-  if (command === null) process.stdout.write('Building with --update: prismpm.lock follows the model, so commit it with your source\n');
   if (!options['no-open'] && !process.env.CI) openBrowser(studio.url);
   const first = loop.trigger({ reason: 'start' });
 

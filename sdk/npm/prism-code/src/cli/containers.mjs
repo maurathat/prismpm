@@ -91,5 +91,5 @@ export const verbs = Object.freeze({
   }),
 });
 
-/** Docker's top-level words: `ps` is `containers ps`, `logs` is `containers logs`. */
+/** The container tool's top-level words: `ps` is `containers ps`, `logs` is `containers logs`. */
 export const aliases = Object.freeze({ ps: 'ps', logs: 'logs' });

@@ -337,10 +337,6 @@ path = "sdk/npm/prism-code/bin/prism-provider-kv.mjs"
 module = "volumes"
 
 [[owner]]
-path = "sdk/npm/prism-code/src/agents.mjs"
-module = "client"
-
-[[owner]]
 path = "sdk/npm/prism-code/src/archive.mjs"
 module = "verify"
 
@@ -361,16 +357,24 @@ path = "sdk/npm/prism-code/src/attestations.mjs"
 module = "verify"
 
 [[owner]]
+path = "sdk/npm/prism-code/src/home.mjs"
+module = "client"
+
+[[owner]]
+path = "sdk/npm/prism-code/src/lock.mjs"
+module = "errors"
+
+[[owner]]
+path = "sdk/npm/prism-code/src/model-cli.mjs"
+module = "client"
+
+[[owner]]
 path = "sdk/npm/prism-code/src/uorc.mjs"
 module = "verify"
 
 [[owner]]
 path = "sdk/npm/prism-code/src/auth.mjs"
 module = "auth"
-
-[[owner]]
-path = "sdk/npm/prism-code/src/axioms.mjs"
-module = "client"
 
 [[owner]]
 path = "sdk/npm/prism-code/src/blake3.mjs"
@@ -406,6 +410,10 @@ path = "sdk/npm/prism-code/src/containers.mjs"
 module = "containers"
 
 [[owner]]
+path = "sdk/npm/prism-code/src/contract.mjs"
+module = "client"
+
+[[owner]]
 path = "sdk/npm/prism-code/src/core.mjs"
 module = "containers"
 
@@ -430,10 +438,6 @@ path = "sdk/npm/prism-code/src/developer-view.mjs"
 module = "client"
 
 [[owner]]
-path = "sdk/npm/prism-code/src/docker.mjs"
-module = "images"
-
-[[owner]]
 path = "sdk/npm/prism-code/src/errors-namespace.mjs"
 module = "errors"
 
@@ -451,22 +455,6 @@ module = "client"
 
 [[owner]]
 path = "sdk/npm/prism-code/src/generate/"
-module = "client"
-
-[[owner]]
-path = "sdk/npm/prism-code/src/handler.mjs"
-module = "client"
-
-[[owner]]
-path = "sdk/npm/prism-code/src/host.mjs"
-module = "client"
-
-[[owner]]
-path = "sdk/npm/prism-code/src/github.mjs"
-module = "client"
-
-[[owner]]
-path = "sdk/npm/prism-code/src/hosted.mjs"
 module = "client"
 
 [[owner]]
@@ -534,20 +522,12 @@ path = "sdk/npm/prism-code/src/oci-store.mjs"
 module = "images"
 
 [[owner]]
-path = "sdk/npm/prism-code/src/open.mjs"
-module = "client"
-
-[[owner]]
 path = "sdk/npm/prism-code/src/plugins.mjs"
 module = "system"
 
 [[owner]]
 path = "sdk/npm/prism-code/src/provenance.mjs"
 module = "images"
-
-[[owner]]
-path = "sdk/npm/prism-code/src/remote-github.mjs"
-module = "client"
 
 [[owner]]
 path = "sdk/npm/prism-code/src/providers.mjs"
@@ -572,18 +552,6 @@ module = "verify"
 [[owner]]
 path = "sdk/npm/prism-code/src/session.mjs"
 module = "containers"
-
-[[owner]]
-path = "sdk/npm/prism-code/src/setup-cli.mjs"
-module = "client"
-
-[[owner]]
-path = "sdk/npm/prism-code/src/setup-machine.mjs"
-module = "client"
-
-[[owner]]
-path = "sdk/npm/prism-code/src/setup.mjs"
-module = "client"
 
 [[owner]]
 path = "sdk/npm/prism-code/src/sha256.mjs"

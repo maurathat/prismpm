@@ -300,6 +300,6 @@ test('system needs the containers of its own client, and events need its bus', (
 test('system imports no module it may not depend on', () => {
   const source = readFileSync(new URL('../src/system.mjs', import.meta.url), 'utf8');
   const imported = [...source.matchAll(/from '\.\/([^']+)'/g)].map((match) => match[1]).sort();
-  // errors (errors.mjs, version.mjs, the vendored spec) and images (docker.mjs), as model/modules.toml allows.
-  assert.deepEqual(imported, ['docker.mjs', 'errors.mjs', 'vendor/spec/constants.mjs', 'version.mjs']);
+  // errors (errors.mjs, version.mjs, the vendored spec) and the lock reader (lock.mjs), which starts no program.
+  assert.deepEqual(imported, ['errors.mjs', 'lock.mjs', 'vendor/spec/constants.mjs', 'version.mjs']);
 });

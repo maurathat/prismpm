@@ -125,17 +125,17 @@ theorem{
 }
 
 definition{
-  name: installsNeedingDocker,
+  name: installsNeedingAContainer,
   parameters: [s : SkillGate::Skill],
   result: Bool,
-  body: ((SkillGate::installs s) && (not ((project s proofNeedsDocker) =? 0)))
+  body: ((SkillGate::installs s) && (not ((project s proofNeedsContainer) =? 0)))
 }
 
 theorem{
-  name: aSkillInstallsOnlyWhenItProvesWithoutDocker,
+  name: aSkillInstallsOnlyWhenItProvesWithoutAContainer,
   parameters: [s : SkillGate::Skill],
-  statement: ((installsNeedingDocker s) = false),
-  proof: linear_arithmetic{definitions: [SkillGate::canonical, SkillGate::installs, SkillGate::namesOnlyShipped, SkillGate::noAuthority, SkillGate::selfProved, SkillGate::staysLocal, installsNeedingDocker]},
+  statement: ((installsNeedingAContainer s) = false),
+  proof: linear_arithmetic{definitions: [SkillGate::canonical, SkillGate::installs, SkillGate::namesOnlyShipped, SkillGate::noAuthority, SkillGate::selfProved, SkillGate::staysLocal, installsNeedingAContainer]},
   axioms: [Quot.sound, propext]
 }
 

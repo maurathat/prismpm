@@ -1,35 +1,20 @@
 /**
- * `prism-code init` (issue #281): scaffold a project a Prism SDK image can
- * check, build and verify.
+ * `prism-code init` (issue #281): scaffold a project prism-code can check,
+ * build and verify in this process.
  *
  * A project is a template plus a generated `prism.toml`. A template is a
  * reviewed PrismPM fixture copied byte for byte (see `TEMPLATES`): its
  * `lexlean.lock` binds the digests of its Lean workspace files and its
  * `lexlean.toml`, so renaming anything inside it would make the lock stale.
  * The application's own name lives in `prism.toml` (#280).
- *
- * Binding the project to an SDK takes two steps in the SDK image, which this
- * module only describes (pure functions; `bin/` runs them):
- *
- *   1. copy the image's `standards.lock` into the project, as the UOR
- *      template's bootstrap does (an existing, different one is refused);
- *   2. `prismpm update --toolchain <image>`, which writes `prismpm.lock`
- *      (docs/proposals/265-lock-update.md).
- *
- * There is no default image: no PrismPM SDK release exists yet (#194), so the
- * caller names one with `--sdk-image`.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fail } from './errors.mjs';
 import { parseManifest, MANIFEST_FILE } from './manifest.mjs';
-import { SDK_IMAGE_PATTERN, dockerArguments } from './docker.mjs';
 
 const TEMPLATES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'templates');
-
-/** Where the SDK image keeps the standards lock it was built with (sdk/Dockerfile). */
-export const IMAGE_STANDARDS_LOCK = '/opt/prismpm/share/standards.lock';
 
 /**
  * The templates. Each is a copy of a reviewed fixture; a test keeps the copy
@@ -121,47 +106,20 @@ export function planInit({ name, template = DEFAULT_TEMPLATE }) {
   return files;
 }
 
-/** The tiers a new project's author runs next, cheapest first, as `init` prints them. */
-/**
- * What this scaffold is: a LexLean project of the template's kind. A Prism app
- * is one too, started from a starter module by the prism MCP server
- * (`prism_init`), so the agent and Prism share one source of truth.
- */
+/** What this scaffold is, as `init` prints it. */
 export const NOT_AN_APP = [
-  'This is a LexLean project. A Prism app is a LexLean project too: ask your agent for one',
-  '(npx prism-code@latest setup adds the prism server), and it starts the model from a',
-  'content-addressed starter module and writes it with you.',
+  'This is a LexLean project. A Prism app is a LexLean project too: start one from a starter with',
+  'npx prism-code@latest init <dir> (or --template decision-app, stateful-app).',
 ].join('\n');
 
+/** The gates a new project's author runs next, cheapest first, as `init` prints them. */
 export function nextSteps(directory) {
   return [
-    NOT_AN_APP,
-    '',
-    'Next, from the cheapest gate to the whole build:',
+    'Next, every step in this process:',
     `  cd ${directory}`,
-    '  npx prism-code build --check     T0: the model is well formed and locked (seconds)',
-    '  npx prism-code verify --lean     T1: every proof and its exact axioms (about a minute)',
-    '  npx prism-code axioms --write    when T1 names an axiom policy: set every one in one pass',
-    '  npx prism-code verify            T2: the guest, the vectors and the holo (minutes)',
+    '  npx prism-code check --json      the model checks and every theorem is proved',
+    '  npx prism-code build --json      check, then write the app',
+    '  npx prism-code verify --json     judge what was built and replay every acceptance vector',
     '',
   ].join('\n');
-}
-
-/**
- * The three `docker` invocations that bind a project to an SDK image, each
- * with no network, so binding works offline once the image is here: read the
- * image's standards lock, relock the template's LexLean project with the
- * image's own compiler (the lexlean.lock a template ships can predate it),
- * then `prismpm update --toolchain <image>`. Returns `{ standards, lock, update }`,
- * argument lists for `docker`.
- */
-export function bindCommands({ image, cwd, uid = null, gid = null, platform = process.platform, mount = 'native', cache = null }) {
-  if (typeof image !== 'string' || !SDK_IMAGE_PATTERN.test(image)) {
-    fail('lock.image', `--sdk-image must be an immutable reference, NAME@sha256:DIGEST; got ${JSON.stringify(image)}`);
-  }
-  return {
-    standards: ['run', '--rm', '--network', 'none', '--entrypoint', 'cat', image, IMAGE_STANDARDS_LOCK],
-    lock: dockerArguments({ image, cwd, program: 'lexlean', command: 'lock', uid, gid, platform, mount, cache, network: 'none' }),
-    update: dockerArguments({ image, cwd, command: 'update', args: ['--toolchain', image], uid, gid, platform, mount, cache, network: 'none' }),
-  };
 }

@@ -24,7 +24,7 @@ import { ROOT } from './spec.mjs';
 export const SKILL_NAME = 'prism';
 export const SKILL_FILE = 'skills/prism/SKILL.md';
 export const SKILL_PATH = join(ROOT, ...SKILL_FILE.split('/'));
-/** The copy prism-code ships, which `prism-code setup` installs into each agent. Written with the skill, byte for byte. */
+/** The copy prism-code ships, which `prism-code init` writes into a project. Written with the skill, byte for byte. */
 export const PACKAGE_SKILL_FILE = 'sdk/npm/prism-code/skill/SKILL.md';
 export const PACKAGE_SKILL_PATH = join(ROOT, ...PACKAGE_SKILL_FILE.split('/'));
 
@@ -146,9 +146,9 @@ export function skillProblems(text, { cli, pages }) {
     for (const key of keys.keys()) if (!['name', 'description'].includes(key)) problems.push(`frontmatter key ${key} is not name or description`);
   }
 
-  for (const name of [...BLOCKS, 'mcp']) {
+  for (const name of BLOCKS) {
     for (const edge of ['begin', 'end']) {
-      const count = text.split(name === 'mcp' ? `<!-- mcp:${edge} -->` : marker(name, edge)).length - 1;
+      const count = text.split(marker(name, edge)).length - 1;
       if (count !== 1) problems.push(`marker ${name}:${edge} appears ${count} times, must appear once`);
     }
   }

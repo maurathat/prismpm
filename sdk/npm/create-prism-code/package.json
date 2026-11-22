@@ -1,7 +1,7 @@
 {
   "name": "create-prism-code",
   "version": "0.1.0",
-  "description": "npm create prism-code: scaffold a Prism SDK project with prism-code init (prism.toml, a language-1.2 model, and optionally the SDK lock).",
+  "description": "npm create prism-code: start a Prism app with prism-code init (prism.toml, a starter LexLean model and the Prism skill).",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -16,7 +16,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "prism-code": "0.3.0"
+    "prism-code": ">=0.10.5"
   },
   "scripts": {
     "test": "node --test \"test/*.test.mjs\""

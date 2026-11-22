@@ -8,11 +8,10 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ruleTable, tableWords } from '../src/journey/rule-table.mjs';
 import { ruleAppSnapshot } from './support/snapshot.mjs';
-import { HOSTED_HOST, buildFetch, networkLedger, optedIn, refusal } from '../src/journey/hosts.mjs';
+import { buildFetch, networkLedger, optedIn, refusal } from '../src/journey/hosts.mjs';
 import { kappaStore } from '../src/journey/kappa-store.mjs';
 import { kernelProve, openKernel } from '../src/journey/kernel-prove.mjs';
 import { ensureKernel } from '../src/journey/kernel-store.mjs';
-import { fetchPinned } from '../src/journey/github.mjs';
 import { publicStore, pullProofs } from '../src/journey/proof-store.mjs';
 
 const KERNEL_DIR = fileURLToPath(new URL('./fixtures/kernel/', import.meta.url));
@@ -28,9 +27,9 @@ test('the boundary admits GitHub\'s static hosts and the user\'s Pages site, and
   assert.equal(refusal('https://u:p@github.com/a'), 'carries credentials');
   assert.equal(refusal('https://example.com/a'), 'not an allowed host');
   assert.equal(refusal('https://github.com.example.com/a'), 'not an allowed host');
-  // Prism is serverless: the hosted verifier is refused like any other host, whatever the user sets or opts in to.
-  assert.equal(refusal(`https://${HOSTED_HOST}/`), 'hosted');
-  assert.equal(refusal(`https://${HOSTED_HOST}/`, { optIn: [HOSTED_HOST] }), 'hosted');
+  // Prism is serverless: a server that computes is refused like any other host, whatever the user sets or opts in to.
+  assert.equal(refusal('https://verifier.example.org/'), 'not an allowed host');
+  assert.equal(refusal('https://verifier.example.org/', { optIn: ['verifier.example.org'] }), 'not an allowed host');
   for (const tier of [undefined, 'hosted', 'offline']) assert.deepEqual(optedIn({ PRISM_CODE_TIER: tier }), []);
 });
 
@@ -39,15 +38,14 @@ test('planted defect B1: a build that reaches a non-allowed host is refused befo
   const fetch = async () => (sent++, new Response('x'));
   const guarded = buildFetch({ fetch, ledger: networkLedger() });
   await assert.rejects(guarded('https://example.com/telemetry'), (e) => e.name === 'PrismCodeError' && e.code === 'build.host-not-allowed' && e.url === 'https://example.com/telemetry');
-  await assert.rejects(guarded(`https://${HOSTED_HOST}/`), { code: 'build.host-not-allowed' });
+  await assert.rejects(guarded('https://verifier.example.org/'), { code: 'build.host-not-allowed' });
   assert.equal(sent, 0);
-  // The pinned kernel and the pinned template are read through the same boundary, with no fallback.
-  const env = { PRISM_HOME: mkdtempSync(join(tmpdir(), 'prism-boundary-k-')) };
+  // The pinned kernel is read through the same boundary, with no fallback.
+  const env = { PRISM_HOME: mkdtempSync(join(tmpdir(), 'prism-boundary-k-')), PRISM_CODE_BUNDLED: '0' };
   let asked = null;
   const spy = async (url) => ((asked = url), new Response('no', { status: 404 }));
   await assert.rejects(ensureKernel({ env, fetch: spy }), { code: 'kernel.unavailable' });
   assert.match(asked, /^https:\/\/raw\.githubusercontent\.com\//);
-  await assert.rejects(fetchPinned('standards.lock', { fetch: spy }), /answered HTTP 404/);
 });
 
 test('planted defect B2: a redirect from an allowed host to one outside the boundary is refused before it is followed', async () => {

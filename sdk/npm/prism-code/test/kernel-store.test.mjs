@@ -10,7 +10,8 @@ import { kappa } from '../src/blake3.mjs';
 import { gunzipSync } from 'node:zlib';
 
 const real = (name) => readFileSync(new URL(`./fixtures/kernel/${name}`, import.meta.url));
-const home = () => ({ PRISM_HOME: mkdtempSync(join(tmpdir(), 'prism-kernel-store-')) });
+// A machine that holds nothing: an empty store, and the package's own copies set aside, so every file must be fetched.
+const home = () => ({ PRISM_HOME: mkdtempSync(join(tmpdir(), 'prism-kernel-store-')), PRISM_CODE_BUNDLED: '0' });
 /** A stand-in for the network that keeps every URL it is asked for. */
 function network(answer = (name) => ({ ok: true, status: 200, bytes: real(name) })) {
   const asked = [];
@@ -23,7 +24,7 @@ function network(answer = (name) => ({ ok: true, status: 200, bytes: real(name) 
   return { asked, fetch };
 }
 
-test('the fixtures beside the tests are the pinned bytes, and the package carries none of them', () => {
+test('the fixtures beside the tests are the pinned bytes, and the package ships them only by label, under wasm/pinned', () => {
   // Each is named by the label of its decoded bytes, and kept as served.
   for (const [name, want] of Object.entries(KERNEL_FILES)) assert.deepEqual([real(name).length, kappa(want.encoding === 'gzip' ? gunzipSync(real(name)) : real(name))], [want.encodedBytes ?? want.bytes, want.kappa], name);
   assert.equal(hasKernel({ env: { PRISM_KERNEL_DIR: fileURLToPath(new URL('./fixtures/kernel/', import.meta.url)) } }), true);
@@ -84,4 +85,16 @@ test('planted defects S1 to S4: bytes that are not the pinned ones are never kep
   assert.equal(hasKernel({ env: kept }), true);
   // S4: a name that is not pinned is not read at all.
   assert.throws(() => readKernelFile('../config.json', { env: kept }), /is not a pinned kernel file/);
+});
+
+test('the package ships every file it pins, so a machine that holds nothing fetches nothing', async () => {
+  const env = { PRISM_HOME: mkdtempSync(join(tmpdir(), 'prism-kernel-bundled-')) };
+  const { asked, fetch } = network();
+  assert.equal(hasKernel({ env }), true);
+  assert.deepEqual(await ensureKernel({ env, fetch }), []);
+  assert.deepEqual(asked, []);
+  // The store was not written: the bytes are read from the package, each admitted by its label.
+  for (const name of Object.keys(KERNEL_FILES)) assert.equal(existsSync(kernelFile(name, env)), false, name);
+  // With the package's copies set aside, the same machine has no kernel.
+  assert.equal(hasKernel({ env: { ...env, PRISM_CODE_BUNDLED: '0' } }), false);
 });

@@ -7,7 +7,7 @@
  * (`studio/shell/kernel/kernel.holo`), built and verified once by the SDK. Its
  * rule judge (foundry `app/src/RuleJudge.lex.tex`) answers a request made of
  * the app's numbers followed by the request's values. Nothing is compiled for
- * an app, so no Docker, Rust or Lean runs here.
+ * an app, so no container, Rust or Lean runs here.
  *
  * What is admitted and what a request is answered with are stated in LexLean
  * and proved by Lean (`model/rule-app/src/RuleApp.lex.tex` and its proofs).

@@ -8,7 +8,6 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPrism } from '../src/index.mjs';
-import { DELEGATED } from '../src/docker.mjs';
 import { GROUPS, MODULE_ALIASES } from '../src/cli/index.mjs';
 import { ALIASES, SURFACE_SCHEMA, aliasWarning, developerSurface, resolveAliases } from '../src/developer-view.mjs';
 
@@ -22,9 +21,9 @@ const help = () => {
   return r.stdout;
 };
 
-const surface = () => developerSurface({ usage: help(), client: createPrism(), delegated: Object.keys(DELEGATED), groups: Object.keys(GROUPS), moduleAliases: Object.keys(MODULE_ALIASES) });
+const surface = () => developerSurface({ usage: help(), client: createPrism(), groups: Object.keys(GROUPS), moduleAliases: Object.keys(MODULE_ALIASES) });
 
-test('developer-surface.json is the CLI help, the delegated verbs and the client, as the glossary check reads them', () => {
+test('developer-surface.json is the CLI help and the client, as the glossary check reads them', () => {
   const text = `${JSON.stringify(surface(), null, 2)}\n`;
   if (process.env.PRISM_CODE_UPDATE_GOLDEN) writeFileSync(file, text);
   assert.equal(readFileSync(file, 'utf8'), text, 'run PRISM_CODE_UPDATE_GOLDEN=1 node --test test/developer-view.test.mjs, then cargo xtask check-developer-view');
@@ -51,13 +50,6 @@ test('resolveAliases replaces each alias with its new term and warns once for ea
   assert.deepEqual(argv, ['record', 'a.holo', '--image', 'x', '--image=y', '--', '--holo']);
   assert.deepEqual(warnings, ALIASES.map(aliasWarning));
   assert.equal(aliasWarning(ALIASES[1]), 'prism-code: --holo is deprecated and is removed in prism-code 0.9.0; use --image');
-});
-
-test('a verb prism-code hands to prismpm or a plugin keeps its own flags', () => {
-  const warnings = [];
-  const argv = ['lock', 'update', '--holo', 'a.holo'];
-  assert.deepEqual(resolveAliases(argv, (w) => warnings.push(w), (verb) => verb !== 'lock'), argv);
-  assert.deepEqual(warnings, []);
 });
 
 test('without an alias there is no warning, and history is a verb only in the first place', () => {

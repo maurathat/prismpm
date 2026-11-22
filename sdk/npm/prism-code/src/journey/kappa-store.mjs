@@ -19,8 +19,9 @@
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
-import { prismHome } from '../agents.mjs';
+import { prismHome } from '../home.mjs';
 import { Blake3, kappa as blake3Kappa, toHex } from '../blake3.mjs';
 import { isKappa, kappa } from '../uorc.mjs';
 import { proofFacts, proofRealization } from './kappa-rules.mjs';
@@ -53,6 +54,22 @@ export function writeAtomic(file, bytes) {
  * prism-code pins are the only roots: store-gc.mjs removes every pinned file they do not name.
  */
 export const pinnedFile = (label, env = process.env) => join(kappaDirectory(env), 'pinned', label.slice(7, 9), label.slice(9));
+
+/**
+ * The package's own copy of a pinned file (`wasm/pinned/`, laid out as the pinned store is), or null when
+ * `PRISM_CODE_BUNDLED=0` says to ignore it. prism-code ships every file it pins, so nothing is fetched on a first
+ * run. A bundled file is trusted no further than a fetched one: its reader admits it only by its κ-label.
+ */
+const BUNDLED = fileURLToPath(new URL('../../wasm/pinned/', import.meta.url));
+export const bundledFile = (label, env = process.env) => (env.PRISM_CODE_BUNDLED === '0' ? null : join(BUNDLED, label.slice(7, 9), label.slice(9)));
+
+/** Where a pinned file is read from: the machine's store when it holds it, else the package's copy. Never written to. */
+export function keptFile(label, env = process.env) {
+  const stored = pinnedFile(label, env);
+  if (existsSync(stored)) return stored;
+  const bundled = bundledFile(label, env);
+  return bundled && existsSync(bundled) ? bundled : stored;
+}
 
 /** Whether `bytes` are gzip, by their magic number. */
 export const isGzip = (bytes) => bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
@@ -100,7 +117,7 @@ export async function receiveDecoded(response, encoding) {
 
 /** A pinned file as kept, `{ encoded, decoded }`, only when it decodes to `label`; null when it is not here or is not those bytes. */
 export function readPinnedFile(label, env = process.env) {
-  const file = pinnedFile(label, env);
+  const file = keptFile(label, env);
   if (!existsSync(file)) return null;
   const encoded = readFileSync(file);
   let plain;
