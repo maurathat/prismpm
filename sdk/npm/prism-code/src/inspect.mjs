@@ -354,8 +354,7 @@ export function formatInspection(inspection) {
     ['Revision', i.revision ?? 'unknown'],
     ['Format', `HOLO physical version ${i.physical_version}, flags ${i.flags}`],
     ['Size', `${i.size} B`],
-    // A holo v5 or later is inspected by @prism-code/verify, which reports the digests it computed; one it did not is not printed.
-    ['Digest', [`sha256:${i.digest.sha256}`, ...(i.digest.blake3 ? [`blake3:${i.digest.blake3}`] : [])]],
+    ['Digest', [`sha256:${i.digest.sha256}`, `blake3:${i.digest.blake3}`]],
     ['Footer', `${i.footer} (BLAKE3 of the body)`],
   ]);
   const sections = table([
