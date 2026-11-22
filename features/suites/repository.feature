@@ -73,3 +73,11 @@ Feature: repository
     Given cargo xtask release-check
     When unverified or incomplete criteria exist
     Then release is refused with specific unmet criteria
+
+  @RP-13 @build
+  Scenario: The portable SDK passive-README classifier refuses unsupported Git changes and malformed documentation references, and its planted fixture inventory executes without skips.
+    Given the SDK-owned portable README classifier and a pinned Git base and head
+    When the exact planted positive and adversarial fixtures execute
+    Then only passive README and approved provisional image changes qualify
+    And unsupported source, workflows, generated regions and malformed documentation refuse
+    And no skipped or missing cases count as successful conformance
