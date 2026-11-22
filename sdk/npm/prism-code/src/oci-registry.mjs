@@ -229,8 +229,12 @@ export function createRegistryClient(reference, options = {}) {
       throw await failure(response, `blob ${digest}`);
     },
 
-    /** Upload one blob with a monolithic `PUT`. Returns false when the registry already had it. */
-    async putBlob(digest, bytes) {
+    /**
+     * Upload one blob with a monolithic `PUT`. Returns false when the registry already had it. `also` is a second
+     * address of the same bytes, such as a holo v6's `blake3:` κ, sent as `?also=`: kappa-registry stores the blob
+     * under it as well (ADR-018 §3).
+     */
+    async putBlob(digest, bytes, { also } = {}) {
       const what = `blob ${digest}`;
       const head = await request(`${v2}/blobs/${digest}`, { method: 'HEAD' }, { scope: pushScope, what });
       await head.body?.cancel();
@@ -242,6 +246,7 @@ export function createRegistryClient(reference, options = {}) {
       if (!location) throw new RegistryError(`${registry} started an upload without a location`, { check: 'registry.upload' });
       const url = new URL(location, base);
       url.searchParams.set('digest', digest);
+      if (also) url.searchParams.set('also', also);
       const done = await request(url.href, { method: 'PUT', headers: { 'content-type': 'application/octet-stream', 'content-length': String(bytes.length) }, body: bytes }, { scope: pushScope, what });
       if (done.status !== 201) throw await failure(done, what);
       await done.body?.cancel();

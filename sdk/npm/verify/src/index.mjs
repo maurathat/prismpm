@@ -103,8 +103,8 @@ function digestsOf(bytes) {
   return { sha256: sha256Hex(bytes), blake3: blake3Hex(bytes) };
 }
 
-/** The digest set of the whole file: its κ alone for a holo v5 (ADR-017), both digests for v4. */
-const archiveDigests = (bytes, facts) => (facts.v5 ? { sha256: sha256Hex(bytes) } : digestsOf(bytes));
+/** The digest set of the whole file: its κ alone for a holo v5 (ADR-017), both digests for v4 and v6 (ADR-018 §4). */
+const archiveDigests = (bytes, facts) => (facts.v5 && facts.holoVersion !== 6 ? { sha256: sha256Hex(bytes) } : digestsOf(bytes));
 
 function isLabel(bytes) {
   if (bytes.length !== spec.LABEL_LENGTH) return false;
@@ -627,7 +627,10 @@ function inspectionOf(bytes, facts, checks) {
  */
 function inspectionOfV5(bytes, facts, checks) {
   const status = (id) => checks.find((c) => c.id === id)?.status === 'pass';
-  const kappaOf = (payload) => ({ sha256: sha256Hex(payload) });
+  // A holo v6 names its objects by blake3, with sha256 beside it (ADR-018 §4); a v5 by sha256 alone.
+  const v6 = facts.holoVersion === 6;
+  const kappaOf = (payload) => (v6 ? digestsOf(payload) : { sha256: sha256Hex(payload) });
+  const labelFor = (payload) => (v6 ? `blake3:${blake3Hex(payload)}` : `sha256:${sha256Hex(payload)}`);
   const objectOf = (role) => facts.sections.find((s) => s.role === role);
   const sections = facts.sections.map((s) => ({
     index: s.index,
@@ -637,11 +640,11 @@ function inspectionOfV5(bytes, facts, checks) {
     offset: s.offset,
     length: s.length,
     digest: kappaOf(s.payload),
-    label: `sha256:${sha256Hex(s.payload)}`,
+    label: labelFor(s.payload),
   }));
   const { manifest, provenance, modelDocument } = facts.documents;
   const application = modelDocument?.application ?? {};
-  const labelOf = (role) => orNull(objectOf(role) && `sha256:${sha256Hex(objectOf(role).payload)}`);
+  const labelOf = (role) => orNull(objectOf(role) && labelFor(objectOf(role).payload));
   const capabilities = objectOf('capabilities');
   const guest = objectOf('guest');
   const model = objectOf('model');
@@ -651,7 +654,7 @@ function inspectionOfV5(bytes, facts, checks) {
     schema: INSPECTION_SCHEMA,
     name: application.name ?? manifest?.name ?? null,
     revision: facts.revision,
-    physical_version: 5,
+    physical_version: facts.holoVersion,
     flags: 0,
     size: bytes.length,
     digest: kappaOf(bytes),

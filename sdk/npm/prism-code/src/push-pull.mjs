@@ -249,7 +249,8 @@ export async function experimental_push(source, target, options = {}) {
   const endpoint = openEndpoint(reference, options);
   // Step 2 and 3: the blobs, then the manifest by digest.
   await endpoint.putBlob(EMPTY_DESCRIPTOR.digest, EMPTY_BYTES);
-  const uploaded = await endpoint.putBlob(layer.digest, holo);
+  // A holo v6 is named by its κ, `blake3:` (ADR-018 §3): kappa-registry stores the layer under that address too.
+  const uploaded = await endpoint.putBlob(layer.digest, holo, parsed.format === 6 ? { also: parsed.kappa } : {});
   progress({ action: uploaded ? 'Pushed' : 'Layer already exists', digest: layer.digest });
   await endpoint.putManifest(digest, manifestBytes);
 
@@ -289,7 +290,7 @@ export async function experimental_push(source, target, options = {}) {
   // Step 5: the tags, last, so a tag never names a holo whose attestations are on the way.
   const tags = [];
   if (reference.tag && !reference.digest) tags.push(reference.tag);
-  // A legacy v4 holo gets a tag for its BLAKE3 fingerprint; a holo v5 is already addressed by its κ, the layer digest.
+  // A legacy v4 or a v6 holo gets a tag for its BLAKE3 fingerprint; a holo v5 is already addressed by its κ, the layer digest.
   if (reference.kind === 'registry' && fingerprint.startsWith('blake3:')) tags.push(fingerprintTag(fingerprint));
   for (const tag of tags) await endpoint.tagManifest(tag, manifestBytes);
 

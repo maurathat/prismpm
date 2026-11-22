@@ -44,6 +44,26 @@
       }
     },
     {
+      "id": "load.reference-v6.opens",
+      "title": "The reference holo v6, sealed and named by BLAKE3, opens with the same name, limits and vectors as the v5 reference.",
+      "op": "load",
+      "archive": "reference-v6",
+      "expect": {
+        "ok": true,
+        "result": {
+          "kind": "holo",
+          "name": "Calculator",
+          "verified": true,
+          "limits": {
+            "request": 52,
+            "response": 27,
+            "guestAllocation": 65536
+          },
+          "vectors": 22
+        }
+      }
+    },
+    {
       "id": "load.refuse.empty",
       "title": "An empty file is refused.",
       "op": "load",
