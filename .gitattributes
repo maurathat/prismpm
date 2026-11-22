@@ -39,3 +39,6 @@ sdk/npm/prism-code/skill/gate/lean-toolchain text eol=lf
 sdk/npm/prism-code/model/ide-*/** text eol=lf
 # The files prism-code pins and ships: each is admitted by the BLAKE3 label of its exact bytes, so none is text.
 sdk/npm/prism-code/wasm/pinned/** -text
+# The canonical template prism-code carries: every file is named by the BLAKE3 label of its exact bytes, so no checkout
+# may convert one. The template keeps `* -text` for the same reason.
+sdk/npm/prism-code/templates/canonical/** -text

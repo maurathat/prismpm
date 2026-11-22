@@ -14,6 +14,7 @@ test('create-prism-code scaffolds a project and passes options through', () => {
   const r = spawnSync(process.execPath, [bin, dir, '--name', 'hello'], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^Creating hello in /);
-  assert.ok(existsSync(join(dir, 'prism.toml')) && existsSync(join(dir, 'lexlean.lock')));
+  // The canonical template: its LexLean project, with its lock, is in app/.
+  assert.ok(existsSync(join(dir, 'prism.toml')) && existsSync(join(dir, 'app', 'lexlean.lock')));
   assert.equal(spawnSync(process.execPath, [bin, '--nope'], { encoding: 'utf8' }).status, 64);
 });
