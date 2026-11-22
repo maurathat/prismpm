@@ -12,8 +12,8 @@
  *                                                     write the acceptance vectors as a recording
  *   prism-code replay <recording | dir>... --image <app.holo> [--statement <file>] [--json]
  *                                                     re-execute histories against a build; a divergence exits 1
- *   prism-code init [<dir>] [--name N] [--template T] [--sdk-image REF] [--force]
- *                                                     scaffold a project; with --sdk-image, bind it (standards.lock, prismpm.lock)
+ *   prism-code init [<dir>] [--name N] [--template T] [--no-skill] [--force]
+ *                                                     start a Prism app: a starter model and the Prism skill, in this folder
  *   prism-code manifest [<dir>] [--target browser|node] [--json]
  *                                                     check and lint prism.toml, with its overlay merged
  *   prism-code providers <up|down> [<dir>] [--target browser|node] [--json]
@@ -30,16 +30,17 @@
  *   prism-code generate <app.holo> --out <dir>        write bindings and a typed client from the world
  *   prism-code publish-model <app.holo> --project <dir> --out <dir>
  *                                                     write the holo's model beside its page, with a record of both
+ *   prism-code check [<dir>] [--project <dir>] [--json]
+ *                                                     check the model and prove every theorem, in this process
  *   prism-code check <app.holo> [--policy <file>] [--json]
  *                                                     judge the holo against a policy and print its verdict
  *   prism-code dev [<dir>] [--port N] [--no-open] [--policy <file>] [--build <command>] [--image <path>]
  *                                                     watch the project, rebuild and re-check on every change, serve the local studio
  *   prism-code push <app.holo> <reference>            put the holo and its attestations in a registry or a local store
  *   prism-code pull <reference> [<out.holo>]          fetch a holo, verify it, then write it
- *   prism-code build [--check]|verify|conformance ... run prismpm in the locked SDK image
- *   prism-code setup [--agent <id>] [--pull] [--dry-run] add the local Prism server to every agent here, register holo:// (experimental)
- *   prism-code open <holo://build?agent=<id>&q=<sentence>> [--dry-run]
- *                                                     hand the sentence to the agent the link names (experimental)
+ *   prism-code build [<dir>] [--out <dir>] [--json]  check, then write the app, in this process
+ *   prism-code verify <app.holo | dir> [--json]      replay every acceptance vector; for a project, check it again first
+ *   prism-code skill --out <dir>                     copy the Prism skill into a project folder
  *   prism-code <plugin> [args]                        run prism-<plugin> from the PATH (experimental)
  *
  * Exit codes: 0 ok or the policy passed, 1 vectors failed, a replay diverged,
@@ -48,29 +49,22 @@
  * capability set grants, a world outside the grant, a manifest that fails
  * its checks, or a provider that failed, included), no verdict, or an export that
  * differs from its build manifest, 3 signing failed or the sigstore
- * packages are missing, 10 to 13 a typed error from a run, 64 usage, 69 Docker
- * unavailable, 70 something untyped, otherwise the delegated command's or the
- * plugin's code. `EXIT_CODES` in src/errors.mjs is the table for typed errors.
+ * packages are missing, 10 to 13 a typed error from a run, 64 usage, 70
+ * something untyped, otherwise the plugin's code. The model verbs (check,
+ * build, verify) exit 0, 1 or 2, as src/model-cli.mjs says. `EXIT_CODES` in src/errors.mjs is the table for typed errors.
  * `push` and `pull` exit 1 when a digest or the holo fails, 2 when the registry
  * gives no answer (#292).
  *
- * `check` without a holo, the 0.2.0 spelling of `build --check`, was removed
- * (#584, STABILITY.md section 6.1.1): it is a usage error that names
- * `build --check`.
+ * Every verb runs in this process. None starts another program for a build,
+ * and nothing about a model is sent anywhere.
  */
 import { readFile, stat } from 'node:fs/promises';
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { createPrism } from '../src/index.mjs';
 import { fromFile, serve, readManifest, fileContainerStore, resolveProviders, releaseProviders } from '../src/node.mjs';
 import { replayFiles, recordingApplication, writeHistory, formatReplay, replayJson } from '../src/replay-cli.mjs';
-import { sdkImageFromLock, DELEGATED } from '../src/docker.mjs';
-import { hostDockerArguments, hostImagePresent } from '../src/host.mjs';
-import { SDK_IMAGE_DOWNLOAD } from '../src/setup-machine.mjs';
-import { VERSION } from '../src/version.mjs';
-import { lexleanProjectArgument, lexleanProjectDir } from '../src/tiers.mjs';
 import { PrismCodeError, PrismError, VerificationError, errorFromVerdict, exitCodeFor } from '../src/errors.mjs';
 import { unverifiedWarning } from '../src/containers.mjs';
 import { ASSURANCE } from '../src/vendor/verify.mjs';
@@ -98,18 +92,23 @@ Usage:
                                                     one run as a container: check the holo, dispatch the input, print
                                                     the output, exit with the container's code; --rm removes it on exit
   prism-code rm <container>...                      remove exited containers
-  prism-code vectors <app.holo | closure-dir> [--allow-unverified]
-                                                    replay every acceptance vector through the guest; an altered
-                                                    holo is refused, and with --allow-unverified exits 1 after replaying
+  prism-code vectors <app.holo | closure-dir> [--allow-unverified] [--json]
+                                                    replay every acceptance vector through the guest, each on a fresh
+                                                    instance; an altered holo is refused, and with --allow-unverified exits 1
+                                                    after replaying. --json prints one report with a row for each vector
   prism-code record <app.holo | closure-dir> [--output <file>]
                                                     write the acceptance vectors as a recording, the holo's first
   prism-code replay <recording | dir>... --image <app.holo | closure-dir> [--statement <file>] [--json]
                                                     re-execute recordings against this build and compare every
                                                     outcome: exit 0 unchanged, 1 diverged, 2 could not replay
-  prism-code init [<dir>] [--name <name>] [--template <name>] [--sdk-image <ref>] [--force]
-                                                    scaffold a project: prism.toml, a language-1.2 model and its
-                                                    Lean workspace; --sdk-image also writes standards.lock and
-                                                    prismpm.lock from that SDK image (needs Docker)
+  prism-code init [<dir>] [--name <name>] [--template <name>] [--no-skill] [--force]
+                                                    start a Prism app, the one command it begins with: npx prism-code@latest init.
+                                                    Writes prism.toml, a starter LexLean model to edit (rule-app unless
+                                                    --template names decision-app, stateful-app or the text-request template)
+                                                    and the Prism skill for an agent, all inside the folder. A folder that
+                                                    holds a model keeps it and gets only the skill. Nothing outside the folder
+                                                    is written or configured, and nothing is fetched. npm create prism-code
+                                                    runs the same command
   prism-code manifest [<dir>] [--target <browser|node>] [--json]
                                                     check and lint prism.toml, with prism.<target>.toml merged;
                                                     a secret written as a literal is an error
@@ -159,51 +158,26 @@ Usage:
                                                     fetch a holo and write it only after it verifies: digests, archive,
                                                     verdict, attestations; the verify-attestation flags add a signer policy;
                                                     a verified holo is also kept in the local image store
-  prism-code build --check [--project <dir>]
-                                                    validate the model, write nothing: prism.toml, then lexlean check of
-                                                    the LexLean project as WebAssembly, in this process: syntax and
-                                                    types, not proofs. No Docker, no server, nothing sent
-  prism-code build [args]                           prismpm build (needs the Docker socket)
-  prism-code build --remote github [--repo <owner/name>] [--ref <commit>] [--timeout <s>] [--allow-dirty] [--policy <file>] [--json]
-                                                    the repository's own GitHub Actions builds one commit (pushed to
-                                                    prism/build/<sha>; needs its build.yml), and this machine verifies
-                                                    what comes back: the commit, the digests, the signed provenance, the
-                                                    verdict and every vector, before anything lands under .prism/build/.
-                                                    No Docker here. Token: GITHUB_TOKEN, GH_TOKEN or gh (experimental)
-  prism-code verify [args]                          prismpm verify (needs the Docker socket)
-  prism-code verify --lean [--project <dir>] [--all]
-                                                    prove every theorem of the project's LexLean model with Lean's own
-                                                    kernel, as WebAssembly, in this process: the model's semantic
-                                                    snapshot lowered to kernel declarations, a proof found for each
-                                                    theorem, and the kernel judging all of it within the declared axioms.
-                                                    Seconds; no Docker, no server, nothing sent (experimental)
-  prism-code conformance [args]                     prismpm conformance
-  prism-code axioms [--write] [--json] [--project <dir>]
-                                                    the axiom set Lean observes for every definition and theorem, in one
-                                                    pass, beside the set the source declares; --write sets each axioms
-                                                    member to the observed set and formats the project (experimental)
-  prism-code setup [--agent <id>] [--local] [--pull] [--image <ref>] [--agents-only] [--machine-only] [--json] [--dry-run]
-                                                    get this machine ready, no Docker needed: every app is proved by
-                                                    Lean's kernel as WebAssembly here. Check Node and the GitHub
-                                                    sign-in, keep sources LF (--local also finds Docker for full builds,
-                                                    also inside WSL, notes the SDK image the lockfile pins and creates
-                                                    its cache volume); then add the local Prism server (prism, the mcp
-                                                    verb below) to every agent found here: Claude Code, Codex, Cursor,
-                                                    VS Code, Claude Desktop; install the Prism
-                                                    skill; register the holo:// handler; remember the agent; print the
-                                                    next steps. Run it as npx prism-code@latest setup
+  prism-code check [<dir>] [--project <dir>] [--json]
+                                                    check the project: prism.toml, then LexLean as WebAssembly checks
+                                                    the model, then Lean's kernel, as WebAssembly, proves every theorem.
+                                                    All in this process; writes nothing. Exit 0 passed, 1 a theorem is
+                                                    not proved, 2 the manifest or the model does not check
+  prism-code build [<dir>] [--project <dir>] [--out <dir>] [--json]
+                                                    check, then write the app under .prism/build with nothing compiled,
+                                                    and replay its acceptance vectors; --out also copies it there.
+                                                    --check stops after the check
+  prism-code verify <app.holo | dir> [--project <dir>] [--policy <file>] [--json]
+                                                    a holo: its digests, its world within the grant, and every acceptance
+                                                    vector on a fresh instance. A project: check it again, then the same
+                                                    for what build wrote, which must be the build of the model on disk
+  prism-code skill --out <dir>                      copy the Prism skill, SKILL.md and its references, into <dir>;
+                                                    reads only this package and reaches no network
   prism-code skill verify [<dir>]                   judge an installed skill again: its SKILL.md has the label prism-code
                                                     pins, every command it names ships, it holds no network, secret or
                                                     executable, and Lean's kernel proves the skill gate's theorems here
-  prism-code mcp [--project <dir>]                  the Prism MCP server on stdio (experimental): the app starts from a
-                                                    starter LexLean module the agent writes; Lean's kernel proves it as
-                                                    WebAssembly in this process (a holo build still needs the SDK image)
-  prism-code open <holo://build?agent=<id>&q=<sentence>> [--dry-run]
-                                                    hand the sentence to the agent: a terminal running claude or codex
-                                                    (after Enter), Cursor's or VS Code's install link with the sentence
-                                                    on the clipboard, or the Claude or ChatGPT prompt URL
 ${groupUsage()}
-Docker's singular spellings name the same groups: prism-code container ls, image ls, volume ls
+The singular spellings name the same groups: prism-code container ls, image ls, volume ls
   prism-code <plugin> [args]                        run prism-<plugin> from the PATH; a built-in verb always wins
   prism-code --version | --help
 
@@ -239,7 +213,7 @@ Options for check:    --policy <file>              a Rego file (.rego), the name
                       --certificate-oidc-issuer <url>, and pin --trusted-root <file>. Without a signer a signed
                                                    holo is P0: the provenance statement supports P1, the proof statement P2
                       --json                       the verdict as one canonical JSON object
-                      check takes a holo; the model check is build --check
+                      without a holo, check judges the project's model instead
 Options for push:     --key <private.pem>          sign a statement naming the manifest, per predicate in the holo, for cosign verify-attestation
                       --keyless                    the same with an OIDC token, as attest does; --signing-config for a private instance
                       --no-attestations            push only the holo's manifest; the section stays in the file
@@ -252,7 +226,7 @@ Options for both:     --store <dir>                the reference is a name in th
                       --plain-http                 reach a registry over HTTP; a loopback registry already is
                       --json                       the result as one canonical JSON object
                       references: registry/repo[:tag], registry/repo@sha256:<hex>, registry/repo@blake3:<fingerprint> (pull);
-                      credentials come from Docker's config, or GHCR_TOKEN or GITHUB_TOKEN for ghcr.io
+                      credentials come from the registry logins on this machine, or GHCR_TOKEN or GITHUB_TOKEN for ghcr.io
 Options for manifest: --target <browser|node>      merge prism.browser.toml or prism.node.toml over prism.toml
                       --json                       the merged manifest and the warnings as canonical JSON
 Options for dev:      --port <n>                   the studio's port, default 4100; a port in use is an error, not a move
@@ -267,27 +241,10 @@ Options for export:   --out <dir>                  a new directory name in the p
                       --project <dir>              the project holding .prism/oci, default the current directory
                       --json                       print the prismpm/browser-export/1 receipt
 Options for closures: --model <model.prism.json>   the model document (numeric-profile closures need it)
-Options for setup:    --agent <id>                 configure only this agent and make it the preferred one: claude-code,
-                                                   codex, cursor, vscode, claude-desktop, claude, chatgpt
-                      --local                      also ready local builds: Docker (also inside WSL), the image, its cache;
-                                                   without it setup needs no Docker, and apps build on GitHub Actions
-                      --image <ref>                the SDK image to pull and cache, NAME@sha256:DIGEST; default the one
-                                                   ./prismpm.lock pins; implies --local
-                      --pull                       pull the image now, implies --local; without it the first build, verify
-                                                   or axioms does
-                      --no-pull                    the default: report a missing image instead of pulling it
-                      --agents-only                skip the machine half: Node, line endings, GitHub and the local rows
-                      --machine-only               only the machine half, local rows included; configure no agent and
-                                                   register no handler
-                      --json                       print the report as JSON
-                      --dry-run                    print what it would write and run; change nothing
-Options for open:     --dry-run                    print the files and commands; open nothing
-                      the link: agent one of claude-code, codex, cursor, vscode, claude, chatgpt (default: the
-                      preferred agent), q the sentence, at most 2000 characters; any other host or parameter is refused
 `;
 
 // The built-in verbs are the ones the usage text names and the delegated ones, so a new verb shadows a plugin of its name.
-const BUILTINS = new Set([...[...USAGE.matchAll(/^ {2}prism-code ([a-z][a-z-]*)/gm)].map((m) => m[1]), ...Object.keys(DELEGATED), ...Object.keys(TOP_LEVEL), ...Object.keys(MODULE_ALIASES), 'help', 'version']);
+const BUILTINS = new Set([...[...USAGE.matchAll(/^ {2}prism-code ([a-z][a-z-]*)/gm)].map((m) => m[1]), ...Object.keys(TOP_LEVEL), ...Object.keys(MODULE_ALIASES), 'help', 'version']);
 
 function usage(message) {
   if (message) process.stderr.write(`${message}\n\n`);
@@ -297,9 +254,6 @@ function usage(message) {
 
 // Options that take a value. `--subject` also repeats, and collects into an array.
 const VALUE_OPTIONS = [
-  'remote',
-  'repo',
-  'ref',
   'timeout',
   'port',
   'host',
@@ -383,13 +337,23 @@ async function open(path, options) {
 
 async function commandVectors(positional, options) {
   if (positional.length !== 1) return usage('vectors takes one artifact');
+  const started = Date.now();
   const app = await open(positional[0], options);
   const result = await app.acceptance();
+  const ok = result.failed.length === 0 && result.total > 0 && app.identities.verified;
+  // The same report check, build and verify print, with one row for each vector replayed.
+  if (options.json) {
+    const failed = new Map(result.failed.map((f) => [f.index, f]));
+    const vectors = app.vectors.map((v, index) => ({ index, passed: !failed.has(index), requestBytes: v.request.length, responseBytes: v.response.length }));
+    const diagnostics = result.failed.map((f) => ({ code: 'vectors.failed', severity: 'error', file: positional[0], line: null, column: null, message: `Acceptance vector ${f.index} answers otherwise than the model states.`, remediation: 'Repair the rule or the example in the model, then build again.' }));
+    process.stdout.write(`${JSON.stringify({ schema: 'prism/report/1', ok, command: 'vectors', durationMs: Date.now() - started, summary: { artifact: positional[0], identitiesVerified: app.identities.verified === true, vectorsPassed: result.passed, vectorsTotal: result.total }, diagnostics, vectors }, null, 2)}\n`);
+    return ok ? 0 : 1;
+  }
   for (const f of result.failed) {
     process.stdout.write(`vector ${f.index}: request ${JSON.stringify(text(f.request))}\n  expected ${JSON.stringify(text(f.expected))}\n  actual   ${f.actual ? JSON.stringify(text(f.actual)) : String(f.error)}\n`);
   }
   process.stdout.write(`${result.passed} of ${result.total} vectors passed (${app.kind}, ${app.name ?? 'unnamed'}${app.identities.verified ? ', identities verified' : ', identities NOT verified'})\n`);
-  return result.failed.length === 0 && result.total > 0 && app.identities.verified ? 0 : 1;
+  return ok ? 0 : 1;
 }
 
 async function commandRecord(positional, options) {
@@ -679,7 +643,7 @@ function refusal(path, verdict) {
 
 /**
  * One run as a container (#348). stdout holds the guest's output and nothing
- * else, as `docker run` does; everything about the run goes to stderr. The exit
+ * else, as the container tool's `run` does; everything about the run goes to stderr. The exit
  * code is the container's. The record stays until `rm`, unless `--rm`.
  */
 async function commandRunOnce(path, input, options) {
@@ -791,226 +755,38 @@ async function commandProviders(positional, options) {
   return 0;
 }
 
-async function commandDelegate(command, args, { program = 'prismpm', image: found = null } = {}) {
-  const cwd = process.cwd();
-  let image = found;
-  if (image === null) {
-    let lock;
-    try {
-      lock = await readFile(resolve(cwd, 'prismpm.lock'), 'utf8');
-    } catch {
-      process.stderr.write('prismpm.lock not found in the current directory\n');
-      return 64;
-    }
-    image = sdkImageFromLock(lock);
-  }
-  let docker;
-  try {
-    docker = hostDockerArguments({ image, cwd, command, args, program });
-  } catch (error) {
-    if (error.code !== 'docker.missing') throw error;
-    process.stderr.write(`${error.message}\nRun \`prism-code setup\` to find Docker, or set PRISM_DOCKER to the command that reaches it.\n`);
-    return 69;
-  }
-  if (process.env.PRISM_CODE_DRY_RUN) {
-    process.stdout.write(`${docker.display}\n`);
-    return 0;
-  }
-  // `setup` no longer pulls the image, so the first command that needs it says what is coming before Docker pulls it.
-  if (!hostImagePresent({ image })) {
-    process.stderr.write(`prism-code: the SDK image is not on this machine yet; Docker pulls it once now, a download of about ${SDK_IMAGE_DOWNLOAD}.\n  ${image}\n  \`prism-code setup --pull\` fetches it ahead of time.\n`);
-  }
-  return new Promise((done) => {
-    const child = spawn(docker.command, docker.args, { stdio: 'inherit', windowsHide: true });
-    child.on('error', (error) => {
-      process.stderr.write(error.code === 'ENOENT' ? `${docker.command} is not installed or not on PATH; prism-code check/build/verify need Docker\n` : `${error.message}\n`);
-      done(69);
-    });
-    child.on('exit', (code, signal) => done(code ?? (signal ? 1 : 0)));
-  });
-}
-
-/** The project's `[model] source`, or null without a `prism.toml` (a template instance's app/ has none). */
-async function modelSource(cwd) {
-  try {
-    const { manifest } = await readManifest(cwd);
-    return manifest.model?.source ?? null;
-  } catch (error) {
-    if (error.code !== 'manifest.path') throw error;
-    return null;
-  }
-}
-
-/** `axioms`: every declaration's observed axiom set in one pass, beside what the source declares; `--write` sets them. */
-async function commandAxioms(positional, options) {
-  if (positional.length > 0) return usage('axioms takes no arguments');
-  const cwd = process.cwd();
-  if (!existsSync(resolve(cwd, 'prismpm.lock'))) {
-    process.stderr.write('prismpm.lock not found in the current directory\n');
-    return 64;
-  }
-  const { MAX_ROUNDS, WORK_DIR, collect, compare, fmtArguments, formatRows, mismatches, parseReport, probeCommand, readAudit, rewrite, unaudited, writeWork } = await import('../src/axioms.mjs');
-  const dir = lexleanProjectDir(cwd, await modelSource(cwd), options.project ?? null);
-  const work = resolve(cwd, WORK_DIR);
-  // One round audits what the verify reaches. A verify that stops on a policy leaves later modules
-  // unaudited, so --write fixes what it learned and audits again, until nothing is left or MAX_ROUNDS.
-  let wrote = 0;
-  for (let round = 1; ; round++) {
-    const project = collect(cwd, dir);
-    writeWork(cwd, project);
-    const [flag, script] = probeCommand(cwd, dir);
-    const probed = await commandDelegate(flag, [script], { program: 'sh' });
-    if (process.env.PRISM_CODE_DRY_RUN) return probed;
-    if (probed !== 0) {
-      let log = '';
-      try {
-        log = readFileSync(resolve(work, 'verify.log'), 'utf8');
-      } catch {
-        log = '';
-      }
-      process.stderr.write(`axioms.probe: the project did not compile (exit ${probed})\n${log.trimEnd().split('\n').slice(-20).join('\n')}\n`);
-      return 2;
-    }
-    const rows = compare(project, parseReport(readAudit(work)));
-    const fixes = mismatches(rows);
-    const pending = unaudited(rows);
-    const last = !options.write || fixes.length === 0 || round === MAX_ROUNDS;
-    if (options.json && last) process.stdout.write(`${JSON.stringify({ schema: 'prism/axioms-report/1', project: dir, rounds: round, written: wrote, declarations: rows }, null, 2)}\n`);
-    else if (!options.json) process.stdout.write(`${options.write ? `round ${round}\n` : ''}${formatRows(rows)}`);
-    if (options.write && fixes.length > 0) {
-      const changed = rewrite(cwd, project, rows);
-      for (const [path, text] of changed) writeFileSync(path, text);
-      wrote += fixes.length;
-      if (!options.json) process.stdout.write(`wrote ${fixes.length} axioms member${fixes.length === 1 ? '' : 's'} in ${changed.size} file${changed.size === 1 ? '' : 's'}\n`);
-      if (round < MAX_ROUNDS) continue;
-    }
-    if (wrote > 0) {
-      const formatted = await commandDelegate('fmt', fmtArguments(cwd, dir), { program: 'lexlean' });
-      if (formatted !== 0) return formatted;
-    }
-    // Settled only when every declaration was audited and matches; anything else is work left.
-    return mismatches(rows).length || pending.length ? 1 : 0;
-  }
-}
-
-const REMOTE_BUILD_OPTIONS = ['remote', 'repo', 'ref', 'timeout', 'allow-dirty', 'policy', 'json'];
+const MODEL_OPTIONS = { check: ['project', 'json'], build: ['project', 'out', 'json', 'check'], verify: ['project', 'policy', 'json'] };
 
 /**
- * `build --remote github`: the repository's own GitHub Actions builds one
- * commit, and this machine verifies what comes back before it counts as
- * built. No Docker, no SDK image here. Exit 0 when the verdict and every
- * vector pass; else the exit code `check` or `vectors` would give, and 2 for
- * a refusal (`remote.*`).
+ * The model verbs (src/model-cli.mjs): check, build and verify, each in this process. LexLean as WebAssembly checks the
+ * model, Lean's kernel as WebAssembly proves every theorem, and the app is written with nothing compiled.
  */
-async function commandRemoteBuild(positional, options) {
-  if (options.remote !== 'github') return usage(`--remote takes github, not ${JSON.stringify(options.remote)}`);
-  if (positional.length > 0) return usage('build --remote github takes no arguments');
-  const unknown = Object.keys(options).find((name) => !REMOTE_BUILD_OPTIONS.includes(name));
-  if (unknown) return usage(`build --remote github has no option --${unknown}`);
+async function commandModel(verb, positional, options) {
+  for (const removed of ['local', 'hosted', 'remote', 'lean', 'unstable-author']) {
+    if (Object.hasOwn(options, removed)) return usage(`${verb} no longer takes --${removed}: it runs in this process, LexLean and Lean's kernel as WebAssembly`);
+  }
+  const unknown = Object.keys(options).find((name) => !MODEL_OPTIONS[verb].includes(name));
+  if (unknown) return usage(`${verb} has no option --${unknown}`);
   const bad = missingValue(options);
   if (bad) return usage(`--${bad} takes a value`);
-  let timeoutMs = 30 * 60 * 1000;
-  if (options.timeout !== undefined) {
-    const seconds = Number(options.timeout);
-    if (!Number.isInteger(seconds) || seconds <= 0) return usage('--timeout takes a number of seconds');
-    timeoutMs = seconds * 1000;
-  }
-  const { remoteBuild } = await import('../src/remote-github.mjs');
-  const result = await remoteBuild({
-    cwd: process.cwd(),
-    repo: options.repo ?? null,
-    ref: options.ref ?? 'HEAD',
-    allowDirty: options['allow-dirty'] === true,
-    timeoutMs,
-    policy: options.policy,
-    version: VERSION,
-    log: (line) => process.stderr.write(`${line}\n`),
-  });
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify({ ...result, verdict: JSON.parse(verdictJson(result.verdict)) }, null, 2)}\n`);
-    return result.exitCode;
-  }
-  process.stdout.write(formatVerdict(result.verdict, result.holo));
-  const signer = result.signature.identity ?? `a workflow of ${result.repository}`;
-  process.stdout.write(`${result.vectors.passed} of ${result.vectors.total} vectors passed on this machine\nprovenance: ${signer}, through ${result.signature.issuer} (checked by ${result.signature.via})\nfingerprint ${result.fingerprint}\nrun ${result.run.url}\n${result.exitCode === 0 ? `holo ${result.holo}` : `not written under .prism/build/; what came back is at ${result.staging}`}\n`);
-  return result.exitCode;
+  if (positional.length > 1) return usage(`${verb} takes at most one ${verb === 'verify' ? 'holo or project directory' : 'project directory'}`);
+  const model = await import('../src/model-cli.mjs');
+  const shared = { project: options.project ?? null, log: options.json ? () => {} : (line) => process.stderr.write(`${line}\n`) };
+  let result;
+  if (verb === 'check' || (verb === 'build' && options.check)) result = await model.modelCheck(positional[0], shared);
+  else if (verb === 'build') result = await model.modelBuild(positional[0], { ...shared, out: options.out ?? null });
+  else result = await model.modelVerify(positional[0], { ...shared, policy: options.policy ?? null });
+  process.stdout.write(options.json ? `${JSON.stringify(result.report, null, 2)}\n` : model.formatReport(result.report));
+  return result.code;
 }
 
-/** `--project <dir>` taken out of a tier's arguments: `{ explicit, rest }`, or `{ problem }`. */
-function takeProject(args) {
-  const at = args.findIndex((a) => a === '--project' || a.startsWith('--project='));
-  if (at < 0) return { explicit: null, rest: args };
-  const explicit = args[at].includes('=') ? args[at].slice('--project='.length) : args[at + 1];
-  if (!explicit) return { problem: '--project takes a directory' };
-  return { explicit, rest: args.filter((_, i) => i !== at && (args[at].includes('=') || i !== at + 1)) };
-}
-
-/**
- * The model tiers run the journey's own steps (journey/engine.mjs), so the CLI and `prism_build` give one answer:
- * LexLean as WebAssembly checks the model, and Lean's kernel, as WebAssembly, proves every theorem in this process.
- * No Docker, no image and no server: nothing about the app is sent anywhere.
- */
-async function modelTier(verb, args) {
-  if (args.includes('--local')) return { code: usage(`${verb} no longer takes --local: it runs in this process, LexLean and Lean's kernel as WebAssembly, with no Docker`) };
-  if (args.includes('--hosted')) return { code: usage(`${verb} no longer takes --hosted: Prism is serverless, and it runs LexLean and Lean's kernel as WebAssembly on this machine`) };
-  const taken = takeProject(args);
-  if (taken.problem) return { code: usage(taken.problem) };
-  const cwd = process.cwd();
-  const dir = lexleanProjectDir(cwd, await modelSource(cwd), taken.explicit);
-  const env = process.env;
-  return { cwd, dir, rest: taken.rest, env };
-}
-
-/** What a journey step answered, as lines, and its exit code. */
-function printStep(result, { ok, failed }) {
-  if (result.ok) process.stdout.write(`ok       ${ok}: ${result.message}\n`);
-  else {
-    process.stdout.write(`failed   ${failed}: ${result.code ? `${result.code}: ` : ''}${result.message ?? ''}\n`);
-    for (const d of result.diagnostics ?? []) process.stdout.write(`  ${d.at ? `${d.at}: ` : ''}${d.code ? `${d.code}: ` : ''}${String(d.message).replace(/\n/g, '\n    ')}\n`);
-  }
-  for (const t of result.theorems ?? []) process.stdout.write(`  ${t.status.startsWith('proved') ? 'proved  ' : 'not     '} ${t.theorem} (${t.proof ?? 'no proof'})${t.status.startsWith('proved') ? '' : `: ${t.status}`}\n`);
-  return result.ok ? 0 : 1;
-}
-
-/** T1 of the tiers: every theorem of the project's LexLean model, proved by Lean's kernel in this process. */
-async function commandLean(args) {
-  const tier = await modelTier('verify --lean', args);
-  if (tier.code !== undefined) return tier.code;
-  const unknown = tier.rest.filter((a) => a !== '--all');
-  if (unknown.length > 0) return usage(`verify --lean takes only --project and --all, not ${unknown.join(' ')}`);
-  if (process.env.PRISM_CODE_DRY_RUN) {
-    process.stdout.write(`kernel prove ${tier.dir}\n`);
-    return 0;
-  }
-  const { prove } = await import('../src/journey/engine.mjs');
-  const result = await prove(resolve(tier.cwd, tier.dir), { starter: null, status: {} }, { env: tier.env, log: (s) => process.stderr.write(`${s}\n`) });
-  return printStep(result, { ok: 'verify --lean', failed: 'verify --lean' });
-}
-
-/** T0 of the tiers: prism.toml here, and LexLean's check of the model as WebAssembly; proves nothing. */
-async function commandTierCheck(args) {
-  const tier = await modelTier('build --check', args);
-  if (tier.code !== undefined) return tier.code;
-  if (tier.rest.length > 0) return usage(`build --check takes only --project, not ${tier.rest.join(' ')}`);
-  let failed = false;
-  if (existsSync(resolve(tier.cwd, 'prism.toml'))) {
-    try {
-      const { manifest, warnings } = await readManifest(tier.cwd);
-      process.stdout.write(`ok       prism.toml: ${manifest.application?.name ?? 'application'} ${manifest.application?.version ?? ''}`.trimEnd() + '\n');
-      for (const w of warnings) process.stderr.write(`warning: ${w.rule}: ${w.message}\n`);
-    } catch (error) {
-      if (!(error instanceof PrismError)) throw error;
-      process.stdout.write(`failed   prism.toml: ${error.code}: ${error.message}\n`);
-      failed = true;
-    }
-  }
-  if (process.env.PRISM_CODE_DRY_RUN) {
-    process.stdout.write(`wasm check ${tier.dir}\n`);
-    return failed ? 1 : 0;
-  }
-  const { check } = await import('../src/journey/engine.mjs');
-  const result = await check(resolve(tier.cwd, tier.dir), { starter: null, status: {} }, { env: tier.env, log: (s) => process.stderr.write(`${s}\n`) });
-  return printStep(result, { ok: 'lexlean check', failed: 'lexlean check' }) || (failed ? 1 : 0);
+/** `skill --out <dir>`: copy the skill this package ships into a project folder. Reads only the package. */
+async function commandSkillCopy(options) {
+  if (typeof options.out !== 'string' || options.out === '') return usage('skill needs --out <dir>; it never writes to a default place');
+  const { copySkill } = await import('../src/skills.mjs');
+  const { directory, files } = copySkill(resolve(options.out));
+  process.stdout.write(`wrote ${files.length} files to ${directory}\n${files.map((f) => `  ${f}\n`).join('')}`);
+  return 0;
 }
 
 /** One verb's usage lines and its options block, from the usage text, or null when the usage text has none. */
@@ -1040,8 +816,8 @@ async function commandPlugin(command, args) {
 
 async function main(argv) {
   // A deprecated verb or flag becomes its new term here, with one warning each (#347).
-  const [word, ...rest] = resolveAliases(argv, (warning) => process.stderr.write(`${warning}\n`), (verb) => BUILTINS.has(verb) && !Object.hasOwn(DELEGATED, verb));
-  // Docker's singular management commands name the plural groups: `image ls` is `images ls` (#347).
+  const [word, ...rest] = resolveAliases(argv, (warning) => process.stderr.write(`${warning}\n`), (verb) => BUILTINS.has(verb));
+  // The container tool's singular management commands name the plural groups: `image ls` is `images ls` (#347).
   const command = moduleOf(word);
   if (!command || command === '--help' || command === '-h' || command === 'help') {
     process.stdout.write(command ? USAGE + pluginHelp(listPlugins({ builtins: BUILTINS })) : USAGE);
@@ -1060,7 +836,7 @@ async function main(argv) {
   if (Object.hasOwn(GROUPS, command) && !helps) {
     return usage(`${command} takes one of ${Object.keys(GROUPS[command]).join(', ')}`);
   }
-  // `--help` after a built-in verb prints that verb's usage and never reaches Docker or a lockfile.
+  // `--help` after a built-in verb prints that verb's usage and runs nothing.
   const own = rest.includes('--') ? rest.slice(0, rest.indexOf('--')) : rest;
   if (BUILTINS.has(command) && (own.includes('--help') || own.includes('-h'))) {
     const help = commandHelp(command);
@@ -1102,16 +878,13 @@ async function main(argv) {
       const { runDev } = await import('../src/dev-cli.mjs');
       return runDev(rest);
     }
-    case 'setup': {
-      const { runSetup } = await import('../src/setup-cli.mjs');
-      return runSetup(rest, usage);
-    }
     case 'skill': {
-      if (rest[0] !== 'verify' || rest.length > 2) return usage('skill takes verify [<dir>]');
+      if (rest[0] !== 'verify') return positional.length === 0 ? commandSkillCopy(options) : usage('skill takes --out <dir>, or verify [<dir>]');
+      if (rest.length > 2) return usage('skill takes --out <dir>, or verify [<dir>]');
       const skills = await import('../src/skills.mjs');
       const dirs = rest[1] ? [resolve(rest[1])] : skills.installedSkillDirs();
       if (dirs.length === 0) {
-        process.stderr.write('skill verify: no installed prism skill here; run npx prism-code@latest setup, or name a skill folder\n');
+        process.stderr.write('skill verify: no installed prism skill here; name a skill folder, such as the one prism-code skill --out <dir> wrote\n');
         return 2;
       }
       let failed = false;
@@ -1122,17 +895,6 @@ async function main(argv) {
       }
       return failed ? 1 : 0;
     }
-    case 'open': {
-      const { runOpen } = await import('../src/setup-cli.mjs');
-      return runOpen(rest, usage);
-    }
-    case 'mcp': {
-      const at = rest.indexOf('--project');
-      if (rest.length > 0 && !(at === 0 && rest.length === 2)) return usage('mcp takes only --project <dir>');
-      const { serveStdio } = await import('../src/journey/mcp.mjs');
-      await serveStdio({ cwd: at === 0 ? resolve(rest[1]) : process.env.PRISM_PROJECT ?? process.cwd() });
-      return 0;
-    }
     case 'attest':
     case 'verify-attestation':
       return commandAttestation(command, positional, options);
@@ -1140,21 +902,13 @@ async function main(argv) {
     case 'pull':
       return commandTransfer(command, positional, options);
     case 'check':
+      // A holo is judged against a policy; anything else is the project, whose model is checked and proved.
       if (namesHolo(positional)) return commandCheck(positional, options);
-      return usage('check takes a holo; the model check is prism-code build --check, which runs prismpm check (the spelling without a holo was removed, #584)');
+      return commandModel('check', positional, options);
     case 'build':
-      if (options.remote !== undefined) return commandRemoteBuild(positional, options);
-      // A removed flag is refused by name, never passed on.
-      if (rest.includes('--unstable-author')) return usage('unknown option --unstable-author: write the app\'s LexLean model under prism/src/ and build it through prism-code mcp');
-      if (rest.includes('--check')) return commandTierCheck(rest.filter((a) => a !== '--check'));
-      return commandDelegate('build', rest);
     case 'verify':
-      if (rest.includes('--lean')) return commandLean(rest.filter((a) => a !== '--lean'));
-      return commandDelegate('verify', rest);
-    case 'axioms':
-      return commandAxioms(positional, options);
+      return commandModel(command, positional, options);
     default:
-      if (Object.hasOwn(DELEGATED, command)) return commandDelegate(command, rest);
       return commandPlugin(command, rest);
   }
 }
@@ -1177,7 +931,7 @@ main(argv).then(
     process.exitCode = error instanceof VerificationError && error.check === 'policy.invalid' ? 64 : exitCodeFor(error);
   },
 ).then(() => {
-  // A plugin may have something to say about a verb that failed, as Docker's error-hooks do.
+  // A plugin may have something to say about a verb that failed, as the container tool's error-hooks do.
   if (!ran || !process.exitCode) return;
   const messages = errorHookMessages({ command: ran, args: argv.slice(1), exitCode: process.exitCode, builtins: BUILTINS });
   if (messages.length > 0) process.stderr.write(`\nWhat's next:\n${messages.map((m) => `  ${m}\n`).join('')}`);

@@ -105,7 +105,7 @@ export function developerSurface({ usage, client, delegated = [], groups = [], m
       ...verbs.map((name) => ({ kind: 'verb', place: `prism-code ${name}`, name })),
       ...groupVerbs.map((place) => ({ kind: 'verb', place: `prism-code ${place}`, name: place.split(' ')[1] })),
       ...flags.map((name) => ({ kind: 'flag', place: `--${name}`, name })),
-      // Docker's singular spelling of a module group, `prism-code image ls` (#347).
+      // The container tool's singular spelling of a module group, `prism-code image ls` (#347).
       ...sorted(moduleAliases).map((name) => ({ kind: 'namespace', place: `prism-code ${name}`, name })),
       ...members(client, 'prism', []),
     ],

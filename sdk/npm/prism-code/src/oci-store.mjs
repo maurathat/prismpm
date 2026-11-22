@@ -8,7 +8,7 @@
  *   blobs/sha256/<hex>    manifests, configs and layers
  *
  * A tagged manifest carries `org.opencontainers.image.ref.name` (the tag) and,
- * when it has one, `io.containerd.image.name` (the full name), as `docker save`
+ * when it has one, `io.containerd.image.name` (the full name), as the container tool's `save`
  * writes them. Referrers are untagged descriptors: a layout has no referrers
  * API, and tools build the graph from `index.json`. Moving a tag leaves the old
  * manifest listed, so its digest still resolves, as it does in a registry.
@@ -180,7 +180,7 @@ export function openStore(path, options = {}) {
         const { [ANNOTATION.REF_NAME]: _tag, [ANNOTATION.IMAGE_NAME]: _name, ...rest } = d.annotations;
         return { ...d, annotations: rest };
       });
-      // One manifest may carry several tags: each is its own descriptor, as in `docker save`.
+      // One manifest may carry several tags: each is its own descriptor, as in the container tool's `save`.
       const same = index.manifests.filter((d) => d.digest === digest && refName(d) !== null && !matchesName(d, tag));
       index.manifests = [...others, ...same, { mediaType: MANIFEST_MEDIA_TYPE, digest, size: bytes.length, annotations }];
       await writeIndex(index);

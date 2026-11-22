@@ -150,6 +150,12 @@ const site = { 'edit/index.html': '<p>edit</p>', 'edit/edit.mjs': 'export const 
   assert.equal((await w.get('missing.txt')).status, 404);
   assert.equal(JSON.parse(await text(await w.get('offline.json'))).commit, 'c1');
   assert.equal(w.cache.size <= 1, true, 'nothing unlisted is kept');
+  // With the network off, an unlisted file is "not there": a 404, not an error thrown into the page.
+  w.online = false;
+  const miss = await w.get('extra.txt');
+  assert.equal(miss.status, 404);
+  assert.match(await text(miss), /does not name it/);
+  w.online = true;
   // A request that is not a GET is left alone.
   let answered = false;
   w.handlers.fetch({ request: { url: ROOT + 'edit/', method: 'POST', mode: 'cors' }, respondWith: () => { answered = true; } });

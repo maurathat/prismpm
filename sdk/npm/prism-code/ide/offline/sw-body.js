@@ -92,20 +92,25 @@ function listedPath(url) {
   return path;
 }
 
+/** A file the listing does not name: the network's answer, and 404 when the network gives none. */
+async function unlisted(request, path) {
+  try { return await fetch(request); } catch { return new Response(`${path}: this site's listing does not name it, and the network did not answer.\n`, { status: 404, statusText: 'Not listed, and offline', headers: { 'content-type': 'text/plain; charset=utf-8' } }); }
+}
+
 async function answer(request) {
   const url = new URL(request.url);
   const path = listedPath(url);
   if (path === null || path === LISTING || path === 'sw.js') return fetch(request);
   if (request.mode === 'navigate' || listing === null) await refreshListing();
   const entry = listing?.files?.[path];
-  if (!entry) return fetch(request);
+  if (!entry) return unlisted(request, path);
   const response = await byContent(path, entry);
   if (response.status !== 502) return response;
   // The site may have been published again since this listing was taken. The newest listing decides: if it names
   // other bytes for this path, those are what is checked; if it names the same, the refusal stands.
   await refreshListing();
   const now = listing?.files?.[path];
-  if (!now) return fetch(request);
+  if (!now) return unlisted(request, path);
   return now.kappa === entry.kappa ? response : byContent(path, now);
 }
 

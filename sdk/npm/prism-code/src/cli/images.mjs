@@ -2,7 +2,7 @@
  * `prism-code images <verb>` (#442, #349): the image verbs, under the module's name.
  * `ls`, `tag`, `rm` and `prune` read and change the local image store of
  * `Prism.fromEnv()` ($PRISM_IMAGES, else $PRISM_HOME/images); the top-level
- * `images`, `tag` and `rmi` are Docker's words for the first three.
+ * `images`, `tag` and `rmi` are the container tool's words for the first three.
  */
 const USAGE = 64;
 
@@ -36,7 +36,7 @@ const ago = (iso) => {
 
 const bytes = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : n >= 1024 ? `${(n / 1024).toFixed(1)}kB` : `${n}B`);
 
-/** `docker image ls`: one row per tag, and one `<none>` row for an untagged image. */
+/** The container tool's `image ls`: one row per tag, and one `<none>` row for an untagged image. */
 async function ls(args) {
   const { positional, set, error } = read(args, { json: ['--json'], dangling: ['--dangling'] }, 'ls');
   if (error) return refuse(error);
@@ -60,7 +60,7 @@ async function ls(args) {
   return 0;
 }
 
-/** `docker tag SOURCE TARGET`. */
+/** The container tool's `tag SOURCE TARGET`. */
 async function tag(args) {
   const { positional, error } = read(args, {}, 'tag');
   if (error) return refuse(error);
@@ -69,7 +69,7 @@ async function tag(args) {
   return 0;
 }
 
-/** `docker rmi`: each name in turn, Docker's `Untagged:` and `Deleted:` lines. */
+/** The container tool's `rmi`: each name in turn, the container tool's `Untagged:` and `Deleted:` lines. */
 async function rm(args) {
   const { positional, set, error } = read(args, { force: ['-f', '--force'] }, 'rm');
   if (error) return refuse(error);
@@ -83,7 +83,7 @@ async function rm(args) {
   return 0;
 }
 
-/** `docker image prune [-a]`. */
+/** The container tool's `image prune [-a]`. */
 async function prune(args) {
   const { positional, set, error } = read(args, { all: ['-a', '--all'], json: ['--json'] }, 'prune');
   if (error) return refuse(error);
@@ -109,5 +109,5 @@ export const verbs = Object.freeze({
   verify: Object.freeze({ flat: 'check', usage: '<app.holo> [--policy <file>] [--json]', summary: 'the same as prism-code check' }),
 });
 
-/** Docker's top-level words: `images` is `images ls`, `tag` is `images tag`, `rmi` is `images rm`. */
+/** The container tool's top-level words: `images` is `images ls`, `tag` is `images tag`, `rmi` is `images rm`. */
 export const aliases = Object.freeze({ images: 'ls', tag: 'tag', rmi: 'rm' });

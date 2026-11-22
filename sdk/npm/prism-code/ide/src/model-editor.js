@@ -59,7 +59,10 @@ if ('serviceWorker' in navigator) {
 // The edit page's files, served beside this page. Plain URLs, so the bundler leaves the workers as they are.
 // This page lives in the edit page's folder, at ide/, wherever that folder is published.
 const EDIT = new URL('../', location.href).href;
-const json = async (url) => (await fetch(url, { cache: 'no-store' })).json();
+// A fresh copy when the network gives one; when that request fails, as it does in a browser switched to work offline,
+// the same address asked plainly, which the site's worker answers from what it keeps.
+const fresh = (url) => fetch(url, { cache: 'no-store' }).catch(() => fetch(url));
+const json = async (url) => (await fresh(url)).json();
 // ?project=<address of a folder> opens the model published there: its project.json lists its files, which are
 // fetched from that folder. Without it, the model that came with the page is opened.
 const asked = new URLSearchParams(location.search).get('project');
@@ -88,7 +91,7 @@ if (BY_LABEL) {
 } else try {
   [listing, pin] = await Promise.all([json(PROJECT ? PROJECT + 'project.json' : EDIT + 'project.json'), json(EDIT + 'pin.json')]);
   await Promise.all(listing.files.map(async (path) => {
-    const response = await fetch((PROJECT ?? EDIT + 'project/') + path, { cache: 'no-store' });
+    const response = await fresh((PROJECT ?? EDIT + 'project/') + path);
     if (!response.ok) throw new Error(path + ' answered ' + response.status);
     files['/' + path] = await response.text();
   }));
@@ -261,7 +264,10 @@ async function commandLine(io) {
     check: (project) => lexlean.ask({ files: project }), snapshotOf: (project) => lexlean.ask({ files: project, snapshot: true }),
     prove: (words, guarantees) => kernel.ask({ words, guarantees }),
     held: async () => ({ lexlean: await settled.lexlean, kernel: await settled.kernel }),
-    pin, manifest, kept: createKeptIn(await openStore({ kappa })), change: { write: changing('write'), remove: changing('remove') }, ...io,
+    pin, manifest, kept: createKeptIn(await openStore({ kappa })), change: { write: changing('write'), remove: changing('remove') },
+    // A paste of several lines is one block; the effects table says to ask before it is entered.
+    askLines: async (lines) => window.confirm(`Run these ${lines.length} pasted lines?\n\n` + lines.join('\n').slice(0, 600)),
+    ...io,
   });
 }
 
@@ -289,8 +295,9 @@ try {
   }
   // LexLean's colours reach the editor as semantic tokens, so they are on whatever the theme would choose.
   // ?theme=<a theme's name> opens the page in that theme; without it, the workbench's own choice stands.
-  const theme = new URLSearchParams(location.search).get('theme');
-  await initUserConfiguration(JSON.stringify({ 'editor.semanticHighlighting.enabled': true, ...(theme ? { 'workbench.colorTheme': theme } : {}) }));
+  // Dark+ unless the address names another theme: ?theme=<a theme's name, as the command palette lists it>.
+  const theme = new URLSearchParams(location.search).get('theme') || 'Default Dark+';
+  await initUserConfiguration(JSON.stringify({ 'editor.semanticHighlighting.enabled': true, 'workbench.colorTheme': theme }));
 
   await initialize({
     ...getExtensionsOverride({ enableWorkerExtensionHost: true }), ...getFilesOverride(), ...getConfigurationOverride(),
@@ -364,11 +371,32 @@ try {
   const runKeep = document.getElementById('runKeep');
   const runLog = document.getElementById('runLog');
   let running = null;
+  // The app's own page, when its holo carries one: the View's files made into one document by Holospace's library
+  // and shown in a frame that may run scripts and nothing else (no network, no storage, no way out of the frame; the
+  // document carries the library's own content policy). What the page asks of its app is sent as the page gave it,
+  // and listed below with its answer, marked "page". A page keeps its own session: nothing is added to its requests.
+  const runView = document.getElementById('runView');
+  let stopIntents = null;
+  async function showView(opened) {
+    stopIntents?.();
+    stopIntents = null;
+    runView.hidden = true;
+    runView.removeAttribute('srcdoc');
+    if (!opened) return null;
+    const { viewFiles, viewDocument, serveIntents } = await holospaceModule();
+    const view = viewFiles(opened.view);
+    if (!view) return { shown: false, why: 'the holo carries no View' };
+    runView.srcdoc = viewDocument(view);
+    stopIntents = serveIntents(runView, async (request) => { const answers = await ask(request, 'page '); return answers[answers.length - 1]; });
+    runView.hidden = false;
+    return { shown: true, entry: view.entry, files: Object.keys(view.files).length };
+  }
   async function openRun(bytes) {
     running = null;
     runLog.textContent = '';
     runForm.hidden = true;
     state.run = null;
+    await showView(null);
     if (!bytes) { runBox.hidden = true; return; }
     runBox.hidden = false;
     runBox.dataset.state = '';
@@ -387,6 +415,9 @@ try {
       runBox.dataset.state = 'verified';
       runVerdict.textContent = `Ready to run ${opened.name ?? 'the app'}: its holo was judged verified in this tab${replayed}. Each request is one call on a fresh instance.`;
       runForm.hidden = false;
+      // A View that cannot be shown does not stop the app being run by request.
+      try { state.run.view = await showView(opened); } catch (error) { state.run.view = { shown: false, why: String(error?.message ?? error) }; }
+      if (state.run.view?.shown) runVerdict.textContent += ' Its own page is shown below, in a frame that can reach nothing but the app.';
     } catch (error) {
       state.run = { verdict: null, error: String(error?.message ?? error) };
       runBox.dataset.state = 'refused';
@@ -394,16 +425,21 @@ try {
     }
   }
   // `send`, not `run`: this object is also the page's state, and `run` there is what the last run was.
-  window.prismModel.send = async (text) => {
+  // One request to the app, as given, listed with its answer. `from` says who asked when it was not the box above.
+  async function ask(request, from = '') {
     if (!running) throw new Error('nothing is ready to run: build first');
-    const request = runKeep.checked ? [...running.steps, text].join(';') : text;
     let answers;
     try { answers = await running.runner.step(request); } catch (error) { answers = [`(the app did not answer: ${String(error?.message ?? error)})`]; }
-    if (runKeep.checked) running.steps.push(text);
     state.run.sent.push(request);
     state.run.answers.push(answers);
-    runLog.textContent += `> ${request}\n${answers.map((a) => '  ' + a).join('\n')}\n`;
+    runLog.textContent += `${from}> ${request}\n${answers.map((a) => '  ' + a).join('\n')}\n`;
     runLog.scrollTop = runLog.scrollHeight;
+    return answers;
+  }
+  window.prismModel.send = async (text) => {
+    if (!running) throw new Error('nothing is ready to run: build first');
+    const answers = await ask(runKeep.checked ? [...running.steps, text].join(';') : text);
+    if (runKeep.checked) running.steps.push(text);
     return answers;
   };
   runForm.addEventListener('submit', (event) => { event.preventDefault(); const text = runInput.value; if (text === '') return; runInput.value = ''; window.prismModel.send(text); });

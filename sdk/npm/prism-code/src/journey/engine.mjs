@@ -20,7 +20,7 @@ import { PrismCodeError } from '../errors.mjs';
 import { fromFile } from '../node.mjs';
 import { VERSION } from '../version.mjs';
 import { gapLedger } from '../gaps.mjs';
-import { NO_DOCKER_FREE_BUILD, frontendWhere, proverWhere } from './frontend.mjs';
+import { NO_SERVER_BUILD, frontendWhere, proverWhere } from './frontend.mjs';
 import { fromHosted, holoFromSnapshot, isWarning } from './build-core.mjs';
 import { lexleanReady, wasmCheck, wasmDeclare, wasmSnapshot } from './lexlean-wasm.mjs';
 import { collectIfUpgraded, withStoreHeld } from './store-gc.mjs';
@@ -57,9 +57,9 @@ function repair(diagnostics, dir = null) {
   if (fixes.length) return `Lean observed other axioms than ${fixes.map((f) => `${f.name} declares`).join(', ')}; set each theorem's axioms to ${fixes.map((f) => `[${f.axioms.join(', ')}] for ${f.name}`).join('; ')}.`;
   // The first problem, when its hint names the fix: the replacement, and where to write it.
   const first = dir ? shown(diagnostics, dir)[0] : null;
-  if (first?.didYouMean?.length && first.at) return `\`${first.name}\` is not in scope: at ${first.at} write ${first.didYouMean.map((n) => `\`${n}\``).join(' or ')} instead, then call the same tool again.`;
-  if (first?.at && first.line) return `Fix ${first.at}, \`${first.line}\`, then call the same tool again.`;
-  return 'Fix the model at the lines named, then call the same tool again.';
+  if (first?.didYouMean?.length && first.at) return `\`${first.name}\` is not in scope: at ${first.at} write ${first.didYouMean.map((n) => `\`${n}\``).join(' or ')} instead, then run the same command again.`;
+  if (first?.at && first.line) return `Fix ${first.at}, \`${first.line}\`, then run the same command again.`;
+  return 'Fix the model at the lines named, then run the same command again.';
 }
 
 /**
@@ -161,11 +161,24 @@ async function proveModel(dir, session, { log, frontend, snapshot, gaps, kernel,
   return modelReport(dir, session, result, { started, semanticId: model.semantic_id ? `sha256:${model.semantic_id}` : null, via: null });
 }
 
+/** The project's `module_prefix`, from its lexlean.toml, or null. */
+function modulePrefix(dir) {
+  try {
+    return /^module_prefix\s*=\s*"([^"]+)"/m.exec(readFileSync(join(dir, 'lexlean.toml'), 'utf8'))?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** What a model proof says to the user, the same for either way it was planned. */
 function modelReport(dir, session, result, { started, semanticId, via }) {
   const seconds = Math.round((Date.now() - started) / 100) / 10;
   const short = (name) => name.slice(name.lastIndexOf('.') + 1);
-  const theorems = result.theorems.map((t) => ({ theorem: short(t.name), proof: t.proof, status: t.status, axioms: t.axioms, ...(t.setAside ? { setAside: t.setAside } : {}) }));
+  // `qualified` is Module.theorem: the kernel's name without the project's module_prefix, so the same theorem reads
+  // the same whatever the project is called. The template contract's rows name theorems this way (contract.mjs).
+  const prefix = modulePrefix(dir);
+  const qualified = (name) => (prefix && name.startsWith(`${prefix}.`) ? name.slice(prefix.length + 1) : name);
+  const theorems = result.theorems.map((t) => ({ theorem: short(t.name), qualified: qualified(t.name), proof: t.proof, status: t.status, axioms: t.axioms, ...(t.setAside ? { setAside: t.setAside } : {}) }));
   if (result.refusal) return { ok: false, where: 'kernel', seconds, theorems, message: `The model could not be put to Lean's kernel: ${result.refusal}. This is a limit of this prover, not a verdict on the app.` };
   const missed = result.theorems.filter((t) => !t.status.startsWith('proved'));
   if (missed.length) return { ok: false, where: 'kernel', seconds, theorems, message: `${missed.length} of ${result.theorems.length} theorems are not proved: ${missed.slice(0, 3).map((t) => `${short(t.name)} (${t.status.replace(/^not proved: /, '')})`).join('; ')}.` };
@@ -241,7 +254,7 @@ async function proveRuleApp(dir, session, { log, where, snapshot, gaps, kernel, 
  */
 async function buildUnheld(dir, session, { log = () => {}, env = process.env, snapshot = null, gaps = gapLedger(), kernel = null, modelKernel = null, remote = null, wasm = null } = {}) {
   wasm ??= wasmProbe(await lexleanReady({ env, log }));
-  if (remote === 'github') return { ...failure(new PrismCodeError('build.publish-unavailable', `Publishing to GitHub writes the template's ID rows, scenarios and tests, and this prism-code does not yet write them from the model's semantic snapshot. ${NO_DOCKER_FREE_BUILD}`)), stage: 'build' };
+  if (remote === 'github') return { ...failure(new PrismCodeError('build.publish-unavailable', `Publishing to GitHub writes the template's ID rows, scenarios and tests, and this prism-code does not yet write them from the model's semantic snapshot. ${NO_SERVER_BUILD}`)), stage: 'build' };
   if (isRuleApp(session)) return buildRuleApp(dir, session, { log, env, snapshot, gaps, kernel, wasm });
   return buildModelApp(dir, session, { log, env, snapshot, gaps, kernel: modelKernel, wasm });
 }
@@ -309,6 +322,9 @@ async function buildModelApp(dir, session, { log, env, snapshot, gaps, kernel, w
     bytes: built.bytes.length,
     theorems: provedNow.theorems,
     vectors: { passed: acceptance.passed, total: acceptance.total },
+    // The vectors the built holo just answered as the model states, as bytes, for a caller that judges them further
+    // (the template contract's R5 looks for a refusal among them). Empty unless every vector passed.
+    replayed: ok ? app.vectors.map((v) => ({ request: v.request, response: v.response })) : [],
     compared: built.compared,
     message: ok
       ? `Built in ${seconds} s with nothing compiled: the holo ${relative(process.cwd(), path) || path}, ${built.bytes.length} bytes, named ${built.label}, for the model sha256:${built.semanticId}. Proved: Lean's kernel accepted every one of the model's ${provedNow.theorems.length} theorems. Tested, not proved: the holo's guest is the evaluator guest running the model's program, and it answers ${acceptance.passed} of ${acceptance.total} acceptance vectors and ${built.compared.agreed} of ${built.compared.total} requests made from them as the model's own definitions do.`
@@ -389,7 +405,7 @@ export async function tryRequest(dir, session, request) {
       return { ok: false, request, code: error.code, message: `The built rule app is refused: ${error.message}` };
     }
   }
-  return { ...failure(new PrismCodeError('try.unbuilt', 'Nothing is built yet, so nothing answers: call prism_run, which builds first. Prism answers only from a built app, never from a second reading of the model.')), request };
+  return { ...failure(new PrismCodeError('try.unbuilt', 'Nothing is built yet, so nothing answers: run prism-code build first. Prism answers only from a built app, never from a second reading of the model.')), request };
 }
 
 /**

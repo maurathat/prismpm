@@ -1,6 +1,6 @@
 /**
  * The command line verbs of #292, `push` and `pull`. They read flags and print in
- * Docker's shape; everything else is `push-pull.mjs`. `bin` loads this module only
+ * The container tool's shape; everything else is `push-pull.mjs`. `bin` loads this module only
  * when one of them runs.
  */
 import { readFile } from 'node:fs/promises';
@@ -31,7 +31,7 @@ const localStore = async () => createImageStore({ backend: fileImageStore(images
 /**
  * What `run`, `inspect` and `push` read when they are given an image (#347): the path,
  * when one exists there, else the file the local store keeps the image of that name,
- * tag or id in, as `docker run calc:1` runs a stored image. The store checks the bytes
+ * tag or id in, as the container tool's `run calc:1` runs a stored image. The store checks the bytes
  * against their digests first. Anything else comes back as given, so the caller's own
  * error names it.
  */
@@ -100,7 +100,7 @@ export async function runPush(positional, options, usage) {
       process.stdout.write(`The push refers to repository [${name}]\n`);
     };
     heading();
-    // One operand is `docker push name:tag`: the image of that name in the local store (#349).
+    // One operand is the container tool's `push name:tag`: the image of that name in the local store (#349).
     const source = positional.length === 1 ? (await localStore()).get(localName(positional[0])).then((image) => image.bytes) : /^dir:\/\//.test(positional[0]) ? positional[0] : resolve(positional[0]);
     const result = await experimental_push(await source, target, {
       key,
@@ -172,7 +172,7 @@ export async function runPull(positional, options, usage) {
       plainHttp: options['plain-http'] === true,
       ...tuf(options),
     });
-    // Verified, so it is kept in the local store under the name it was pulled by, as docker pull keeps it (#349).
+    // Verified, so it is kept in the local store under the name it was pulled by, as the container tool pull keeps it (#349).
     await (await localStore()).add(holo, { tags: [storedName(source)].filter((name) => name !== null) });
     if (json) {
       process.stdout.write(`${canonicalJson(result)}\n`);

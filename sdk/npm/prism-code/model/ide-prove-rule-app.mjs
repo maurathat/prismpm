@@ -1,13 +1,13 @@
 // Prove one of the IDE's rule-table models with this checkout's prism-code and say what Lean's kernel accepted.
 //
-// A rule-table model states its guarantees as data, so `verify --lean` finds no theorem in it. The route that proves
-// them is the rule-app build of prism-code's own tool server: the model's numbers go to the verified rule judge and
-// Lean's kernel, in this process, checks every guarantee for every request. Nothing is sent anywhere.
+// A rule-table model states its guarantees as data. The route that proves them is prism-code's rule-app build: the
+// model's numbers go to the verified rule judge, and Lean's kernel, in this process, checks every guarantee for every
+// request. It is `prism-code build`, run on a copy of the model. Nothing is fetched and nothing is sent anywhere.
 //
 // Usage: node ide-prove-rule-app.mjs <model dir> <guarantees expected> [<file to copy the built record to>] [<folder to copy the built site to>]
 // Exit 0 only when the kernel accepted exactly that many guarantees and every acceptance vector passed.
-import { spawn } from 'node:child_process';
-import { copyFileSync, cpSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { copyFileSync, cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,69 +15,45 @@ import { fileURLToPath } from 'node:url';
 const [modelDir, expected, keepRecord, keepSite] = process.argv.slice(2);
 const bin = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'prism-code.mjs');
 
-// The tool server works on <cwd>/prism and writes its build beside the model, so it gets a copy.
+// The build writes beside the model, so it gets a copy.
 const work = mkdtempSync(join(tmpdir(), 'ide-rule-app-'));
-cpSync(resolve(modelDir), join(work, 'prism'), { recursive: true, filter: (p) => !/[\\/](tools|README\.md)$/.test(p) });
-// The server builds a folder as a rule app only when its session says it was started from that starter.
-writeFileSync(join(work, 'prism', 'session.json'), JSON.stringify({ schema: 'prism/session/2', starter: 'rule-app', status: {} }, null, 2) + '\n');
+const app = join(work, 'app');
+cpSync(resolve(modelDir), app, { recursive: true, filter: (p) => !/[\\/](tools|README\.md)$/.test(p) });
+// A folder is built as a rule app only when its session says it was started from that starter.
+writeFileSync(join(app, 'session.json'), JSON.stringify({ schema: 'prism/session/2', starter: 'rule-app', status: {} }, null, 2) + '\n');
 
-const child = spawn(process.execPath, [bin, 'mcp'], {
-  cwd: work, stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, PRISM_CODE_TIER: 'offline', PRISM_TELEMETRY: '0' },
+const run = spawnSync(process.execPath, [bin, 'build', '--json'], {
+  cwd: app, encoding: 'utf8', timeout: 300000, env: { ...process.env, PRISM_CODE_TIER: 'offline', PRISM_TELEMETRY: '0' },
 });
-let buffer = '';
-let id = 0;
-const waiting = new Map();
-child.stdout.on('data', (data) => {
-  buffer += data;
-  for (let at; (at = buffer.indexOf('\n')) >= 0;) {
-    const line = buffer.slice(0, at).trim();
-    buffer = buffer.slice(at + 1);
-    if (!line) continue;
-    let message;
-    try { message = JSON.parse(line); } catch { continue; }
-    if (waiting.has(message.id)) { waiting.get(message.id)(message); waiting.delete(message.id); }
-  }
-});
-const rpc = (method, params) => new Promise((done) => {
-  waiting.set(++id, done);
-  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
-});
-const call = async (name, args = {}) => {
-  const reply = await rpc('tools/call', { name, arguments: args });
-  return JSON.parse((reply.result?.content ?? []).map((c) => c.text ?? '').join('') || '{}');
-};
-const finish = (code, message) => {
-  console.log(message);
-  // The server holds the copy as its working directory, so the copy goes only after the server has.
-  child.once('exit', () => {
-    try { rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* left in the temp folder */ }
-    process.exit(code);
-  });
-  child.kill();
-};
-setTimeout(() => finish(2, 'timed out after 5 minutes'), 300000).unref();
-
-await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'ide-prove-rule-app', version: '1' } });
-child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
-
-const checked = await call('prism_build', { check: true });
-if (!checked.ok) finish(1, 'check refused: ' + JSON.stringify(checked.diagnostics ?? checked).slice(0, 800));
-let built = await call('prism_build', { wait: 240 });
-while (built.state === 'running') built = await call('prism_build', { wait: 60 });
-const accepted = /accepted all (\d+) guarantees/.exec(built.message ?? '')?.[1];
-// The reply says in words what was built. Where it was written, and how many vectors passed, the server keeps in
-// the session it saves beside the model, for the model it just built.
+let report = null;
+try {
+  report = JSON.parse(run.stdout);
+} catch {
+  // No report: the reason is in what the command printed.
+}
+// Where the app was written, and for which model, the build keeps in the session it saves beside the model.
 let made = {};
-try { made = JSON.parse(readFileSync(join(work, 'prism', 'session.json'), 'utf8')).status?.ruleApp ?? {}; } catch { /* no session, nothing built */ }
-if (made.semanticId !== checked.semanticId) made = {};
-const vectors = { passed: made.passed, total: made.total };
-const good = built.ok === true && built.built?.ok === true && accepted === String(expected) && vectors.total > 0 && vectors.passed === vectors.total;
+try {
+  made = JSON.parse(readFileSync(join(app, 'session.json'), 'utf8')).status?.ruleApp ?? {};
+} catch {
+  // No session, nothing built.
+}
+const summary = report?.summary ?? {};
+const accepted = summary.theoremsVerified ?? 0;
+const vectors = { passed: summary.vectorsPassed ?? 0, total: summary.vectorsTotal ?? 0 };
+const good = run.status === 0 && report?.ok === true && summary.theoremsDeclared === accepted && String(accepted) === String(expected) && vectors.total > 0 && vectors.passed === vectors.total && typeof made.path === 'string';
 if (good && keepRecord && keepRecord !== '-') copyFileSync(made.path, resolve(keepRecord));
 if (good && keepSite) cpSync(made.site, resolve(keepSite), { recursive: true });
-finish(good ? 0 : 1, [
+console.log([
   `${good ? 'ok' : 'FAILED'}: ${modelDir}`,
-  `model ${checked.semanticId}`,
-  `guarantees accepted by Lean's kernel: ${accepted ?? 'none'} (expected ${expected})`,
-  `acceptance vectors: ${vectors.passed ?? 0} of ${vectors.total ?? 0}`,
-  good ? `app ${made.address}` : JSON.stringify(built).slice(0, 1200),
+  `model ${made.semanticId ?? 'not built'}`,
+  `guarantees accepted by Lean's kernel: ${accepted} (expected ${expected})`,
+  `acceptance vectors: ${vectors.passed} of ${vectors.total}`,
+  good ? `app ${made.address}` : (report ? JSON.stringify(report.diagnostics).slice(0, 1200) : `${run.stdout}${run.stderr}`.slice(0, 1200)),
 ].join('\n'));
+try {
+  rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+} catch {
+  // Left in the temp folder.
+}
+process.exit(good ? 0 : 1);

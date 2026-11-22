@@ -12,7 +12,7 @@
  */
 import { PrismCodeError } from '../errors.mjs';
 import { loadArchive } from '../index.mjs';
-import { NO_DOCKER_FREE_BUILD } from './frontend.mjs';
+import { NO_SERVER_BUILD } from './frontend.mjs';
 import { lexleanCheck, lexleanSnapshot } from './lexlean-core.mjs';
 import { buildHolo } from './model-holo.mjs';
 
@@ -39,7 +39,7 @@ export async function holoFromSnapshot(snapshot, { evaluator, snapshotBytes = nu
     return { ok: true, built: await buildHolo(snapshot, { evaluator, snapshotBytes }) };
   } catch (error) {
     if (error.code === 'guest.uncovered' || error.code === 'eval.uncovered' || error.code === 'holo.profile' || error.code === 'holo.capabilities' || error.code === 'holo.facets') {
-      return refused(new PrismCodeError('build.guest-uncovered', `${proved ? "Lean's kernel proved every theorem, and the holo is not built" : 'The holo is not built'}: ${error.message}. Nothing is compiled on this path, and it does not run this yet. This is a limit of the builder, not a verdict on the app. ${NO_DOCKER_FREE_BUILD}`), error.code);
+      return refused(new PrismCodeError('build.guest-uncovered', `${proved ? "Lean's kernel proved every theorem, and the holo is not built" : 'The holo is not built'}: ${error.message}. Nothing is compiled on this path, and it does not run this yet. This is a limit of the builder, not a verdict on the app. ${NO_SERVER_BUILD}`), error.code);
     }
     if (error.code === 'holo.vectors' || error.code === 'holo.no-vectors') return refused(new PrismCodeError('build.vectors', `The holo is not built: ${error.message}. Change the examples or the rules in the model, then build again.`), error.code);
     if (error.code === 'holo.guest-differs') return refused(new PrismCodeError('build.guest-differs', `The holo is not built: ${error.message}. This is a fault of the builder, and says nothing about the app.`), error.code);

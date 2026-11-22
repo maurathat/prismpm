@@ -132,14 +132,9 @@ capability = "SE-09"
 statement = "prism.auth reads and writes Docker's credential stores, which this build of prism-code leaves out; use it in Node."
 
 [[error]]
-code = "axioms.probe"
+code = "build.failed"
 capability = "DK-41"
-statement = "Lean refused the axiom probe, said nothing about a declaration, or left no audit records."
-
-[[error]]
-code = "axioms.project"
-capability = "DK-41"
-statement = "The project has no .lex.tex file under its source roots, so there is nothing to audit."
+statement = "A build did not produce an app it can stand behind, and the step that failed named no code of its own."
 
 [[error]]
 code = "build.frontend-unavailable"
@@ -194,7 +189,7 @@ statement = "A pulled app's manifest names a path outside the app."
 [[error]]
 code = "bundle.read-only"
 capability = "DK-49"
-statement = "An https:// store is read-only to prism_push; push to a dir:// folder and publish that folder with any static host."
+statement = "An https:// store is read-only to a push; push to a dir:// folder and publish that folder with any static host."
 
 [[error]]
 code = "bundle.reference"
@@ -210,11 +205,6 @@ statement = "A pulled manifest is not a prism/app-bundle/1 manifest."
 code = "bundle.store-off"
 capability = "DK-49"
 statement = "This machine keeps no Prism store (PRISM_KAPPA=0), so an app is pushed only to a dir:// folder."
-
-[[error]]
-code = "bundle.unproved"
-capability = "DK-49"
-statement = "prism_push publishes only an app whose proof is current; call prism_build first."
 
 [[error]]
 code = "canonical.algorithm"
@@ -318,6 +308,46 @@ capability = "DK-43"
 statement = "The container store directory cannot be created or written; set PRISM_HOME to a directory that can be written."
 
 [[error]]
+code = "contract.authority"
+capability = "DK-41"
+statement = "A some-true claim cites an authority the workspace does not name, or an authority is realized by an ID that is not registered (R2)."
+
+[[error]]
+code = "contract.conformance"
+capability = "DK-41"
+statement = "The generated conformance document does not list an ID the register holds (R1)."
+
+[[error]]
+code = "contract.duplicate"
+capability = "DK-41"
+statement = "One ID is registered twice, in model/ids.toml or across it and model/ledger.toml (R2)."
+
+[[error]]
+code = "contract.level"
+capability = "DK-41"
+statement = "A level is not some-true, build or open, or a scenario is tagged with another level than its ID has (R2)."
+
+[[error]]
+code = "contract.register"
+capability = "DK-41"
+statement = "A register of a template workspace cannot be read."
+
+[[error]]
+code = "contract.unregistered"
+capability = "DK-41"
+statement = "A scenario is tagged with an ID that model/ids.toml does not register (R3)."
+
+[[error]]
+code = "contract.unspecified"
+capability = "DK-41"
+statement = "A registered ID has no scenario under features/suites (R3)."
+
+[[error]]
+code = "contract.untested"
+capability = "DK-41"
+statement = "A registered ID has no test named for it (R3)."
+
+[[error]]
 code = "core.allocation"
 capability = "DK-41"
 statement = "The request is larger than the guest allocation maximum."
@@ -368,16 +398,6 @@ code = "digest_mismatch"
 class = "DigestMismatchError"
 capability = "CT-12"
 statement = "Bytes read from a registry or a remote build differ from the digest they were named by."
-
-[[error]]
-code = "docker.missing"
-capability = "DK-41"
-statement = "No Docker invocation could be resolved on this machine, from the config setup wrote or a fresh probe, so a delegated command cannot run."
-
-[[error]]
-code = "docker.mount"
-capability = "OC-11"
-statement = "The Docker mount style is not one of the styles prism-code knows, from an option or PRISM_DOCKER_MOUNT."
 
 [[error]]
 code = "export.directory"
@@ -436,19 +456,9 @@ capability = "DK-41"
 statement = "The world has no WIT file, or the writer has no binding for it, such as a world with imports."
 
 [[error]]
-code = "hosted.coverage"
+code = "holo.identities"
 capability = "DK-41"
-statement = "The hosted verifier did not prove every declaration the project asks it to."
-
-[[error]]
-code = "hosted.layout"
-capability = "DK-41"
-statement = "lexlean.toml cannot be read or has a layout the hosted profile does not take."
-
-[[error]]
-code = "hosted.unreachable"
-capability = "DK-41"
-statement = "The hosted verifier did not answer, or refused the call."
+statement = "The identities a holo states are not the identities of its bytes."
 
 [[error]]
 code = "identity_mismatch"
@@ -669,6 +679,11 @@ capability = "CT-12"
 statement = "A middleware on the stack threw something that is not a PrismError."
 
 [[error]]
+code = "model.unchecked"
+capability = "DK-41"
+statement = "The model does not check, and the check named no code of its own."
+
+[[error]]
 code = "mount.environment"
 capability = "DK-41"
 statement = "mount() needs a DOM, which this host does not have."
@@ -704,46 +719,6 @@ capability = "DK-39"
 statement = "The call needs host effects (#216, #217), which this version does not have; nothing changed and no traffic can flow."
 
 [[error]]
-code = "open.agent"
-capability = "DK-41"
-statement = "The holo:// link names no agent and none is preferred, or names an agent prism-code does not open."
-
-[[error]]
-code = "open.clipboard"
-capability = "DK-41"
-statement = "The clipboard command could not set the clipboard."
-
-[[error]]
-code = "open.host"
-capability = "DK-41"
-statement = "The holo:// link names a host other than build."
-
-[[error]]
-code = "open.parameter"
-capability = "DK-41"
-statement = "The holo:// link has a parameter other than agent and q, or one given twice."
-
-[[error]]
-code = "open.sentence"
-capability = "DK-41"
-statement = "The holo:// link carries no sentence, one too long, or one with a control or bidirectional character."
-
-[[error]]
-code = "open.terminal"
-capability = "DK-41"
-statement = "No terminal was found to open the agent in; set TERMINAL or install one."
-
-[[error]]
-code = "open.ticket"
-capability = "DK-41"
-statement = "The open ticket cannot be read, is not JSON, or has the wrong schema."
-
-[[error]]
-code = "open.url"
-capability = "DK-41"
-statement = "The link is not a holo:// URL, or carries a user, password, port or fragment."
-
-[[error]]
 code = "policy_denied"
 class = "PolicyDeniedError"
 capability = "CT-12"
@@ -766,6 +741,11 @@ code = "prism_error"
 class = "PrismError"
 capability = "CT-12"
 statement = "The base class of every error prism-code throws; a code of its own is set only where no subclass fits."
+
+[[error]]
+code = "proof.rejected"
+capability = "DK-41"
+statement = "Lean's kernel did not accept a proof of a theorem of the model."
 
 [[error]]
 code = "proof_mismatch"
@@ -863,100 +843,15 @@ capability = "CT-12"
 statement = "The registry did not answer, or answered with an error."
 
 [[error]]
-code = "remote.api"
-capability = "DK-41"
-statement = "The GitHub API did not answer or answered with an HTTP error."
-
-[[error]]
-code = "remote.artifact"
-capability = "DK-41"
-statement = "The artifact of the remote build is not a zip archive, or lacks the files a build leaves."
-
-[[error]]
-code = "remote.attestation"
-capability = "DK-41"
-statement = "The provenance signature of the remote build cannot be checked here, or the check refused it."
-
-[[error]]
-code = "remote.auth"
-capability = "DK-41"
-statement = "No GitHub token was found for the remote build."
-
-[[error]]
-code = "remote.commit"
-capability = "DK-41"
-statement = "The remote build was made from a commit other than the one asked for."
-
-[[error]]
-code = "remote.digest"
-capability = "DK-41"
-statement = "The holo's SHA-256 differs from the one the runner recorded: the bytes changed in transit."
-
-[[error]]
-code = "remote.dirty"
-capability = "DK-41"
-statement = "The working tree has uncommitted changes, which a remote build cannot see."
-
-[[error]]
-code = "remote.fingerprint"
-capability = "DK-41"
-statement = "The holo of the remote build has a fingerprint other than the one the runner recorded."
-
-[[error]]
-code = "remote.permission"
-capability = "DK-41"
-statement = "The GitHub token cannot push to the repository, which starting a remote build needs."
-
-[[error]]
-code = "remote.provenance"
-capability = "DK-41"
-statement = "The provenance of the remote build is not a Sigstore bundle with a DSSE envelope holding a SLSA statement."
-
-[[error]]
-code = "remote.push"
-capability = "DK-41"
-statement = "The commit could not be pushed to the remote build ref."
-
-[[error]]
-code = "remote.ref"
-capability = "DK-41"
-statement = "The ref given to the remote build is not a commit of the repository."
-
-[[error]]
-code = "remote.repository"
-capability = "DK-41"
-statement = "The repository for the remote build cannot be named: --repo is malformed, or origin is missing or not on github.com."
-
-[[error]]
-code = "remote.run"
-capability = "DK-41"
-statement = "No run of the build workflow started for the commit within two minutes of the push."
-
-[[error]]
-code = "remote.signer"
-capability = "DK-41"
-statement = "The remote build was made in a repository other than the one asked for."
-
-[[error]]
-code = "remote.subject"
-capability = "DK-41"
-statement = "The provenance of the remote build is about bytes other than the holo."
-
-[[error]]
-code = "remote.timeout"
-capability = "DK-41"
-statement = "The run of the remote build did not end in time; it goes on, and --ref picks it up later."
-
-[[error]]
-code = "remote.workflow"
-capability = "DK-41"
-statement = "The commit holds no build workflow, so no remote build can start."
-
-[[error]]
 code = "replay_failed"
 class = "ReplayError"
 capability = "CT-12"
 statement = "A replay could not be carried out or its statement failed."
+
+[[error]]
+code = "report.uncoded"
+capability = "DK-41"
+statement = "A diagnostic of a check, build or verify report whose source named no code."
 
 [[error]]
 code = "rule-table.index"
@@ -1012,16 +907,6 @@ statement = "dispatch was called on an application whose guest is the session wo
 code = "session.unsupported"
 capability = "HO-45"
 statement = "open was called on an application whose guest is the stateless world hologram:guest/core-wasm@1, which has no sessions."
-
-[[error]]
-code = "setup.agent"
-capability = "DK-41"
-statement = "setup was asked for an agent it does not know."
-
-[[error]]
-code = "setup.command"
-capability = "DK-41"
-statement = "A setup step's command failed."
 
 [[error]]
 code = "signature_invalid"
@@ -1104,10 +989,30 @@ capability = "DK-46"
 statement = "No app is built yet, so no request is answered; Prism answers only from a built app."
 
 [[error]]
+code = "vectors.failed"
+capability = "DK-41"
+statement = "An acceptance vector answers otherwise than the model states."
+
+[[error]]
+code = "vectors.none"
+capability = "DK-41"
+statement = "An artifact carries no acceptance vector, so verify replayed nothing."
+
+[[error]]
 code = "verification_failed"
 class = "VerificationError"
 capability = "CT-12"
 statement = "No verdict could be reached, or the holo failed a check about the archive itself, its documents or its provenance."
+
+[[error]]
+code = "verify.stale"
+capability = "DK-41"
+statement = "What is built is the build of an earlier model: the sources changed since, so verify refuses it until it is built again."
+
+[[error]]
+code = "verify.unbuilt"
+capability = "DK-41"
+statement = "The model checks and is proved, and nothing is built from it yet, so verify has nothing to replay."
 
 [[error]]
 code = "view.bounds"

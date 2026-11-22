@@ -1,0 +1,4 @@
+{
+  "kib": 1,
+  "reason": "A holo v6 keeps its basis, the SDK image's OCI digest (ADR-018 section 3): src/archive.mjs carries it through upgradeToV6 and src/vendor/verify.mjs reads it as sha256: in either format, about 0.3 KiB."
+}

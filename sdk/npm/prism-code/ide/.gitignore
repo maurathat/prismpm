@@ -5,6 +5,7 @@ dist/
 public/ext/*/
 public/gate/kernel.holo
 public/gate/prism-code/
+public/holospace/
 public/prism-frame/frame/
 public/prism-frame/identity/
 public/prism-frame/site/

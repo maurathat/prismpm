@@ -203,6 +203,8 @@ jobs:
         run: node ide/tools/kappa-registry-test.mjs
       - name: An extension is installed only as the package its label names, and its archive is read strictly
         run: node ide/tools/install-extension-test.mjs
+      - name: The facts the extension page sends are read by Holospace's pinned gate as the place the scope rules give
+        run: node ide/tools/gate-facts-test.mjs
       - name: The site's worker serves a listed file only as the bytes its label names, and from its store with the network off
         run: node ide/tools/offline-test.mjs
       # The terminal's command line is tested against the tables above, with xterm.js as the lockfile installs it.
@@ -233,6 +235,33 @@ jobs:
           grep -q '^FAILED' defect.log
           rm defect.log
           git checkout -- model/ide-capability-gate/src/App.lex.tex
+
+  # The terminal in a real browser: both pages opened in headless Chrome, lines entered and answered, keys timed.
+  # terminal-test.mjs above tests the command line with no browser; this is what that cannot show.
+  terminal-browser:
+    name: The terminal answers and draws in Chrome, in both pages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: sdk/npm/prism-code/ide
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Install the IDE's pinned dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build the workbench page
+        run: npx vite build -c vite.model.config.js
+      # The driver is not one of the IDE's dependencies; it is installed for this job alone, at one version.
+      - name: Install the browser driver
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund puppeteer-core@23.11.1
+      # The six budgets of phase 2f are measured here, on the runner, and written to the job summary.
+      - name: Both terminals answer nine lines, 1000 keys are each drawn, and the budgets are measured
+        run: node tools/terminal-browser-test.mjs --require-workbench --budgets
 
   scope:
     name: Lean proves the scope kernel

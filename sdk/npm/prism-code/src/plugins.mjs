@@ -1,7 +1,7 @@
 /**
  * CLI plugins (#293, experimental): an executable named `prism-<name>` on the
  * PATH runs as `prism-code <name>`, and later as `prism <name>`, the same way
- * `docker-<name>` runs as `docker <name>`.
+ * A container tool plugin runs under its tool.
  *
  * A plugin answers two calls besides its own commands:
  *
@@ -13,7 +13,7 @@
  *
  * Built-in verbs always win. A plugin that does not answer the metadata call
  * is listed as invalid and never runs. Error hooks run after a verb a plugin
- * names in `errorHooks` exits non-zero, as Docker's `error-hooks` do since
+ * names in `errorHooks` exits non-zero, as the container tool's `error-hooks` do since
  * Engine 29.3.0; their messages are printed under "What's next:".
  *
  * Providers (#294) are found the same way under `prism-provider-<type>`, and

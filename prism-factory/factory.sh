@@ -104,6 +104,8 @@ forge_contexts() {
 # Writes the trust and event lines, then one `signed` line for each receipt in
 # the given directories whose bundle verifies against this repository's
 # delegation workflow. Receipts that do not verify are dropped, not trusted.
+# When the caller sets `wanted` (identities, one per line), a receipt for any
+# other identity is skipped unverified: it could never count.
 forge_verified() {
   local out=$1; shift
   local repo=${GITHUB_REPOSITORY:?} subject="${GITHUB_REPOSITORY}/${delegation_workflow}"
@@ -128,6 +130,8 @@ forge_verified() {
     [ -d "$dir" ] || continue
     for receipt in "$dir"/*.receipt; do
       [ -e "$receipt" ] || continue
+      read -r _ kappa verdict < "$receipt"
+      [ -z "${wanted+set}" ] || grep -qxF -- "$kappa" <<<"$wanted" || continue
       bundle=${receipt%.receipt}.jsonl
       [ -e "$bundle" ] || { echo "factory: $receipt has no bundle; ignored" >&2; continue; }
       if ! why=$(gh attestation verify "$receipt" --bundle "$bundle" --repo "$repo" \
@@ -135,7 +139,6 @@ forge_verified() {
         printf 'factory: %s does not verify; ignored:\n%s\n' "$receipt" "$why" >&2
         continue
       fi
-      read -r _ kappa verdict < "$receipt"
       name=$(sed -n 's/^obligation //p' "$receipt")
       echo "signed $name $kappa $verdict workflow runner $subject" >> "$out"
       # What the receipt says the obligation built is signed with it.
@@ -165,9 +168,13 @@ fetch_base() {
 # receipt of this run also marks its obligation attempted, so a later wave
 # does not establish it again whatever its verdict.
 forge_plan() {
-  local verified=target/factory/verified dir receipt
+  local verified=target/factory/verified dir receipt wanted
   mkdir -p target/factory
   mapfile -t contexts < <(forge_contexts)
+  # Identities come from the tree alone, never from receipts, and only a receipt
+  # for a current identity counts. The kept store only grows, so verify just those.
+  forge_verified "$verified"
+  wanted=$("$host" delegate "$verified" "${contexts[@]}" | sed -n 's/^obligation [^ ]* [^ ]* //p')
   forge_verified "$verified" "$kept" "$@"
   for dir in "$@"; do
     [ -d "$dir" ] || continue

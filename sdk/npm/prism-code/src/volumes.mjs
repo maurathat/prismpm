@@ -5,7 +5,7 @@
  * else, so it loads without Node.
  *
  * A volume is a named, declared store from a provider. It is not a mounted folder,
- * which is narrower than Docker's word, and the owner chose the name knowing that.
+ * which is narrower than the container tool's word, and the owner chose the name knowing that.
  *
  * - The capability file says which stores exist: `allow-key-value-stores`, less
  *   `deny-key-value-stores`. This module never writes the file, so no call can add
@@ -109,7 +109,7 @@ function scopeOf({ capabilities = null, set = DEFAULT_SET, world = null, policy 
     if (!grant.allows(KIND, name)) throw refused(verb, name, STORE_CHECK, `volume ${name} is denied: ${by}`, { outside: 'grant', kind: KIND, resource: name, set: grant.set });
   }
 
-  /** Docker's options, such as `driver_opts` and `force`, are refused and not ignored: an ignored one would appear to succeed. */
+  /** The container tool's options, such as `driver_opts` and `force`, are refused and not ignored: an ignored one would appear to succeed. */
   function checkOptions(verb, volume, options) {
     if (options === undefined || options === null) return;
     if (holdsHostFolder(options)) throw hostFolder(verb, volume, `${verb} was given`);

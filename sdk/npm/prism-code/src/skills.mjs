@@ -13,15 +13,15 @@
  *   secrets                            strings shaped like a credential
  *   execution                          files in the skill folder that are not text the agent reads
  *   sendsWithoutOptIn                  1 when the front end, with nothing set and no LexLean here, would send a model
- *   proofNeedsDocker                   1 when the prover, with nothing set, is anything but Lean's kernel here
+ *   proofNeedsContainer                   1 when the prover, with nothing set, is anything but Lean's kernel here
  *   theoremsDeclared / theoremsProved  the gate's theorems, and how many Lean's kernel proved just now
  *
  * `installs` below is the model's own definition, written out; test/skills.test.mjs holds it to every theorem.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join, relative, sep } from 'node:path';
+import { basename, dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { kappa } from './blake3.mjs';
 import { PrismCodeError } from './errors.mjs';
@@ -35,7 +35,7 @@ export const RECEIPT_SCHEMA = 'prism/skill-receipt/1';
 export const readPins = (dir = SKILL_DIR) => JSON.parse(readFileSync(join(dir, 'skills.json'), 'utf8'));
 
 /** Hosts a skill may point at: Prism's own sites and the registries it installs from. */
-export const SKILL_HOSTS = Object.freeze(['github.com', 'universal-coordinate-foundation.lovable.app', 'mcp.uor.foundation', 'www.npmjs.com', 'docs.anthropic.com', 'claude.ai', 'chatgpt.com', 'cursor.com', 'code.visualstudio.com']);
+export const SKILL_HOSTS = Object.freeze(['github.com', 'universal-coordinate-foundation.lovable.app', 'www.npmjs.com', 'docs.anthropic.com', 'claude.ai', 'chatgpt.com', 'cursor.com', 'code.visualstudio.com']);
 const SECRET = /\b(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,})|-----BEGIN [A-Z ]*PRIVATE KEY-----/g;
 const TEXT = /\.(md|json|toml|lock|tex)$/;
 
@@ -67,10 +67,22 @@ export const namedVerbs = (markdown) => new Set([...codeOf(markdown).matchAll(/p
 /** Every distinct `prism_<tool>` the markdown teaches in its code. */
 export const namedTools = (markdown) => new Set([...codeOf(markdown).matchAll(/(?<![\w-])prism_[a-z]+(?![\w-])/g)].map((m) => m[0]));
 
-/** The tools the MCP server answers, the six named as Docker names its verbs. */
+/** The tools prism-code serves: none. It has no server, so a skill that names a `prism_<tool>` names one that is not there. */
 export async function servedTools() {
-  const { TOOLS } = await import('./journey/mcp.mjs');
-  return new Set(TOOLS.map((t) => t.name));
+  return new Set();
+}
+
+/**
+ * `prism-code skill --out <dir>`: copy the skill this package ships, SKILL.md and its references, into `dir`.
+ * Reads only the package and reaches no network. Returns `{ directory, files }`.
+ */
+export function copySkill(directory, { from = SKILL_DIR } = {}) {
+  const shipped = files(from).filter((p) => p === 'SKILL.md' || p.startsWith('references/')).sort();
+  for (const p of shipped) {
+    mkdirSync(dirname(join(directory, p)), { recursive: true });
+    writeFileSync(join(directory, p), readFileSync(join(from, p)));
+  }
+  return { directory, files: shipped };
 }
 
 /** The facts about the folder itself: links outside the skill's hosts, credential-shaped strings, non-text files. */
@@ -85,7 +97,7 @@ export function folderFacts(markdown, extraFiles = []) {
   };
 }
 
-/** Whether proving or checking would send a model, or need Docker, with nothing set: read from the routing itself. */
+/** Whether proving or checking would send a model, or need a container, with nothing set: read from the routing itself. */
 export async function routingFacts() {
   const { frontendWhere, proverWhere } = await import('./journey/frontend.mjs');
   let sends = 0;
@@ -94,7 +106,7 @@ export async function routingFacts() {
   } catch (error) {
     if (error.code !== 'build.frontend-unavailable') throw error;
   }
-  return { sendsWithoutOptIn: sends, proofNeedsDocker: proverWhere({ env: {} }) === 'kernel' ? 0 : 1 };
+  return { sendsWithoutOptIn: sends, proofNeedsContainer: proverWhere({ env: {} }) === 'kernel' ? 0 : 1 };
 }
 
 /** The model's `canonical`, `namesOnlyShipped`, `noAuthority`, `staysLocal`, `selfProved` and `installs`, written out. */
@@ -102,7 +114,7 @@ export function installs(s) {
   const canonical = s.markdownNamed === s.markdownRendered && s.modelNamed === s.modelPinned;
   const namesOnlyShipped = s.commandsShipped === s.commandsNamed && s.toolsServed === s.toolsNamed;
   const noAuthority = s.network === 0 && s.secrets === 0 && s.execution === 0;
-  const staysLocal = s.sendsWithoutOptIn === 0 && s.proofNeedsDocker === 0;
+  const staysLocal = s.sendsWithoutOptIn === 0 && s.proofNeedsContainer === 0;
   const selfProved = s.theoremsDeclared > 0 && s.theoremsProved === s.theoremsDeclared;
   return canonical && namesOnlyShipped && noAuthority && staysLocal && selfProved;
 }
@@ -118,7 +130,7 @@ export function failing(s) {
   if (s.secrets !== 0) out.push('aSkillInstallsOnlyWithoutSecrets');
   if (s.execution !== 0) out.push('aSkillInstallsOnlyWithoutExecutionAuthority');
   if (s.sendsWithoutOptIn !== 0) out.push('aSkillInstallsOnlyWhenItSendsNothingUnasked');
-  if (s.proofNeedsDocker !== 0) out.push('aSkillInstallsOnlyWhenItProvesWithoutDocker');
+  if (s.proofNeedsContainer !== 0) out.push('aSkillInstallsOnlyWhenItProvesWithoutAContainer');
   if (s.theoremsDeclared === 0) out.push('aSkillInstallsOnlyWhenItDeclaresATheorem');
   if (s.theoremsProved !== s.theoremsDeclared) out.push('aSkillInstallsOnlyWhenEveryTheoremItDeclaresIsProved');
   return out;
@@ -225,9 +237,9 @@ export async function verifyInstalled(dir, { env = process.env, log = () => {} }
     `  SKILL.md         ${f.markdownNamed}${f.markdownNamed === f.markdownRendered ? ', the label prism-code pins' : `, not the pinned ${f.markdownRendered}`}`,
     `  skill gate       ${f.modelNamed}${f.modelNamed === f.modelPinned ? ', pinned' : `, not the pinned ${f.modelPinned}`}; Lean's kernel proved ${f.theoremsProved} of ${f.theoremsDeclared} theorems here`,
     `  commands         ${f.commandsShipped} of ${f.commandsNamed} it names ship in this prism-code${verdict.unshipped.length ? ` (not: ${verdict.unshipped.join(', ')})` : ''}`,
-    `  tools            ${f.toolsServed} of ${f.toolsNamed} it names are answered by the MCP server`,
+    `  tools            ${f.toolsServed} of ${f.toolsNamed} it names are served; prism-code serves none`,
     `  authority        network ${f.network}, secrets ${f.secrets}, execution ${f.execution}`,
-    `  routing          sends unasked ${f.sendsWithoutOptIn}, proof needs Docker ${f.proofNeedsDocker}`,
+    `  routing          sends unasked ${f.sendsWithoutOptIn}, proof needs a container ${f.proofNeedsContainer}`,
     ...(marker?.receipt && !receiptHolds ? ['  receipt          names other bytes than are installed'] : []),
     ...verdict.failing.map((t) => `  fails            ${t}`),
   ];

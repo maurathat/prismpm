@@ -30,7 +30,7 @@ export const GROUPS = Object.freeze(Object.fromEntries(Object.entries(FILES).map
 export const TOP_LEVEL = Object.freeze(Object.fromEntries(Object.entries(FILES).flatMap(([module, file]) =>
   Object.entries(file.aliases ?? {}).map(([alias, name]) => [alias, Object.freeze([module, name])]))));
 
-/** Docker's singular management commands: `image ls` is `images ls`, `container ls` is `containers ls` (#347). */
+/** The container tool's singular management commands: `image ls` is `images ls`, `container ls` is `containers ls` (#347). */
 export const MODULE_ALIASES = Object.freeze({ container: 'containers', image: 'images', volume: 'volumes' });
 
 /** The module a word names: itself, or the module its singular spelling names. */
