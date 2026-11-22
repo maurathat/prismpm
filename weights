@@ -1,7 +1,7 @@
 weight policy 1
 weight factory-model 1
 weight plumbing 1
-weight vv-sdk 4
+weight vv-sdk 6
 weight source-vv 12
 weight build 16
 weight gate 4
