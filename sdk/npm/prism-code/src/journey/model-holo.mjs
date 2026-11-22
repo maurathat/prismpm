@@ -2,8 +2,8 @@
  * A text application's holo, built from its model's semantic snapshot with nothing compiled: the evaluator guest
  * with the model's program (model-guest.mjs), the page (text-view.mjs), the model document, and the seal.
  *
- * The result is a holo v5 (ADR-017, `src/uorc.mjs`): the seven objects PrismPM's own build writes, in its order,
- * named and sealed the same way, so every reader of a holo reads it. Two things differ from a holo the SDK image
+ * The result is a holo v6 (ADR-018, `src/uorc.mjs`): the seven objects PrismPM's own build writes, in its order,
+ * sealed by BLAKE3 and named by `blake3:` κ-labels, so the address the build reports is the holo's own κ. Two things differ from a holo the SDK image
  * builds, and the provenance object says both: the guest is the evaluator guest and the model's program, not Rust
  * compiled from Lean's export, so there is no Cargo crate and no browser adapter to name; and `builder` names
  * what built it, by the evaluator guest's κ-label.
@@ -19,8 +19,10 @@
 import { canonicalJson } from '../archive.mjs';
 import { compileGuest, runGuest } from '../core.mjs';
 import { sha256HexSync } from '../sha256.mjs';
-import { kappa, writeObjects } from '../uorc.mjs';
+import { writeObjects } from '../uorc.mjs';
+// A holo v6 (ADR-018) names every object, and the file, by BLAKE3: its κ and its label are one string.
 import { kappa as label } from '../blake3.mjs';
+const kappa = label;
 import { ModelEvalRefused, modelProgram } from './model-eval.mjs';
 import { EVALUATOR_GUEST, admitEvaluator, encodeProgram, guestAgrees, linkGuest } from './model-guest.mjs';
 import { textViewBundle } from './text-view.mjs';
@@ -30,8 +32,8 @@ export const HOLO_BUILDER = 'prism-code/evaluator-guest/1';
 export const TEXT_PROFILE = 'prismpm/text-application/1';
 const CORE_CONTRACT = 'hologram:guest/core-wasm@1';
 const MODEL_DOCUMENT_SCHEMA = 'prismpm/model-document/2';
-const PROVENANCE_SCHEMA = 'prismpm/model-provenance/2';
-const MANIFEST_SCHEMA = 'prism/holo/5';
+const PROVENANCE_SCHEMA = 'prismpm/model-provenance/3';
+const MANIFEST_SCHEMA = 'prism/holo/6';
 
 /** The empty capability set, as a holo carries it: Hologram's capability-set realization with nothing granted. */
 export const NO_CAPABILITIES_OBJECT = (() => {
@@ -137,6 +139,6 @@ export async function buildHolo(snapshot, { evaluator, snapshotBytes = null } = 
     view_binding: { tag: 'present', view_content_kappa: kappa(view) },
   }));
   const objects = [manifest, source, provenance, capabilities, guest, view, model];
-  const bytes = writeObjects(objects);
+  const bytes = writeObjects(objects, 6);
   return { bytes, label: label(bytes), kappa: kappa(bytes), name: app.name, semanticId: snapshot.semantic_id, guest, vectors: { total: reference.total, passed: reference.passed }, compared: { total: compared.total, agreed: compared.agreed }, objects: objects.map((o) => o.length) };
 }

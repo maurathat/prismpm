@@ -212,12 +212,6 @@ struct DirectoryBlob {
     byte_length: u64,
 }
 
-/// The κ-label of `bytes`, `sha256:<hex>` (ADR-017): every identity a holo v5
-/// carries or that is computed over one.
-pub(crate) fn content_kappa(bytes: &[u8]) -> String {
-    v5::kappa(bytes)
-}
-
 /// The `blake3:<hex>` label a legacy physical-v4 archive names its blobs with.
 /// Only the v4 reader uses it; nothing writes it (ADR-017).
 pub(crate) fn v4_label(bytes: &[u8]) -> String {
@@ -511,7 +505,7 @@ pub fn attach_attestations(bytes: &[u8], bundles: &[Vec<u8>]) -> Result<Vec<u8>,
     if !v5::is_uorc(bytes) {
         return Err(PrismError::new(
             "PP3001",
-            "a physical-v4 holo is read-only; rebuild it as a holo v5 before signing (ADR-017)",
+            "a physical-v4 holo is read-only; rebuild it as a holo v5 or v6 before signing (ADR-017, ADR-018)",
         ));
     }
     let parsed = parse_application(bytes)?;
@@ -534,7 +528,9 @@ pub fn attach_attestations(bytes: &[u8], bundles: &[Vec<u8>]) -> Result<Vec<u8>,
         lines.push(line.clone());
     }
     objects.push(attestation::join_lines(&lines));
-    let signed = v5::write_objects(&objects);
+    // Signing keeps the holo's format: a v6 stays sealed by BLAKE3 (ADR-018).
+    let format = v5::format_of(bytes).unwrap_or(v5::Format::V5);
+    let signed = v5::write_objects_as(format, &objects);
     validate_application(&signed)?;
     Ok(signed)
 }
@@ -547,7 +543,10 @@ pub fn strip_attestations(bytes: &[u8]) -> Result<Vec<u8>, PrismError> {
     if v5::is_uorc(bytes) {
         return match split_v5(bytes)? {
             (_, None) => Ok(bytes.to_vec()),
-            (objects, Some(_)) => Ok(v5::write_objects(&objects)),
+            (objects, Some(_)) => Ok(v5::write_objects_as(
+                v5::format_of(bytes).unwrap_or(v5::Format::V5),
+                &objects,
+            )),
         };
     }
     validate_application(bytes)?;
