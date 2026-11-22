@@ -173,7 +173,9 @@ jobs:
             --certificate-identity "${IDENTITY}x" --certificate-oidc-issuer "$ISSUER" || code=$?
           test "$code" -eq 1
           test ! -e "$RUNNER_TEMP/refused.holo"
-      - name: The GHCR token works without Docker's config, and the fingerprint is an address
+      # A holo v5 is addressed by its κ, the layer digest, so it has no BLAKE3 fingerprint tag (ADR-017); the step
+      # below pulls a holo v6 by its blake3 κ.
+      - name: The GHCR token works without Docker's config
         env:
           GHCR_TOKEN: ${{ github.token }}
         shell: bash
@@ -181,9 +183,8 @@ jobs:
           set -euo pipefail
           export DOCKER_CONFIG="$RUNNER_TEMP/empty-docker-config"
           mkdir -p "$DOCKER_CONFIG"
-          fingerprint=$(node -e 'const f = require("fs").readFileSync(process.argv[1]); console.log(f.subarray(f.length - 32).toString("hex"))' "$RUNNER_TEMP/attested.holo")
-          node bin/prism-code.mjs pull "${REF%:*}@blake3:${fingerprint}" "$RUNNER_TEMP/by-fingerprint.holo"
-          cmp "$RUNNER_TEMP/attested.holo" "$RUNNER_TEMP/by-fingerprint.holo"
+          node bin/prism-code.mjs pull "$REF" "$RUNNER_TEMP/by-token.holo"
+          cmp "$RUNNER_TEMP/attested.holo" "$RUNNER_TEMP/by-token.holo"
       # A holo v6 (ADR-018): GHCR takes the push with its ?also=, cosign accepts a statement whose object subject
       # carries blake3 and sha256, and the holo comes back by tag and by its blake3 κ.
       - name: A holo v6, signed keyless, goes to GHCR and comes back by its blake3 κ
