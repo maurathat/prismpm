@@ -2,11 +2,6 @@
 
 ## [0.2.0](https://github.com/UOR-Foundation/prismpm/compare/prism-code-conformance-v0.1.0...prism-code-conformance-v0.2.0) (2026-11-22)
 
-
-### ⚠ BREAKING CHANGES
-
-* **holo:** holo v5 is a UORC archive named by κ (ADR-017) ([#663](https://github.com/UOR-Foundation/prismpm/issues/663))
-
 ### Features Added
 
 * **conformance:** the Rust runtime runs @prism-code/conformance ([#590](https://github.com/UOR-Foundation/prismpm/issues/590)) ([d9373f9](https://github.com/UOR-Foundation/prismpm/commit/d9373f952cfc5ef1524b79791346085ef60f7a9d))
@@ -22,12 +17,14 @@
 * **prism-code:** trust decisions in verify, signing in auth (Part of [#449](https://github.com/UOR-Foundation/prismpm/issues/449)) ([#623](https://github.com/UOR-Foundation/prismpm/issues/623)) ([c37d5a8](https://github.com/UOR-Foundation/prismpm/commit/c37d5a82f7752139b22291c18eef2620627eb162))
 * **view:** Hologram design system for every Prism app, closure v2 and build provenance ([18a60a3](https://github.com/UOR-Foundation/prismpm/commit/18a60a32769fdbe8bd88b75d1e00fd5e992af672))
 
+### Breaking Changes
+
+* **holo:** holo v5 is a UORC archive named by κ (ADR-017) ([#663](https://github.com/UOR-Foundation/prismpm/issues/663))
 
 ### Bugs Fixed
 
 * **ci:** pass the format gate, the prism-code size cap and the docs lint on PR 550 ([68104d7](https://github.com/UOR-Foundation/prismpm/commit/68104d7d8dfb922308c3a0b38d7f4c63262cf5f9))
 * **prism-code:** load refuses an altered holo (Fixes [#583](https://github.com/UOR-Foundation/prismpm/issues/583)) ([#591](https://github.com/UOR-Foundation/prismpm/issues/591)) ([62cbf2a](https://github.com/UOR-Foundation/prismpm/commit/62cbf2a633bdac47a2a48d42a3310ad77b5b121c))
-
 
 ### Other Changes
 
