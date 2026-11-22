@@ -106,6 +106,8 @@ def markdown_prose(source: str) -> str:
         if item:
             token, suffix = item.groups()
             if active is None:
+                if token[0] == "\x60" and "\x60" in suffix:
+                    raise Refused("backtick in Markdown fence info")
                 active = (token[0], len(token))
             elif token[0] == active[0] and len(token) >= active[1] and not suffix.strip():
                 active = None
@@ -117,11 +119,42 @@ def markdown_prose(source: str) -> str:
     if active is not None:
         raise Refused("unterminated Markdown fence")
     prose = "".join(outside)
-    prose = re.sub(r"<!--.*?-->", lambda m: "\n" * m.group(0).count("\n"),
-                   prose, flags=re.S)
-    if "<!--" in prose or "-->" in prose:
-        raise Refused("unclosed or unsupported HTML comment")
-    return prose
+    if re.search(r"\]\([^)]*<!--", prose, re.S):
+        raise Refused("ambiguous Markdown comment marker")
+    result: list[str] = []
+    in_html_tag = False
+    quote: str | None = None
+    at = 0
+    while at < len(prose):
+        if prose.startswith("<!--", at):
+            if in_html_tag:
+                raise Refused("HTML comment marker in tag attribute")
+            end = prose.find("-->", at + 4)
+            if end == -1:
+                raise Refused("unclosed HTML comment")
+            result.append("".join("\n" if ch == "\n" else " " for ch in prose[at:end + 3]))
+            at = end + 3
+            continue
+        if prose.startswith("-->", at):
+            raise Refused("unmatched HTML comment terminator")
+        ch = prose[at]
+        if not in_html_tag and ch == "<" and at + 1 < len(prose) and (
+            prose[at + 1].isalpha() or prose[at + 1] == "/"
+        ):
+            in_html_tag = True
+        elif in_html_tag:
+            if quote:
+                if ch == quote:
+                    quote = None
+            elif ch in ("'", '"'):
+                quote = ch
+            elif ch == ">":
+                in_html_tag = False
+        result.append(ch)
+        at += 1
+    if in_html_tag and quote:
+        raise Refused("unterminated HTML attribute")
+    return "".join(result)
 
 
 def check_readme_links(root: Path, head: str, readme: str) -> tuple[int, int]:
@@ -146,13 +179,13 @@ def check_readme_links(root: Path, head: str, readme: str) -> tuple[int, int]:
         target = (match.group(1) or match.group(2)) if len(match.groups()) == 2 else match.group(1)
         if not target or target.startswith(("http:", "https:", "mailto:", "tel:", "data:", "//")):
             continue
-        decoded = unquote(target)
-        parts = urlsplit(decoded)
-        if parts.scheme or parts.netloc or "\\" in decoded:
+        parts = urlsplit(target)
+        path = unquote(parts.path)
+        fragment = unquote(parts.fragment)
+        if parts.scheme or parts.netloc or parts.query or "\\" in path or "\\" in fragment:
             raise Refused("unsafe or unsupported link: " + target)
-        path = parts.path
         if not path:
-            if not parts.fragment or parts.fragment not in anchors:
+            if not fragment or fragment not in anchors:
                 raise Refused("unresolved README anchor: " + target)
         else:
             if path.startswith("/"):
@@ -162,9 +195,9 @@ def check_readme_links(root: Path, head: str, readme: str) -> tuple[int, int]:
                 raise Refused("local path escapes repository: " + target)
             if mode(root, head, normalized) != "100644":
                 raise Refused("missing or non-regular link target: " + target)
-            if parts.fragment and normalized != "README.md":
+            if fragment and normalized != "README.md":
                 raise Refused("unsupported cross-document fragment: " + target)
-            if normalized == "README.md" and parts.fragment and parts.fragment not in anchors:
+            if normalized == "README.md" and fragment and fragment not in anchors:
                 raise Refused("unresolved README anchor: " + target)
         checked += 1
     return checked, len(anchors)
