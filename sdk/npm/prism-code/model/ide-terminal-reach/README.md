@@ -12,7 +12,7 @@ A request is two words, in order:
 
 | Field | Values | Meaning |
 |---|---|---|
-| command | other, help, clear, ls, cat, kappa, check, snapshot, prove, audit, echo, pwd, set, unset, env, history, sessions, restore, save, grep, head, tail, wc, sort, uniq, diff, cd, append, mv, cp, write, touch, rm | the command that is running |
+| command | other, help, clear, ls, cat, kappa, check, snapshot, prove, audit, echo, pwd, set, unset, env, history, sessions, restore, save, grep, head, tail, wc, sort, uniq, diff, cd, run, test, append, mv, cp, write, touch, rm | the command that is running |
 | resource | screen, readmodel, writemodel, readstore, writestore, network, clipboard, process | what it asks its host for |
 
 `screen` is writing to the terminal. `readmodel` and `writemodel` are the open model's files, as the editor holds them in this tab. `readstore` and `writestore` are the content-addressed store, by BLAKE3 label. `network` is any request to any address. `process` is starting another program, worker or frame.
@@ -20,7 +20,7 @@ A request is two words, in order:
 | Commands | screen | readmodel | writemodel | readstore | writestore | network, clipboard, process |
 |---|---|---|---|---|---|---|
 | help, clear, echo, pwd, set, unset, env, history | allow | deny | deny | deny | deny | deny |
-| ls, cat, kappa, grep, head, tail, wc, sort, uniq, diff, cd | allow | allow | deny | deny | deny | deny |
+| ls, cat, kappa, grep, head, tail, wc, sort, uniq, diff, cd, run, test | allow | allow | deny | deny | deny | deny |
 | append, mv, cp | allow | allow | allow | deny | deny | deny |
 | write, touch, rm | allow | deny | allow | deny | deny | deny |
 | sessions, restore | allow | deny | deny | allow | deny | deny |
@@ -28,18 +28,20 @@ A request is two words, in order:
 | check, snapshot, prove, audit | allow | allow | deny | allow | allow | deny |
 | other | deny | deny | deny | deny | deny | deny |
 
+`run` is handed the model to read its script and nothing more: what the script's lines do is asked of this table line by line, under each command's own name. So a script cannot change a file except through the six commands that may. `test` reads the model only to say whether a path names a file or a folder of it. A function is not a command of this table: it is its lines, and each command of them is asked about under its own name.
+
 A command that is piped to another still asks for `screen` only when it writes to the screen; its output otherwise goes to the next command, which is judged for what it does with it.
 
 ## Proved
 
-Lean's kernel accepted all 22, for every request (264 of them).
+Lean's kernel accepted all 22, for every request (280 of them).
 
 1. Network is always denied, whatever the command.
 2. The clipboard is always denied.
 3. Starting a process is always denied.
 4. An unlisted command is always denied everything.
 5. to 7. Reading the model is always denied to every command outside the two runs that read it.
-8. Changing the model is always denied to every command from `other` to `cd`: every command but `append`, `mv`, `cp`, `write`, `touch` and `rm`.
+8. Changing the model is always denied to every command from `other` to `test`: every command but `append`, `mv`, `cp`, `write`, `touch` and `rm`.
 9. to 11. Reading the store is always denied to every command but the programs, `sessions`, `restore` and `save`.
 12. to 14. Writing the store is always denied to every command but the programs and `save`.
 15. and 16. `ls`, `cat`, `kappa`, the programs, and `grep` to `cp` are always allowed to read the model.
@@ -52,13 +54,13 @@ Guarantees 1 to 3 together say that what is typed into the terminal, and what a 
 
 What changed from version 1: its guarantee 4 was "Writing the model is always denied. The terminal changes no file; the editor does." That is no longer so, by design: six commands change a file, and guarantee 8 holds every other command to the old rule.
 
-Model identity: `sha256:14ecea48ca87fef04deed31ecb150ac950e7c7fb75127b4f6e56db1e77fb854b`.
-Built app: `sha256:a93f2ffb4e970c11545e4f5edd61b2664d2be4d2ca8e09c7e9fa6446cff735c9`.
+Model identity: `sha256:d27b100135669d8dd56e02376029586865085b62e9157967f5eb1b027f56e51c`.
+Built app: `sha256:d0b02e718b0b8c116b115cf6b67477d64ac5eefa6f4a23a0efb6ae43690fc846`.
 These names are SHA-256 because that is what prism-code emits today.
 
 ## Tested, not proved
 
-34 of 34 acceptance vectors pass through the built judge.
+39 of 39 acceptance vectors pass through the built judge.
 A planted defect (allow the network) is refused in CI, and the step checks that the kernel names guarantee 1 and the request `help network`.
 
 ## Not covered
