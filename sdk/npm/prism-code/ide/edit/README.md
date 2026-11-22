@@ -205,7 +205,7 @@ The three starters were started as prism-code starts an app (`startApp`); a star
 
 ### A model's own theorems
 
-A rule table's guarantees go to one kernel (`prove-worker.mjs`). A model that states theorems of its own, as the decision and stateful starters do, goes to another, in a worker of its own (`model-prove-worker.mjs`). Nothing in it is the IDE's: `prove-core.mjs` opens the model kernel from its three files, each admitted by its BLAKE3 label, and `kernelProver` puts the model to it, the functions `prism_build` runs.
+A rule table's guarantees go to one kernel (`prove-worker.mjs`). A model that states theorems of its own, as the decision and stateful starters do, goes to another, in a worker of its own (`model-prove-worker.mjs`). Nothing in it is the IDE's: `prove-core.mjs` opens the model kernel from its three files, each admitted by its BLAKE3 label, and `kernelProver` puts the model to it, the functions `prism-code build` runs.
 
 - A theorem is proved only when this kernel accepted a proof of it in this run, within the axioms it declares. The other two answers are said as they are: "not proved" when the proof rests on axioms the theorem does not declare, and "not settled" when no proof was accepted, which says nothing about whether the statement is true.
 - A theorem that is not proved is marked under Problems at the line that states it, in whichever file of the model that is.
@@ -227,7 +227,7 @@ Tried by hand in one browser, on the assembled site served from one machine:
 
 ### Build, in the tab
 
-**Build**, beside "Download model", runs the package's whole build in the worker that holds LexLean and Lean's kernel: `buildFromFiles` (`build-core.mjs`), the functions `prism_build` runs. LexLean checks the model, the kernel judges its theorems, and the holo is made with nothing compiled, from the evaluator guest prism-code pins, which the worker admits by its BLAKE3 label. A holo is given only when every theorem was proved, the holo reads back verified and every acceptance vector passes through it. Then the page names it by its label and offers it to save; `window.prismModel.holo()` gives its bytes to whatever runs it next.
+**Build**, beside "Download model", runs the package's whole build in the worker that holds LexLean and Lean's kernel: `buildFromFiles` (`build-core.mjs`), the functions `prism-code build` runs. LexLean checks the model, the kernel judges its theorems, and the holo is made with nothing compiled, from the evaluator guest prism-code pins, which the worker admits by its BLAKE3 label. A holo is given only when every theorem was proved, the holo reads back verified and every acceptance vector passes through it. Then the page names it by its label and offers it to save; `window.prismModel.holo()` gives its bytes to whatever runs it next.
 
 Tried by hand in one browser (Chromium), on the assembled site served from one machine, one run each:
 
