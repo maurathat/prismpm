@@ -92,9 +92,10 @@ Usage:
                                                     one run as a container: check the holo, dispatch the input, print
                                                     the output, exit with the container's code; --rm removes it on exit
   prism-code rm <container>...                      remove exited containers
-  prism-code vectors <app.holo | closure-dir> [--allow-unverified]
-                                                    replay every acceptance vector through the guest; an altered
-                                                    holo is refused, and with --allow-unverified exits 1 after replaying
+  prism-code vectors <app.holo | closure-dir> [--allow-unverified] [--json]
+                                                    replay every acceptance vector through the guest, each on a fresh
+                                                    instance; an altered holo is refused, and with --allow-unverified exits 1
+                                                    after replaying. --json prints one report with a row for each vector
   prism-code record <app.holo | closure-dir> [--output <file>]
                                                     write the acceptance vectors as a recording, the holo's first
   prism-code replay <recording | dir>... --image <app.holo | closure-dir> [--statement <file>] [--json]
@@ -336,13 +337,23 @@ async function open(path, options) {
 
 async function commandVectors(positional, options) {
   if (positional.length !== 1) return usage('vectors takes one artifact');
+  const started = Date.now();
   const app = await open(positional[0], options);
   const result = await app.acceptance();
+  const ok = result.failed.length === 0 && result.total > 0 && app.identities.verified;
+  // The same report check, build and verify print, with one row for each vector replayed.
+  if (options.json) {
+    const failed = new Map(result.failed.map((f) => [f.index, f]));
+    const vectors = app.vectors.map((v, index) => ({ index, passed: !failed.has(index), requestBytes: v.request.length, responseBytes: v.response.length }));
+    const diagnostics = result.failed.map((f) => ({ code: 'vectors.failed', severity: 'error', file: positional[0], line: null, column: null, message: `Acceptance vector ${f.index} answers otherwise than the model states.`, remediation: 'Repair the rule or the example in the model, then build again.' }));
+    process.stdout.write(`${JSON.stringify({ schema: 'prism/report/1', ok, command: 'vectors', durationMs: Date.now() - started, summary: { artifact: positional[0], identitiesVerified: app.identities.verified === true, vectorsPassed: result.passed, vectorsTotal: result.total }, diagnostics, vectors }, null, 2)}\n`);
+    return ok ? 0 : 1;
+  }
   for (const f of result.failed) {
     process.stdout.write(`vector ${f.index}: request ${JSON.stringify(text(f.request))}\n  expected ${JSON.stringify(text(f.expected))}\n  actual   ${f.actual ? JSON.stringify(text(f.actual)) : String(f.error)}\n`);
   }
   process.stdout.write(`${result.passed} of ${result.total} vectors passed (${app.kind}, ${app.name ?? 'unnamed'}${app.identities.verified ? ', identities verified' : ', identities NOT verified'})\n`);
-  return result.failed.length === 0 && result.total > 0 && app.identities.verified ? 0 : 1;
+  return ok ? 0 : 1;
 }
 
 async function commandRecord(positional, options) {
