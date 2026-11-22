@@ -164,6 +164,10 @@ let space = null;
 let store = null;
 const PLACE = () => (space ? "This app's own holospace" : `Workspace "${WORKSPACE}"`);
 const READ_ONLY = 'This workspace is open for editing in another tab; this one is read-only until that tab closes. ';
+// Measured in Chromium with the library at ea96397: when the writing tab closes, this tab is told it may write, but
+// a save from the workbench already open here still does not reach the store. After a reload it does. So the page
+// asks for the reload instead of saying it can save.
+const RELOAD = 'The tab that was editing this workspace has closed. Reload this tab to edit it here. ';
 // Files of the model that a saved workspace no longer has: they were removed there on an earlier visit.
 const goneFromWorkspace = [];
 // The reader's changes from an earlier visit, kept in this browser under BLAKE3 labels for exactly this model.
@@ -210,14 +214,14 @@ if (!stored) {
 const draftLine = document.getElementById('draft');
 const draftText = document.getElementById('draftText');
 state.draft = { base, off: drafts.off, restored: Object.keys(restored), dropped: kept.dropped, kept: Object.keys(restored) };
-// When the tab that was writing closes, this one may write: the line says so without a reload.
-store?.onWritable?.((writable) => { if (state.workspace) { state.workspace.writable = writable; sayDraft(state.draft?.kept ?? []); } });
+// When the tab that was writing closes, the line says so.
+store?.onWritable?.((writable) => { if (state.workspace) { state.workspace.writable = writable && state.workspace.writable === false ? 'after a reload' : writable; sayDraft(state.draft?.kept ?? []); } });
 function sayDraft(paths) {
   if (stored) {
     // In a workspace the files are saved by the workbench into the store; there is no draft apart from them.
     state.draft.kept = paths;
     draftLine.hidden = false;
-    draftText.textContent = (state.workspace?.writable === false ? READ_ONLY : '') + `${PLACE()}, kept in this browser's store. ` + (paths.length === 0 ? 'Its files are the model as fetched.' : `Changed from the model as fetched: ${paths.map((path) => path.replace(/^\//, '')).join(', ')}.`);
+    draftText.textContent = (state.workspace?.writable === false ? READ_ONLY : state.workspace?.writable === 'after a reload' ? RELOAD : '') + `${PLACE()}, kept in this browser's store. ` + (paths.length === 0 ? 'Its files are the model as fetched.' : `Changed from the model as fetched: ${paths.map((path) => path.replace(/^\//, '')).join(', ')}.`);
     document.getElementById('draftDiscard').hidden = true;
     return;
   }
