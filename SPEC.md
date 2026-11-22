@@ -4452,6 +4452,7 @@ Every row below is normative, has the honesty level registered in `model/ids.tom
 | `RP-10` | `repository` | All generated documentation is regenerated and validated against model registers. | §1 |
 | `RP-11` | `repository` | License metadata and files conform to dual MIT/Apache-2.0 requirements. | §1 |
 | `RP-12` | `repository` | Release artifacts are refused unless all release criteria and verifications hold. | §1 |
+| `RP-13` | `repository` | The portable SDK passive-README classifier refuses unsupported Git changes and malformed documentation references, and its planted fixture inventory executes without skips. | §1 |
 | `FT-01` | `facets` | prism.arch defines ISO/IEC/IEEE 42010:2022 architecture description concepts in LexLean. | §2 |
 | `FT-02` | `facets` | prism.sec defines ISO/IEC 27034 application security concepts in LexLean. | §2 |
 | `FT-03` | `facets` | prism.sec defines ISO/IEC 27034-5 application security control data structures. | §2 |
