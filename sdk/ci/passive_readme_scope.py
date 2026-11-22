@@ -7,6 +7,7 @@ The CLI's accepted image object is fixed; test-only injection is not exposed.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import posixpath
 import re
@@ -242,6 +243,8 @@ def qualify(root: Path, base: str, head: str, expected_banner_blob: str = EXPECT
         raise Refused("README does not reference checked-in image")
     links, anchor_count = check_readme_links(root, head, new)
     return {
+        "schema": "prismpm/passive-readme-receipt/1",
+        "classifier_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "classification": "PASSIVE_README",
         "base": base,
         "head": head,
@@ -263,7 +266,7 @@ def main() -> int:
     try:
         receipt = qualify(Path(a.repo), a.base, a.head)
     except (Refused, UnicodeError, ValueError) as exc:
-        print(json.dumps({"classification": "FULL_REQUIRED", "reason": str(exc)}, sort_keys=True))
+        print(json.dumps({"schema": "prismpm/passive-readme-receipt/1", "classifier_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), "classification": "FULL_REQUIRED", "reason": str(exc)}, sort_keys=True))
         return 2
     print(json.dumps(receipt, sort_keys=True))
     return 0

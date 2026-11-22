@@ -10,6 +10,8 @@ python3 sdk/ci/passive_readme_scope.py --repo /path/to/checked-out-pr-head \\
   --head 40-character-trusted-pr-head
 ```
 
+The receipt schema is `prismpm/passive-readme-receipt/1`, and each result carries `classifier_sha256` computed over the exact executing file bytes. A trusted consumer independently verifies that value against its **base-owned pinned artifact digest**; it is an audit binding, not a substitute for the download checksum or provenance verification.
+
 The command emits exactly one JSON object: a `PASSIVE_README` receipt with base, head, merge base, complete changed path list, approved PNG Git blob identity and checked link/anchor counts; or `FULL_REQUIRED` and a refusal reason. The latter exits 2. The tool never merges, pushes, approves, modifies working files, executes product code, provisions credentials or reports product/release acceptance. **Only a future trusted qualification workflow may decide which required checks are run.** Do not advertise this command as an accepted bypass.
 
 ## Immutable trust boundary

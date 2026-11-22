@@ -70,6 +70,8 @@ class PassiveReadmeTests(unittest.TestCase):
         self.build()
         receipt = self.check()
         self.assertEqual(receipt["classification"], "PASSIVE_README")
+        self.assertEqual(receipt["schema"], "prismpm/passive-readme-receipt/1")
+        self.assertRegex(receipt["classifier_sha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(set(receipt["paths"]), {"README.md", scope.BANNER})
         self.assertEqual(receipt["checked_local_links"], 3)
 
