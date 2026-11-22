@@ -30,6 +30,8 @@ export async function startRegistry(options = {}) {
     blobs: new Map(),
     manifests: new Map(),
     tags: new Map(),
+    // kappa-registry's second address of an uploaded blob (`?also=`), to the blob's sha256 digest (ADR-018 §3).
+    also: new Map(),
     log: [],
     tokenRequests: [],
   };
@@ -89,6 +91,7 @@ export async function startRegistry(options = {}) {
       if (!uploads.has(uploadId)) return send(404, errorBody('BLOB_UPLOAD_UNKNOWN', 'no such upload'));
       if (sha(body) !== digest) return send(400, errorBody('DIGEST_INVALID', 'provided digest did not match uploaded content'));
       state.blobs.set(digest, body);
+      if (url.searchParams.has('also')) state.also.set(url.searchParams.get('also'), digest);
       return send(201, '', { location: `/v2/${repository}/blobs/${digest}`, 'docker-content-digest': digest });
     }
     if (blobDigest !== undefined) {

@@ -85,6 +85,7 @@ function splitLines(payload) {
 function digestSet(digest, where, legacy) {
   if (!isObject(digest)) fail('attestation.subject', `${where} has no digest set`);
   const keys = Object.keys(digest).sort();
+  // A holo v4 or v6 names its objects by blake3 (ADR-018 §4); a subject carries blake3 and sha256 over the same bytes.
   if (!legacy) {
     // A holo v5 names its objects by κ (sha256), so a subject is sha256 alone (ADR-017).
     if (keys.length !== 1 || keys[0] !== 'sha256') {
@@ -235,7 +236,7 @@ function hex(bytes) {
  */
 export function appendAttestations(source, bundles) {
   const parsed = parsedOf(source);
-  if (parsed.format !== 5) fail('attestation.format', 'a physical-v4 holo is read-only; rebuild it as a holo v5 before signing (ADR-017)');
+  if (parsed.format < 5) fail('attestation.format', 'a physical-v4 holo is read-only; rebuild it as a holo v5 or v6 before signing (ADR-017, ADR-018)');
   if (!parsed.verification.footer) fail('attestation.footer', 'the archive footer does not verify; refusing to append');
   if (!Array.isArray(bundles) || bundles.length === 0) fail('attestation.input', 'appendAttestations takes a non-empty array of bundles');
   const existing = attestationSection(parsed);
@@ -258,7 +259,7 @@ export function appendAttestations(source, bundles) {
     at += line.length + 1;
   }
   const kept = parsed.sections.filter((s) => !existing || s.index !== existing.section).map((s) => s.body);
-  return writeObjects([...kept, payload]);
+  return writeObjects([...kept, payload], parsed.format);
 }
 
 /**
@@ -271,7 +272,7 @@ export function stripAttestations(source) {
   const parsed = parsedOf(source);
   const existing = attestationSection(parsed);
   if (!existing) return parsed.bytes.slice();
-  if (parsed.format === 5) return writeObjects(parsed.sections.filter((s) => s.index !== existing.section).map((s) => s.body));
+  if (parsed.format >= 5) return writeObjects(parsed.sections.filter((s) => s.index !== existing.section).map((s) => s.body), parsed.format);
   const kept = parsed.sections.filter((s) => s.index !== existing.section).map(({ kind, body }) => ({ kind, body }));
   return encodeArchive(kept, { version: parsed.version, flags: parsed.flags });
 }

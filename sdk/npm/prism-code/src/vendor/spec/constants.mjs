@@ -265,8 +265,8 @@ export const OCI = freeze({
  */
 export const FORMAT_REVISIONS = freeze({
   '2026-10-23': freeze({
-    /** The holo versions that carry this revision: v4 (Holo/1) and v5 (UORC, ADR-017). */
-    holoVersions: freeze([4, 5]),
+    /** The holo versions that carry this revision: v4 (Holo/1), v5 (UORC, ADR-017) and v6 (UORC sealed by BLAKE3, ADR-018). */
+    holoVersions: freeze([4, 5, 6]),
     physicalVersion: PHYSICAL_VERSION,
     flags: FLAGS,
     sectionOrder: SECTION_ORDER,
@@ -293,8 +293,8 @@ export const FORMAT_REVISIONS = freeze({
    * the first revision an archive matches, so those keep their date.
    */
   '2026-11-18': freeze({
-    /** Holo v5 only: a v4 application manifest is a fixed 356-byte suffix naming @1 and holo_run. */
-    holoVersions: freeze([5]),
+    /** Holo v5 and v6 only: a v4 application manifest is a fixed 356-byte suffix naming @1 and holo_run. */
+    holoVersions: freeze([5, 6]),
     physicalVersion: PHYSICAL_VERSION,
     flags: FLAGS,
     sectionOrder: SECTION_ORDER,
@@ -328,6 +328,22 @@ export const HOLO_V5 = freeze({
   ROLES: freeze(['manifest', 'source-manifest', 'provenance', 'capabilities', 'guest', 'view', 'model']),
   ROLE_ATTESTATIONS: 'attestations',
   KAPPA_PREFIX: 'sha256:',
+});
+
+/**
+ * Holo v6 (ADR-018): holo v5's objects and roles in a UORC archive of profile 2,
+ * sealed by plain BLAKE3 of every byte before the seal. Every identity is a
+ * κ-label, `blake3:` and the hex unkeyed BLAKE3 of the bytes it names; the κ of
+ * the file is its address. Its OCI layer digest is still the file's sha256.
+ */
+export const HOLO_V6 = freeze({
+  /** "UORC", format 2, profile 2, scope 0 (self-contained), representation 0 (raw). */
+  MAGIC_HEX: '554f52430202',
+  MANIFEST_SCHEMA: 'prism/holo/6',
+  PROVENANCE_SCHEMA: 'prismpm/model-provenance/3',
+  ROLES: HOLO_V5.ROLES,
+  ROLE_ATTESTATIONS: 'attestations',
+  KAPPA_PREFIX: 'blake3:',
 });
 /**
  * Build provenance of a holo, issue #268 (docs/proposals/268-build-provenance.md). The predicate is SLSA
