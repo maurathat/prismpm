@@ -19,7 +19,8 @@ const run = (args, { cwd = scratch(), env = {} } = {}) => {
 };
 
 test('the skill teaches the one path, with the CLI alone, and says what runs where', () => {
-  for (const verb of ['init', 'manifest', 'check', 'build', 'verify', 'generate']) assert.match(skill, new RegExp('npx prism-code ' + verb + ' '), verb);
+  assert.match(skill, /Every Prism app starts with one command:\n\n```bash\nnpx prism-code@latest init <app-name>\n```/);
+  for (const verb of ['manifest', 'check', 'build', 'verify', 'generate']) assert.match(skill, new RegExp('npx prism-code ' + verb + ' '), verb);
   assert.match(skill, /with `npx prism-code` as the only dependency/);
   assert.match(skill, /Nothing about a model leaves the machine/);
   assert.match(skill, /a first run needs no network/);
@@ -29,7 +30,7 @@ test('the skill teaches the one path, with the CLI alone, and says what runs whe
 });
 
 test('a scaffolded LexLean project says a Prism app is one too, started from a starter', () => {
-  const r = run(['init', join(scratch(), 'proj')]);
+  const r = run(['init', join(scratch(), 'proj'), '--template', 'text-request']);
   assert.equal(r.code, 0, r.err);
   assert.match(r.out, /A Prism app is a LexLean project too/);
   assert.doesNotMatch(r.out, /spec\.json/);

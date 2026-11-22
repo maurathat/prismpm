@@ -25,16 +25,19 @@ no container, no cloud build, no host Lean toolchain, and nothing about a model
 is sent anywhere.
 
 ```sh
-npx prism-code@latest init my-app --template rule-app   # a starter: a working model to edit
+npx prism-code@latest init my-app   # a starter model to edit, and the Prism skill for your agent
 cd my-app
 npx prism-code check --json     # prism.toml, the model, and every theorem proved by Lean's kernel
 npx prism-code build --json     # check, then write the app under .prism/build with nothing compiled
 npx prism-code verify --json    # check again, then replay every acceptance vector on a fresh instance
 ```
 
-An app's one source of truth is its LexLean model under `src/`. A starter is a
-LexLean module named by its SHA-256 in `templates/starters/index.json`, copied
-only when its bytes match:
+`npx prism-code@latest init` is the one command every Prism app starts with;
+`npm create prism-code@latest` runs the same code. It writes only inside the
+folder. An app's one source of truth is its LexLean model under `src/`. A
+starter is a LexLean module named by its SHA-256 in
+`templates/starters/index.json`, copied only when its bytes match; `rule-app`
+is the default, and `--template` names another:
 
 | Starter | Shape | Built as |
 | --- | --- | --- |
@@ -53,14 +56,18 @@ LexLean and Lean's kernel run as WebAssembly and ship in this package, under
 `wasm/pinned/`, about 10 MB. Each file is admitted only when its bytes have the
 BLAKE3 label this package pins, so a first run fetches nothing.
 
-## Give your agent the skill
+## The skill your agent reads
+
+`init` writes the `prism` skill this package ships, `SKILL.md` and its
+references, into `.claude/skills/prism` and `.agents/skills/prism` of the
+project, so an agent that works there knows the one path. `--no-skill` leaves
+it out.
 
 ```sh
-npx prism-code skill --out .claude/skills/prism
+npx prism-code skill --out <dir>
 ```
 
-`skill --out` copies the `prism` skill this package ships, `SKILL.md` and its
-references, into the folder you name. It reads only the package, reaches no
+`skill --out` copies the same files into any folder you name. It reads only the package, reaches no
 network and changes nothing else on the machine. `skill verify <dir>` judges a
 copy again: its bytes have the pinned label, every command it names ships, and
 Lean's kernel proves the skill gate's theorems here.

@@ -19,7 +19,7 @@
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
-import { PrismError } from './errors.mjs';
+import { PrismCodeError, PrismError } from './errors.mjs';
 import { lexleanProjectDir } from './tiers.mjs';
 import { readSession, sourceDigest, sourceFiles, writeSession } from './journey/project.mjs';
 
@@ -28,11 +28,14 @@ export const EXIT = Object.freeze({ OK: 0, FAILED: 1, REFUSED: 2 });
 
 const forward = (path) => path.split('\\').join('/');
 
+/** A report code of this module's own, written as an error so that it is registered like every code prism-code raises. */
+const coded = (error) => ({ code: error.code, message: error.message });
+
 /** One diagnostic of the report. `at` is `file:line:column`, as the engine anchors a diagnostic. */
 function diagnostic({ code, message, at = null, file = null, remediation = null, severity = 'error' }) {
   const m = at ? /^(.*):(\d+):(\d+)$/.exec(at) : null;
   return {
-    code: code ?? 'prism.failed',
+    code: code ?? new PrismCodeError('report.uncoded', '').code,
     severity,
     file: m ? forward(m[1]) : file,
     line: m ? Number(m[2]) : null,
@@ -43,15 +46,15 @@ function diagnostic({ code, message, at = null, file = null, remediation = null,
 }
 
 /** The diagnostics of one engine step: each of its own, or the step's message when it names none. */
-function stepDiagnostics(result, fallbackCode) {
+function stepDiagnostics(result, fallback) {
   const own = (result.diagnostics ?? []).map((d) => diagnostic({ code: d.code, message: d.message, at: d.at, remediation: d.didYouMean?.length ? `Write ${d.didYouMean.map((n) => `\`${n}\``).join(' or ')} instead.` : null }));
   if (own.length > 0) {
     if (own[0].remediation === null) own[0].remediation = result.message ?? null;
     return own;
   }
   const missed = (result.theorems ?? []).filter((t) => !t.status.startsWith('proved'));
-  if (missed.length > 0) return missed.map((t) => diagnostic({ code: 'proof.rejected', message: `${t.theorem}: ${t.status}`, remediation: 'Repair the definition or the theorem in the model; never weaken the theorem to make it pass.' }));
-  return [diagnostic({ code: result.code ?? fallbackCode, message: result.message, remediation: result.next ?? null })];
+  if (missed.length > 0) return missed.map((t) => diagnostic({ ...coded(new PrismCodeError('proof.rejected', `${t.theorem}: ${t.status}`)), remediation: 'Repair the definition or the theorem in the model; never weaken the theorem to make it pass.' }));
+  return [diagnostic({ code: result.code ?? fallback.code, message: result.message, remediation: result.next ?? null })];
 }
 
 /** The project: its root, the folder of its LexLean model, and the manifest when it has one. */
@@ -94,12 +97,12 @@ async function gate(project, session, { env, log, engine }) {
   const summary = { modulesChecked: sourceFiles(project.dir).length, theoremsDeclared: 0, theoremsVerified: 0 };
   const diagnostics = [...project.diagnostics];
   const checked = await check(project.dir, session, { env, log });
-  if (!checked.ok) return { code: EXIT.REFUSED, summary, diagnostics: [...diagnostics, ...stepDiagnostics(checked, 'model.unchecked')] };
+  if (!checked.ok) return { code: EXIT.REFUSED, summary, diagnostics: [...diagnostics, ...stepDiagnostics(checked, new PrismCodeError('model.unchecked', ''))] };
   const proved = await prove(project.dir, session, { env, log });
   const judged = proved.theorems ?? proved.guarantees ?? [];
   summary.theoremsDeclared = judged.length;
   summary.theoremsVerified = proved.ok ? judged.length : judged.filter((t) => String(t.status).startsWith('proved')).length;
-  if (!proved.ok) return { code: EXIT.FAILED, summary, diagnostics: [...diagnostics, ...stepDiagnostics(proved, 'proof.rejected')] };
+  if (!proved.ok) return { code: EXIT.FAILED, summary, diagnostics: [...diagnostics, ...stepDiagnostics(proved, new PrismCodeError('proof.rejected', ''))] };
   return { code: null, summary, diagnostics };
 }
 
@@ -134,7 +137,7 @@ export async function modelBuild(path, { project: explicit = null, out = null, e
   if (built.ok) session.status.lastBuild = { source: sourceDigest(project.dir), result: { ok: true, address: built.address } };
   writeSession(project.dir, session);
   const summary = { ...gated.summary, vectorsPassed: built.vectors?.passed ?? 0, vectorsTotal: built.vectors?.total ?? 0 };
-  if (!built.ok) return answer('build', started, EXIT.FAILED, summary, [...gated.diagnostics, ...stepDiagnostics(built, 'build.failed')]);
+  if (!built.ok) return answer('build', started, EXIT.FAILED, summary, [...gated.diagnostics, ...stepDiagnostics(built, new PrismCodeError('build.failed', ''))]);
   const written = built.holo ?? built.app;
   let artifact = written;
   if (out) {
@@ -168,9 +171,9 @@ async function replay(kind, path, { policy = null } = {}) {
   }
   summary.vectorsPassed = acceptance.passed;
   summary.vectorsTotal = acceptance.total;
-  if (!summary.identitiesVerified) diagnostics.push(diagnostic({ code: 'holo.identities', message: 'The identities the holo states are not the identities of its bytes.', file: summary.artifact, remediation: 'Build it again from the model.' }));
-  if (acceptance.total === 0) diagnostics.push(diagnostic({ code: 'vectors.none', message: 'The artifact carries no acceptance vector, so nothing was replayed.', file: summary.artifact, remediation: 'State examples in the model: one for every accepted path and every typed error.' }));
-  for (const f of acceptance.failed.slice(0, 12)) diagnostics.push(diagnostic({ code: 'vectors.failed', message: `Acceptance vector ${f.index} answers otherwise than the model states.`, file: summary.artifact, remediation: 'Repair the rule or the example in the model, then build again.' }));
+  if (!summary.identitiesVerified) diagnostics.push(diagnostic({ ...coded(new PrismCodeError('holo.identities', 'The identities the holo states are not the identities of its bytes.')), file: summary.artifact, remediation: 'Build it again from the model.' }));
+  if (acceptance.total === 0) diagnostics.push(diagnostic({ ...coded(new PrismCodeError('vectors.none', 'The artifact carries no acceptance vector, so nothing was replayed.')), file: summary.artifact, remediation: 'State examples in the model: one for every accepted path and every typed error.' }));
+  for (const f of acceptance.failed.slice(0, 12)) diagnostics.push(diagnostic({ ...coded(new PrismCodeError('vectors.failed', `Acceptance vector ${f.index} answers otherwise than the model states.`)), file: summary.artifact, remediation: 'Repair the rule or the example in the model, then build again.' }));
   // The assurance level is reported, and judged only when the caller names a policy: a holo built in this
   // process carries no signed statement, so its level is what its own bytes support.
   if (kind === 'holo') {
@@ -195,7 +198,7 @@ export async function modelVerify(target, { project: explicit = null, policy = n
   const started = Date.now();
   const path = resolve(target ?? '.');
   const info = existsSync(path) ? statSync(path) : null;
-  if (!info) return answer('verify', started, EXIT.REFUSED, {}, [diagnostic({ code: 'load.path', message: `${path} does not exist`, remediation: 'Name a holo, or a project directory.' })]);
+  if (!info) return answer('verify', started, EXIT.REFUSED, {}, [diagnostic({ ...coded(new PrismCodeError('load.path', `${path} does not exist`)), remediation: 'Name a holo, or a project directory.' })]);
   if (info.isFile()) {
     const kind = /\.rule-app\.json$/.test(path) ? 'rule-app' : 'holo';
     const replayed = await replay(kind, path, { policy });
@@ -208,10 +211,10 @@ export async function modelVerify(target, { project: explicit = null, policy = n
   if (gated.code !== null) return answer('verify', started, gated.code, gated.summary, gated.diagnostics);
   const built = builtOf(session);
   if (!built || !existsSync(built.path)) {
-    return answer('verify', started, EXIT.FAILED, gated.summary, [...gated.diagnostics, diagnostic({ code: 'verify.unbuilt', message: 'The model checks and is proved, and nothing is built from it yet.', remediation: 'Run prism-code build, then verify again.' })]);
+    return answer('verify', started, EXIT.FAILED, gated.summary, [...gated.diagnostics, diagnostic({ ...coded(new PrismCodeError('verify.unbuilt', 'The model checks and is proved, and nothing is built from it yet.')), remediation: 'Run prism-code build, then verify again.' })]);
   }
   if (built.source !== sourceDigest(project.dir)) {
-    return answer('verify', started, EXIT.FAILED, gated.summary, [...gated.diagnostics, diagnostic({ code: 'verify.stale', message: 'What is built is the build of an earlier model: the sources changed since.', remediation: 'Run prism-code build, then verify again.' })]);
+    return answer('verify', started, EXIT.FAILED, gated.summary, [...gated.diagnostics, diagnostic({ ...coded(new PrismCodeError('verify.stale', 'What is built is the build of an earlier model: the sources changed since.')), remediation: 'Run prism-code build, then verify again.' })]);
   }
   const replayed = await replay(built.kind, built.path, { policy });
   return answer('verify', started, replayed.code ?? EXIT.OK, { ...gated.summary, ...replayed.summary, address: built.address ?? null }, [...gated.diagnostics, ...replayed.diagnostics]);

@@ -88,7 +88,7 @@ test('planInit is the template plus prism.toml and an LF-only .gitattributes; an
 
 test('prism-code init scaffolds a project that prism-code manifest reads', async () => {
   const dir = join(scratch(), 'my-calc');
-  const r = run(bin, ['init', dir]);
+  const r = run(bin, ['init', dir, '--template', 'text-request']);
   assert.equal(r.code, 0, r.err);
   assert.match(r.out, /^Creating my-calc in /);
   assert.match(r.out, /A Prism app is a LexLean project too: start one from a starter/);
@@ -125,7 +125,7 @@ test('init: --name, a bad name, an unknown template, usage errors', () => {
   assert.match(gone.err, /^init no longer takes --sdk-image/);
   assert.equal(run(bin, ['init', 'a', 'b']).code, 64);
   assert.equal(run(bin, ['init', '--frobnicate']).code, 64);
-  assert.match(run(bin, ['init', '--help']).out, /a starter is rule-app, decision-app or stateful-app/);
+  assert.ok(run(bin, ['init', '--help']).out.includes('a starter LexLean model to edit (rule-app unless'));
 });
 
 test('npm create prism-code is prism-code init', () => {
@@ -139,3 +139,33 @@ test('npm create prism-code is prism-code init', () => {
   for (const path of a) assert.ok(readFileSync(join(root, 'proj', path)).equals(readFileSync(join(root, 'proj2', path))), path);
 });
 
+
+test('init with no template is the one command an app starts with: a starter, named for the folder, and the skill beside it', () => {
+  const dir = join(scratch(), 'fee-tier');
+  const r = run(bin, ['init', dir]);
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /the rule-app starter: the model to edit/);
+  assert.match(readFileSync(join(dir, 'prism.toml'), 'utf8'), /^name = "fee-tier"$/m);
+  assert.ok(existsSync(join(dir, 'src', 'App.lex.tex')));
+  for (const folder of ['.claude/skills/prism', '.agents/skills/prism']) {
+    for (const f of ['SKILL.md', 'references/lexlean-1.2.md', 'references/template-contract.md']) {
+      assert.ok(readFileSync(join(dir, folder, f)).equals(readFileSync(new URL(`../skill/${f}`, import.meta.url))), `${folder}/${f}`);
+    }
+  }
+  // Nothing is written outside the folder, and nothing of the machine is configured.
+  assert.doesNotMatch(r.out + r.err, /setup|server|registered/i);
+
+  // Run again, the model is the author's: it is left as it is, and only the skill is written.
+  const model = join(dir, 'src', 'App.lex.tex');
+  writeFileSync(model, `${readFileSync(model, 'utf8')}\n`);
+  const edited = readFileSync(model);
+  const again = run(bin, ['init', dir]);
+  assert.equal(again.code, 0, again.err);
+  assert.match(again.out, /holds a LexLean model already; left as it is/);
+  assert.ok(readFileSync(model).equals(edited));
+
+  const bare = join(scratch(), 'bare');
+  assert.equal(run(bin, ['init', bare, '--no-skill']).code, 0);
+  assert.equal(existsSync(join(bare, '.claude')), false);
+  assert.equal(run(bin, ['setup']).code, 64, 'setup is not a verb: init is the one command');
+});

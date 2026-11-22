@@ -959,7 +959,7 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `bundle.exists` |  | `DK-49` | A pulled model file would replace a file that holds other bytes; pull into an empty project. |
 | `bundle.missing` |  | `DK-49` | An object a pulled app's manifest names is not in the store the reference names. |
 | `bundle.path` |  | `DK-49` | A pulled app's manifest names a path outside the app. |
-| `bundle.read-only` |  | `DK-49` | An https:// store is read-only to prism_push; push to a dir:// folder and publish that folder with any static host. |
+| `bundle.read-only` |  | `DK-49` | An https:// store is read-only to a push; push to a dir:// folder and publish that folder with any static host. |
 | `bundle.reference` |  | `DK-49` | A reference is not a κ-label, dir://<folder>#<κ> or https://<site>#<κ>, or a pull names no app. |
 | `bundle.schema` |  | `DK-49` | A pulled manifest is not a prism/app-bundle/1 manifest. |
 | `bundle.store-off` |  | `DK-49` | This machine keeps no Prism store (PRISM_KAPPA=0), so an app is pushed only to a dir:// folder. |
