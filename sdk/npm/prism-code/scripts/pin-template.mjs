@@ -9,7 +9,8 @@
  *   node scripts/pin-template.mjs <template checkout> --check   exit 1 when the bundle is not that tree's
  *
  * Only files git tracks at HEAD are bundled, read from the commit, so build output and an unclean working tree never
- * enter it; the index records the commit they were read from.
+ * enter it, and `.github/`, the template repository's own workflow, never does. The index records the commit the files
+ * were read from: run it at the template's content commit, not at a later one that only changes `.github/`.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -29,7 +30,10 @@ const git = (...args) => {
   return r.stdout;
 };
 const commit = git('rev-parse', 'HEAD').toString().trim();
-const paths = git('ls-tree', '-r', '--name-only', '-z', 'HEAD').toString().split('\0').filter(Boolean).sort();
+const paths = git('ls-tree', '-r', '--name-only', '-z', 'HEAD').toString().split('\0').filter(Boolean)
+  // The template repository's own workflow checks the template itself; an instance inherits no workflow (contract 2).
+  .filter((path) => !path.startsWith('.github/'))
+  .sort();
 const files = {};
 const objects = new Map();
 for (const path of paths) {

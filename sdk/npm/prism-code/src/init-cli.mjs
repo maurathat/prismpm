@@ -141,6 +141,7 @@ export async function runInit(argv, { out = process.stdout, err = process.stderr
   out.write(`  prism.toml             application ${name} 0.1.0, no capabilities granted\n`);
   out.write(`  the canonical template ${made.written.length + made.kept.length} files of ${template.repository}, ${made.label}\n`);
   out.write(`  ${`${APP_FOLDER}/src/`.padEnd(22)} the model to edit: replace the template's contract checker with your app\n`);
+  out.write(`  ${''.padEnd(22)} until then, build names the holo for the template's app: template-contract.holo\n`);
   await skill();
   out.write(nextSteps(shown));
   return 0;

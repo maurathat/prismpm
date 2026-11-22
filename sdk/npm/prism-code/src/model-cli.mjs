@@ -143,7 +143,8 @@ async function gate(project, session, { env, log, engine, write = false }) {
     summary.contractViolations += named.diagnostics.length;
     // R5 (template/2): every registered failure is the response of an acceptance vector the model states. build
     // replays every one of them, and refuses a build whose app answers one otherwise.
-    const refused = checkRefusals(root, await statedVectors(project.dir, env));
+    // Only contract 2 registers failures; a template/1 workspace takes no second snapshot.
+    const refused = isContract2(root) ? checkRefusals(root, await statedVectors(project.dir, env)) : { diagnostics: [] };
     for (const d of refused.diagnostics) diagnostics.push(contractDiagnostic(d));
     summary.contractViolations += refused.diagnostics.length;
   }

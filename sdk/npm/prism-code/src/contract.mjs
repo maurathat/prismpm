@@ -186,7 +186,7 @@ export function checkContract(root) {
   const authorities = readRegister(root, 'authorities.toml', diagnostics);
   const ledger = readRegister(root, 'ledger.toml', diagnostics);
   const rows = Array.isArray(ids?.id) ? ids.id : [];
-  const spec = ids?.spec ?? 'template/1';
+  const spec = typeof ids?.spec === 'string' ? ids.spec : ids?.spec === undefined ? 'template/1' : 'template/?';
   const contract2 = spec === 'template/2';
   // A template register names its contract; a register of another spec (this repository's own) is read as contract 1.
   if (ids && spec.startsWith('template/') && !SPECS.includes(spec)) push(new PrismCodeError('contract.spec', `model/ids.toml has spec ${JSON.stringify(spec)}; this prism-code reads ${SPECS.join(' and ')}.`), { file: 'model/ids.toml', remediation: 'Write the register as template/2 (TEMPLATE-CONTRACT.md), or upgrade prism-code.' });

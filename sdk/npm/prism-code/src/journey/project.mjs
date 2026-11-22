@@ -57,6 +57,8 @@ export function writeSession(dir, session) {
 }
 
 /** The starters this package carries: `{ name: { module, shape, files } }`. */
+// starters() and startApp() read test/fixtures/starters, which the package does not carry: they serve the tests and
+// the IDE's site builder from a checkout of this repository, never an installed package.
 export function starters({ root = STARTERS } = {}) {
   return JSON.parse(readFileSync(new URL('index.json', root), 'utf8')).starters;
 }
