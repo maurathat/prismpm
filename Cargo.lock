@@ -1447,6 +1447,7 @@ dependencies = [
  "toml",
  "unicode-normalization",
  "walkdir",
+ "wasmparser",
  "x509-parser",
 ]
 
