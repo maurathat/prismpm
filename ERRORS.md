@@ -986,7 +986,14 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `contract.conformance` |  | `DK-41` | The generated conformance document does not list an ID the register holds (R1). |
 | `contract.duplicate` |  | `DK-41` | One ID is registered twice, in model/ids.toml or across it and model/ledger.toml (R2). |
 | `contract.level` |  | `DK-41` | A level is not some-true, build or open, or a scenario is tagged with another level than its ID has (R2). |
+| `contract.negative` |  | `DK-51` | A template/2 register row declares a failure whose negative is not a registered build ID, or whose failure is not the text of a refusal. |
+| `contract.policy-drift` |  | `DK-51` | A universal policy file of a template/2 workspace does not have the BLAKE3 label template.lock binds it to, or template.lock is missing or not uor/template-lock/2. |
+| `contract.refusal-unreplayed` |  | `DK-51` | A template/2 register row declares a failure that no acceptance vector of the model answers with exactly that refusal. |
 | `contract.register` |  | `DK-41` | A register of a template workspace cannot be read. |
+| `contract.rejects-scenario` |  | `DK-51` | A template/2 register row declares a failure and its scenario is not tagged @rejects. |
+| `contract.spec` |  | `DK-51` | The template register names a template spec this prism-code does not read; it reads template/1 and template/2. |
+| `contract.theorem-unproved` |  | `DK-51` | A template/2 build ID names a theorem Lean's kernel did not prove within its declared axioms in the same check. |
+| `contract.theorem-unstated` |  | `DK-51` | A template/2 build ID names a theorem, as Module.name, that the model does not state. |
 | `contract.unregistered` |  | `DK-41` | A scenario is tagged with an ID that model/ids.toml does not register (R3). |
 | `contract.unspecified` |  | `DK-41` | A registered ID has no scenario under features/suites (R3). |
 | `contract.untested` |  | `DK-41` | A registered ID has no test named for it (R3). |
@@ -1021,6 +1028,7 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `image.store` |  | `OC-12` | The local image store cannot be read or written, or its index is not prism/image-store/1; nothing changed. |
 | `image.tagged` |  | `OC-12` | prism.images.remove named by digest an image that has more than one tag; it is refused unless forced. |
 | `images.unavailable` |  | `OC-11` | prism.images reads files and registries, which this build of prism-code leaves out; use it in Node. |
+| `init.exists` |  | `DK-51` | init was asked to start an app in a folder that already holds prism.toml, so nothing was written; --force overwrites. |
 | `init.template` |  | `DK-41` | init was asked for a template it does not have, or the template already holds a generated file. |
 | `inspect.kind` |  | `OC-11` | inspect was given a directory or a closure, which has no section table; it reads a .holo archive. |
 | `inspect.selector` |  | `OC-11` | The inspect selector is malformed; it is a dotted path such as sections[0].digest.sha256. |
@@ -1109,6 +1117,8 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `system.events` |  | `DK-41` | This client has no event bus; prism.system from createPrism() has one. |
 | `system.lock` |  | `DK-41` | prismpm.lock cannot be read, or this client cannot read files. |
 | `system.option` |  | `DK-41` | prism.system was given options that are not a plain object, an option it does not have, or a time that is not a Date, an ISO 8601 time or milliseconds. |
+| `template.altered` |  | `DK-51` | A file of the canonical template this package carries is not the bytes its BLAKE3 label names, or the template's index is not the one its label names, so nothing was written. |
+| `template.exists` |  | `DK-51` | The folder already holds a file of the canonical template with other bytes, so init wrote nothing; --force overwrites. |
 | `tier.project` |  | `DK-41` | The LexLean project of a build tier cannot be found: --project is outside the root or has no project file, or more than one project is there. |
 | `transparency_failed` | `TransparencyError` | `CT-12` | The attestation's transparency log entry does not verify. |
 | `trust_root_invalid` | `TrustRootError` | `CT-12` | The trusted root is missing or malformed. |
