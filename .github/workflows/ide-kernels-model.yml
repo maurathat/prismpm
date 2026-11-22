@@ -255,8 +255,9 @@ jobs:
       # The driver is not one of the IDE's dependencies; it is installed for this job alone, at one version.
       - name: Install the browser driver
         run: npm install --no-save --ignore-scripts --no-audit --no-fund puppeteer-core@23.11.1
-      - name: Both terminals answer nine lines, and 1000 keys are each drawn
-        run: node tools/terminal-browser-test.mjs --require-workbench
+      # The six budgets of phase 2f are measured here, on the runner, and written to the job summary.
+      - name: Both terminals answer nine lines, 1000 keys are each drawn, and the budgets are measured
+        run: node tools/terminal-browser-test.mjs --require-workbench --budgets
 
   scope:
     name: Lean proves the scope kernel
