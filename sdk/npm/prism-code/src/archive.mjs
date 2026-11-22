@@ -21,13 +21,18 @@
  */
 import { DigestMismatchError, fail } from './errors.mjs';
 import { blake3Hex, kappa as v4Label } from './blake3.mjs';
-import { isUorc, kappa, layout } from './uorc.mjs';
+import { isUorc, labelOf, layout, writeObjects } from './uorc.mjs';
 
 export const MAGIC = 'HOLO';
 export const VERSION = 4;
 /** Holo v5 (ADR-017): schema of the manifest object and the roles of the ordered objects. */
 export const MANIFEST_SCHEMA_V5 = 'prism/holo/5';
 export const PROVENANCE_SCHEMA_V5 = 'prismpm/model-provenance/2';
+/** Holo v6 (ADR-018): v5's documents with every κ a `blake3:` label. */
+export const MANIFEST_SCHEMA_V6 = 'prism/holo/6';
+export const PROVENANCE_SCHEMA_V6 = 'prismpm/model-provenance/3';
+const MANIFEST_SCHEMA = { 5: MANIFEST_SCHEMA_V5, 6: MANIFEST_SCHEMA_V6 };
+const PROVENANCE_SCHEMA = { 5: PROVENANCE_SCHEMA_V5, 6: PROVENANCE_SCHEMA_V6 };
 export const ROLES_V5 = Object.freeze(['manifest', 'source-manifest', 'provenance', 'capabilities', 'guest', 'view', 'model']);
 export const ROLE_ATTESTATIONS = 'attestations';
 export const KIND = Object.freeze({ APP_MANIFEST: 15, METADATA: 8, EXTENSION: 14, CONTENT_BLOB: 16 });
@@ -215,15 +220,17 @@ export function parseArchive(source) {
 const hexOf = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 
 /**
- * Parse a holo v5. The result has the v4 reader's shape (sections, blobs,
- * extensions, manifest labels, verification) so every consumer reads both:
+ * Parse a holo v5 or v6. The result has the v4 reader's shape (sections, blobs,
+ * extensions, manifest labels, verification) so every consumer reads all three:
  * each object is a section whose `kind` is its role, the provenance object is
  * the model extension and the attestation object the attestation extension.
+ * A v6 holo is a v5 holo whose seal is BLAKE3 and whose every κ is `blake3:` (ADR-018).
  */
 function parseArchiveV5(bytes) {
-  const { objects, sealed, seal, preimage } = layout(bytes);
+  const { format, objects, sealed, seal, preimage } = layout(bytes);
+  const kappa = (object) => labelOf(format, object);
   if (objects.length !== ROLES_V5.length && objects.length !== ROLES_V5.length + 1) {
-    fail('archive.bounds', `a v5 application holo holds ${ROLES_V5.length} objects, or ${ROLES_V5.length + 1} when signed; this one holds ${objects.length}`);
+    fail('archive.bounds', `a v${format} application holo holds ${ROLES_V5.length} objects, or ${ROLES_V5.length + 1} when signed; this one holds ${objects.length}`);
   }
   const roles = [...ROLES_V5, ROLE_ATTESTATIONS];
   const sections = objects.map((object, index) => ({ index, kind: roles[index], offset: object.offset, length: object.length, body: object.bytes }));
@@ -243,7 +250,7 @@ function parseArchiveV5(bytes) {
     if (!sealed) throw new DigestMismatchError('integrity failure: the holo was altered: its seal does not match', { check: 'holo.integrity', cause: error });
     fail('archive.manifest', `the manifest is not JSON: ${error.message}`);
   }
-  if (holoManifest?.schema !== MANIFEST_SCHEMA_V5) fail('archive.manifest', `the manifest schema is ${JSON.stringify(holoManifest?.schema)}, expected ${MANIFEST_SCHEMA_V5}`);
+  if (holoManifest?.schema !== MANIFEST_SCHEMA[format]) fail('archive.manifest', `the manifest schema is ${JSON.stringify(holoManifest?.schema)}, expected ${MANIFEST_SCHEMA[format]}`);
   const layer = (kind) => (Array.isArray(holoManifest.layers) ? holoManifest.layers.find((l) => l.kind === kind) : undefined);
   const labels = [holoManifest.requires, layer('wasm')?.kappa, layer('view')?.kappa];
   const blobs = [3, 4, 5, 6].map((index) => ({ label: kappa(objects[index].bytes), content: objects[index].bytes, section: index }));
@@ -262,13 +269,13 @@ function parseArchiveV5(bytes) {
   if (listed.length !== expected.length) labelMismatches.push({ section: null, label: null, actual: null });
   const fingerprint = hexOf(seal);
   return {
-    format: 5,
+    format,
     bytes,
     body: preimage,
-    version: 5,
+    version: format,
     flags: 0,
     sections,
-    manifest: { uri: MANIFEST_SCHEMA_V5, labels, section: 0 },
+    manifest: { uri: MANIFEST_SCHEMA[format], labels, section: 0 },
     holoManifest,
     metadata: { text: text(objects[1].bytes, 'the source manifest'), section: 1 },
     extensions,
@@ -293,10 +300,11 @@ function blake3HexOf(bytes) {
 
 /** JSON with sorted keys and no whitespace, the SDK's canonical encoding (`holo/canonical.rs`). */
 /**
- * The identity of a holo: for a holo v5 its κ, the `sha256:` of the file, which is also its OCI layer digest
- * (ADR-017); for a legacy v4 holo the `blake3:` of its body, which its footer claims.
+ * The identity of a holo: for a holo v6 its κ, the `blake3:` of the file (ADR-018); for a holo v5 its κ, the
+ * `sha256:` of the file, which is also its OCI layer digest (ADR-017); for a legacy v4 holo the `blake3:` of its
+ * body, which its footer claims.
  */
-export const holoDigest = (parsed) => (parsed.format === 5 ? parsed.kappa : `blake3:${parsed.fingerprint}`);
+export const holoDigest = (parsed) => (parsed.format >= 5 ? parsed.kappa : `blake3:${parsed.fingerprint}`);
 
 export function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
@@ -314,7 +322,7 @@ export function canonicalJson(value) {
  * directory and model extensions against the manifest and the blobs.
  */
 export function resolveArchive(parsed) {
-  if (parsed.format === 5) return resolveArchiveV5(parsed);
+  if (parsed.format >= 5) return resolveArchiveV5(parsed);
   const extension = (name) => parsed.extensions.find((e) => e.name === name);
   const directoryExtension = extension(DIRECTORY_EXTENSION);
   const modelExtension = extension(MODEL_EXTENSION);
@@ -389,13 +397,13 @@ function resolveArchiveV5(parsed) {
   const entry = ['hologram:guest/core-wasm@2', 'hologram:guest/core-wasm@3'].includes(wasmLayer?.contract) ? 'holo_step' : 'holo_run';
   if (!wasmLayer || wasmLayer.entry !== entry) fail('archive.directory', `the manifest has no wasm layer entered at ${entry}`);
   if (!viewLayer) fail('archive.directory', 'the manifest has no view layer');
-  const applicationKappa = kappa(parsed.sections[0].body);
+  const applicationKappa = labelOf(parsed.format, parsed.sections[0].body);
   const consistent =
     canonicalJson(manifest) === decoder.decode(parsed.sections[0].body) &&
     manifest.requires === capabilities.label &&
     wasmLayer.kappa === guest.label &&
     viewLayer.kappa === view.label &&
-    provenance.schema === PROVENANCE_SCHEMA_V5 &&
+    provenance.schema === PROVENANCE_SCHEMA[parsed.format] &&
     provenance.guest_content_kappa === guest.label &&
     provenance.model_content_kappa === model.label &&
     provenance.view_binding?.view_content_kappa === view.label &&
@@ -408,7 +416,7 @@ function resolveArchiveV5(parsed) {
     fail('archive.model', `model document is not JSON: ${error.message}`);
   }
   return {
-    directory: { schema_version: 5, primary_layer: 0, requires_kappa: manifest.requires, layers: manifest.layers.map((l) => ({ ...l, content_kappa: l.kappa })) },
+    directory: { schema_version: parsed.format, primary_layer: 0, requires_kappa: manifest.requires, layers: manifest.layers.map((l) => ({ ...l, content_kappa: l.kappa })) },
     manifest,
     provenance,
     modelDocument,
@@ -430,4 +438,54 @@ function resolveArchiveV5(parsed) {
       consistent,
     },
   };
+}
+
+const encoder = new TextEncoder();
+const SHA256_KAPPA = /^sha256:[0-9a-f]{64}$/;
+
+/** `value` with every string `labels` maps replaced, and whether any `sha256:` κ is left unmapped. */
+function relabel(value, labels) {
+  let unmapped = null;
+  const walk = (v) => {
+    if (typeof v === 'string') {
+      if (labels.has(v)) return labels.get(v);
+      if (SHA256_KAPPA.test(v)) unmapped ??= v;
+      return v;
+    }
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]));
+    return v;
+  };
+  return { value: walk(value), unmapped };
+}
+
+/**
+ * The holo v6 of a verified, unsigned holo v5 (ADR-018): the same seven objects, in the same order, with every
+ * object's bytes kept except the manifest's and the provenance's. Those two are v5's documents with every κ
+ * relabelled `blake3:` over the same bytes, under schemas `prism/holo/6` and `prismpm/model-provenance/3`; the
+ * provenance's `application_kappa` names the new manifest. The build's `*_sha256` fields and LexLean's ids are kept
+ * as they are (ADR-018 §7). A κ that names bytes outside the holo, such as a `basis`, cannot be relabelled, so it is
+ * refused. A signed holo is refused: its statements name v5 subjects; sign the v6 holo again.
+ *
+ * @param {Uint8Array | ArrayBuffer | object} source the holo's bytes, or a parsed archive
+ * @returns {Uint8Array} the holo v6, sealed with BLAKE3
+ */
+export function upgradeToV6(source) {
+  const parsed = source && typeof source === 'object' && Array.isArray(source.sections) ? source : parseArchive(asBytes(source));
+  if (parsed.format === 6) return parsed.bytes.slice();
+  if (parsed.format !== 5) fail('archive.version', `only a holo v5 is upgraded to v6; this is a holo v${parsed.format}`);
+  if (parsed.sections.length !== ROLES_V5.length) fail('attestation.format', 'a signed holo v5 is not upgraded: its statements name v5 subjects; strip them, upgrade, and sign the holo v6');
+  const resolved = resolveArchive(parsed);
+  if (!resolved.identities.verified) fail('archive.manifest', 'only a holo v5 that verifies is upgraded to v6');
+  const objects = parsed.sections.map((section) => section.body);
+  const labels = new Map([1, 3, 4, 5, 6].map((index) => [labelOf(5, objects[index]), labelOf(6, objects[index])]));
+  const manifest = relabel({ ...resolved.manifest, schema: MANIFEST_SCHEMA_V6 }, labels);
+  if (manifest.unmapped) fail('archive.manifest', `the manifest names ${manifest.unmapped}, which is not an object of this holo, so it has no blake3 label here`);
+  const manifestBytes = encoder.encode(canonicalJson(manifest.value));
+  labels.set(resolved.identities.applicationKappa, labelOf(6, manifestBytes));
+  const provenance = relabel({ ...resolved.provenance, schema: PROVENANCE_SCHEMA_V6 }, labels);
+  if (provenance.unmapped) fail('archive.manifest', `the provenance names ${provenance.unmapped}, which is not an object of this holo, so it has no blake3 label here`);
+  objects[0] = manifestBytes;
+  objects[2] = encoder.encode(canonicalJson(provenance.value));
+  return writeObjects(objects, 6);
 }

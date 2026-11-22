@@ -6,6 +6,27 @@ Version 0.1.0 was a canonicalization library with no entry here; its API lives o
 
 To move to 1.0, read the [migration guide](../../../docs/site/migration/to-1-0.md).
 
+## [0.10.5](https://github.com/UOR-Foundation/prismpm/compare/prism-code-v0.10.4...prism-code-v0.10.5) (2026-11-22)
+
+### Features Added
+
+* **holo:** a holo v6 is read, verified, signed, pushed and pulled (ADR-018) ([ce0b6fd](https://github.com/UOR-Foundation/prismpm/commit/ce0b6fdf4d039fd3d8e60a020cc3a222ad7d22b8))
+* **prism-code:** a holo v6 is read, signed, pushed and pulled (ADR-018) ([0991afe](https://github.com/UOR-Foundation/prismpm/commit/0991afe1b5e2ee419a2154cbce883780cb54b1a5))
+* **prism-code:** check, prove and build a text application in a browser worker, by the code Node runs ([13a5042](https://github.com/UOR-Foundation/prismpm/commit/13a50426228c5a869702a2c6627e48c7b2966d46))
+* **prism-code:** the browser store keeps bytes under their BLAKE3 label ([a5d4b6e](https://github.com/UOR-Foundation/prismpm/commit/a5d4b6ec90008e76c434a1620c1ea7e136ea687b))
+* **prism-code:** the workbench proves a model's own theorems in the tab ([b732b39](https://github.com/UOR-Foundation/prismpm/commit/b732b39ffbfd33d735399a48a3e26c4bb730a7e3))
+* **prism-code:** the workbench proves a model's own theorems in the tab ([a183095](https://github.com/UOR-Foundation/prismpm/commit/a183095e897d277488f2862f45d616ceadc36797))
+
+### Breaking Changes
+
+None.
+
+### Other Changes
+
+* **conformance:** a holo v6 opens, gets the v5 verdict, and fails a broken BLAKE3 seal ([9024cb4](https://github.com/UOR-Foundation/prismpm/commit/9024cb42b74140319e1e9d74d401ad8703d518a5))
+* **prism-code:** the IDE's workers run LexLean and open the kernel through the package's own modules ([5c34c01](https://github.com/UOR-Foundation/prismpm/commit/5c34c011382ef33cf4f4e1d3f092ef40996adb69))
+* **prism-code:** the starters prove in the tab; how a model's own theorems are judged ([e1f79f0](https://github.com/UOR-Foundation/prismpm/commit/e1f79f0d6a176b229d078aadb57d09cf164ec8c5))
+
 ## [0.10.4](https://github.com/UOR-Foundation/prismpm/compare/prism-code-v0.10.3...prism-code-v0.10.4) (2026-11-21)
 
 ### Features Added

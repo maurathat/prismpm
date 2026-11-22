@@ -594,6 +594,10 @@ path = "sdk/npm/prism-code/src/signing.mjs"
 module = "auth"
 
 [[owner]]
+path = "sdk/npm/prism-code/src/skills.mjs"
+module = "client"
+
+[[owner]]
 path = "sdk/npm/prism-code/src/studio/"
 module = "client"
 
@@ -612,6 +616,10 @@ module = "client"
 [[owner]]
 path = "sdk/npm/prism-code/src/tracing.mjs"
 module = "client"
+
+[[owner]]
+path = "sdk/npm/prism-code/src/vendor/kernel-path/"
+module = "verify"
 
 [[owner]]
 path = "sdk/npm/prism-code/src/vendor/spec/"
@@ -644,6 +652,10 @@ module = "images"
 [[owner]]
 path = "sdk/npm/prism-code/src/volumes.mjs"
 module = "volumes"
+
+[[owner]]
+path = "sdk/npm/prism-code/src/webgpu.mjs"
+module = "verify"
 
 [[owner]]
 path = "sdk/npm/spec/"

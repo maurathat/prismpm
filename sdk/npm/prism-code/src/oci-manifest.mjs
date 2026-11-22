@@ -76,7 +76,8 @@ export async function holoManifest(source) {
   const parsed = source && typeof source === 'object' && Array.isArray(source.sections) ? source : parseArchive(asBytes(source));
   const { name, applicationKappa } = identityOf(parsed);
   const fingerprint = holoDigest(parsed);
-  // A holo v5 is named by its κ, which is the layer digest itself; only a legacy v4 holo carries a BLAKE3 beside it.
+  // A holo v5 is named by its κ, which is the layer digest itself. A holo v6 is named by its κ, `blake3:`, which a
+  // registry cannot take as a digest, so it travels here beside the sha256 layer digest (ADR-018 §3), as a legacy v4's BLAKE3 does.
   const layerAnnotations = { [ANNOTATION.TITLE]: `${name}.holo` };
   if (parsed.format !== 5) layerAnnotations[ANNOTATION.BLAKE3] = blake3Hex(parsed.bytes);
   const layer = { mediaType: HOLO_MEDIA_TYPE, digest: await digestOf(parsed.bytes), size: parsed.bytes.length, annotations: layerAnnotations };

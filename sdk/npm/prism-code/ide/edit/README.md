@@ -173,6 +173,133 @@ The rest was tried by hand in the same browser against a stand-in on this machin
 
 `tools/kappa-registry-test.mjs` holds the client and the archive reader to this, with a registry that lies, archives with a path that leaves the folder, a link, a broken checksum, and addresses that carry a password or the wrong kind of label.
 
+### Which models prove in the tab
+
+Measured 2026-11-21 in the workbench page, built from `main` at `b65e3e8` and served from one development machine. Each model was published as a folder with its `project.json` and opened by `?project=`. The check time is LexLean's; the proof time is from the check's end to the last guarantee judged. The browser pane was not on screen while these were taken, which slows a page, so the times are upper figures.
+
+| Model | Lean | In the tab | Check | Proved | Proof |
+|---|---|---|---|---|---|
+| `model/ide-audit` | 4.32.2 | proved | 88 ms | 14 of 14 | 893 ms |
+| `model/ide-capability-gate` | 4.32.2 | proved | 146 ms | 13 of 13 | 1580 ms |
+| `model/ide-command-table` | 4.32.2 | proved | 131 ms | 5 of 5 | 204 ms |
+| `model/ide-terminal-commands` | 4.32.2 | proved | 115 ms | 19 of 19 | 6751 ms |
+| `model/ide-terminal-effects` | 4.32.2 | proved | 124 ms | 17 of 17 | 1287 ms |
+| `model/ide-terminal-flow` | 4.32.2 | proved | 99 ms | 5 of 5 | 188 ms |
+| `model/ide-terminal-reach` | 4.32.2 | proved | 145 ms | 22 of 22 | 5686 ms |
+| starter `rule-app` | 4.32.2 | proved | 127 ms | 3 of 3 | 212 ms |
+| starter `decision-app` | 4.32.2 | proved | 149 ms | 3 of 3 theorems | 422 ms, after the kernel opened once in 2.8 s |
+| starter `stateful-app` | 4.32.2 | proved | 169 ms | 10 of 10 theorems | 547 ms, after the kernel opened once in 4.5 s |
+| `model/canonical-build` | 4.32.1 | refused, `LLC0101` | 21 ms | | |
+| `model/ide-scope` | 4.32.1 | refused, `LLC0101` | 21 ms | | |
+| `model/rule-app` | 4.32.1 | refused, `LLC0101` | 32 ms | | |
+| `model/rule-judge` | 4.32.1 | refused, `LLC0101` | 29 ms | | |
+| `model/webgpu-bridge` | 4.32.1 | refused, `LLC0101` | 31 ms | | |
+
+What it says:
+
+- **Every rule table proves**, the eight of them, in 0.2 to 6.8 s. Time follows the size of the table more than the count of guarantees.
+- **A model with theorems of its own proves too**, since 2026-11-22: the two starters that are such models, 3 of 3 and 10 of 10 theorems. So phase 2c's gate, that the starters prove in the tab, is met for all three. Their rows were measured again on that day, on the build that added it; every other row is as first measured. How it is done is under "A model's own theorems" below.
+- **A model on Lean 4.32.1 is not checked at all.** The LexLean this page pins takes 4.32.2 only, and answers `LLC0101` in about 25 ms. Five of this package's own models are on 4.32.1, `model/rule-app` and `model/rule-judge` among them.
+
+The three starters were started as prism-code starts an app (`startApp`); a starter is not a whole LexLean project until then.
+
+### A model's own theorems
+
+A rule table's guarantees go to one kernel (`prove-worker.mjs`). A model that states theorems of its own, as the decision and stateful starters do, goes to another, in a worker of its own (`model-prove-worker.mjs`). Nothing in it is the IDE's: `prove-core.mjs` opens the model kernel from its three files, each admitted by its BLAKE3 label, and `kernelProver` puts the model to it, the functions `prism_build` runs.
+
+- A theorem is proved only when this kernel accepted a proof of it in this run, within the axioms it declares. The other two answers are said as they are: "not proved" when the proof rests on axioms the theorem does not declare, and "not settled" when no proof was accepted, which says nothing about whether the statement is true.
+- A theorem that is not proved is marked under Problems at the line that states it, in whichever file of the model that is.
+- The kernel is laid back to its just-loaded state before every run, so what one edit declared cannot stand in for the next.
+- The worker starts only when such a model is met. A page that opens rule tables never fetches this kernel, whose base library is 20 MB (3.2 MB as served).
+
+Both existing workers now also run the package's own code: `lexlean-worker.mjs` admits and runs LexLean through `toolchain.mjs` and `lexlean-core.mjs`, and `prove-worker.mjs` takes its kernel from `openKernel`. What a rule table's guarantee means, and what counts as proved, stayed in the IDE.
+
+Tried by hand in one browser, on the assembled site served from one machine:
+
+| Step | Shown |
+|---|---|
+| Open the bundled rule table | "13 of 13 guarantees proved"; the theorem kernel is not started and none of its files is fetched |
+| Flip a rule, undo, twice | 3 of 13, then 13 of 13, each time: the kernel is laid back between runs |
+| Open the decision starter | "3 of 3 theorems proved by Lean's kernel in this tab, in 422 ms"; the kernel opened once in 2.8 s |
+| Open the stateful starter | "10 of 10 theorems proved … in 547 ms"; the kernel opened once in 4.5 s |
+| In it, let a booking pass 12 seats | "8 of 10 theorems proved … 2 not": `bookKeepsBounds` and `inv001KeptByBook`, each "not settled", marked at lines 70 and 97 of `DinnerSeatsProofs.lex.tex` |
+| Undo, then the same again | 10 of 10, then 8 of 10, then 10 of 10 |
+
+### Build, in the tab
+
+**Build**, beside "Download model", runs the package's whole build in the worker that holds LexLean and Lean's kernel: `buildFromFiles` (`build-core.mjs`), the functions `prism_build` runs. LexLean checks the model, the kernel judges its theorems, and the holo is made with nothing compiled, from the evaluator guest prism-code pins, which the worker admits by its BLAKE3 label. A holo is given only when every theorem was proved, the holo reads back verified and every acceptance vector passes through it. Then the page names it by its label and offers it to save; `window.prismModel.holo()` gives its bytes to whatever runs it next.
+
+Tried by hand in one browser (Chromium), on the assembled site served from one machine, one run each:
+
+| Step | Shown |
+|---|---|
+| Build the stateful starter | "Built in this tab in 2322 ms, with nothing compiled: Dinner seats.holo, 69734 bytes, blake3:2ce8cb52…. Proved: Lean's kernel accepted all 10 of its theorems. Tested: 59 of 59 examples give their recorded answer through it." |
+| Let a booking pass 12 seats, build (planted defect) | "Not built (stopped at prove): 2 of 10 theorems are not proved"; no holo is kept |
+| Undo, build | the same holo again: the same 69734 bytes under the same label |
+| Build the decision starter | Parking fee tier.holo, 41686 bytes; 3 of 3 theorems; 25 of 25 examples; 924 ms |
+| Build the rule-app starter | "The holo is not built: the model declares 0 text applications". A rule app is built another way, and this does not build one |
+
+### Run, in the tab
+
+When a build gives a holo, a run panel opens under it. The holo is opened and run by Holospace's library (`openHolospace`, `open`, `run`), which is published beside the page: `tools/build-edit-site.mjs` writes its four files into `holospace/` only when each derives to the BLAKE3 label `tools/holospace-pins.json` names, and nothing is fetched from Holospace's site at run time. The library judges the holo again before anything runs, its seal, its members and its examples replayed, and gives nothing to call unless its verdict is "verified".
+
+Each request is one call on a fresh instance. An app that keeps state keeps it in the request, as the stateful starter does: with "send the earlier requests with it" ticked, the page holds the earlier requests and sends each new one after them, joined by a semicolon. "Start over" forgets them.
+
+Tried by hand in the same browser, on the stateful starter, one run:
+
+| Step | Shown |
+|---|---|
+| Build | the run panel: "Ready to run Dinner seats: its holo was judged verified in this tab; 59 of 59 of its examples replayed." |
+| `book 4`, then `book 6`, each alone | "booked booked=4 list=open", then "booked booked=6 list=open": no state is kept between calls |
+| The same with the earlier requests sent | 4, then 10 |
+| `book 3` | "full booked=10 list=open" |
+| `cancel 2`, then `book 3` | "cancelled booked=8 list=open", then "booked booked=11 list=open": the answers the model's own examples record |
+| A request the app does not know | "invalid" |
+
+Limits of the run panel:
+
+- A request the app answers "invalid" is kept among the earlier requests like any other, so one mistyped step spoils the ones after it until "Start over".
+- The semicolon is the stateful starter's own way of carrying its history. Another app may carry its state otherwise, and the page does not know.
+- The app's own View is not shown: only requests and answers as text.
+- A holo that is not judged verified is not run, and the panel says which verdict it got. That path was not tried: every holo the build gives was verified.
+- Holospace's library keeps its store in this origin's private file system, in a folder named `holospace-store`.
+
+### A workspace kept in the store
+
+`edit/ide/?workspace=<name>` keeps the model's files in a workspace of Holospace's store, in this browser, and mounts them in the workbench through Holospace's own file provider (`h.workbench(h.workspace(name))`, given to `registerFileSystemOverlay`). The IDE writes no file provider of its own. A name is lowercase letters, digits, dots, dashes and underscores, 63 at most.
+
+- The first visit puts the model there as fetched, all its files in one step. Later visits open what was saved, and files removed there stay removed.
+- A change is saved by the workbench's own save, which the page asks for a moment after each change: this workbench does not save by itself after a pause. Every save is a new manifest under a new BLAKE3 label, so each saved state of the workspace has a name.
+- In a workspace there is no draft: the line under the strip names the workspace and what differs from the model as fetched.
+- Without `?workspace=` nothing changes: the files are held in memory and changes are kept as a draft, as before.
+
+Tried by hand in the same browser, on the stateful starter, one run:
+
+| Step | Shown |
+|---|---|
+| Open with `?workspace=dinner-2` | the Explorer lists the model from the store; 10 of 10 theorems; "Workspace "dinner-2", kept in this browser's store. Its files are the model as fetched." |
+| Let a booking pass 12 seats | 8 of 10; the workspace's label changes; "Changed from the model as fetched: src/DinnerSeats.lex.tex." |
+| Load the page again | the change is there, 8 of 10 |
+| Undo it | 10 of 10; "Its files are the model as fetched." |
+| Build, then run `book 5` | the same holo as from memory, by its label; "booked booked=5 list=open" |
+| Ctrl+S after typing | the file in the store has the typed text, and the label moved |
+| Open without `?workspace=` | as before: no workspace, a draft |
+
+Limits of a workspace:
+
+- It is in this browser only, in this site's storage. Nothing sends it anywhere.
+- Two tabs on one workspace were not tried. Holospace refuses a save made from a stale view; what the workbench then shows was not looked at.
+- The terminal's commands that change a file write through the same store; that path was not tried in a workspace.
+- The gate is not asked on file requests here: the workspace is opened ungated.
+- The editor's drafts and the terminal's kept output are still in their own stores. Moving them into this one is decided and not done.
+
+Limits of the build:
+
+- It builds text applications. A rule table is proved in the page and not built here.
+- The holo is format v5, as the package's builder writes it.
+- The holo is kept only in the page: a reload loses it.
+- For a theorem with no proof the reason shown can be "no proof found (process is not defined)". The verdict is right, nothing is called proved; the reason is the proof finder (`src/vendor/kernel-path/emit.mjs`) reading `process.env`, which a browser does not have. Whether that also hides a proof Node would find is not known.
+
 Limits of the workbench page:
 
 - Opening by label is read only: the page pushes nothing to a registry. A model gets there by `curl`, as the registry's README shows, or by a tool that can push.
@@ -331,7 +458,7 @@ Limits:
 
 - `index.html` here is a plain text area: no syntax colours, no completion, no formatting (the WASI build of LexLean refuses commands that write).
 - On the plain page one file is editable: the project's first entrypoint. The workbench page opens every file.
-- Rule tables only. A model with theorems of its own is checked, and the page says its guarantees are not proved here. `model-prove.mjs` could be tried for those; it did not finish on `model/ide-scope` in 40 minutes in Node.
+- A model's own theorems are proved in the workbench page only. The plain edit page still says a model that is not a rule table is not proved here. The table under "Which models prove in the tab" has each model.
 - "Refused" (the kernel does not accept a guarantee that no request breaks) was never seen: no such model was tried.
 - A blank line added at the end of the file makes LexLean refuse the model. That is LexLean's rule, shown as it reports it.
 - Nothing an edit changes is saved or can be sent anywhere: the page has no way to write a model back.
