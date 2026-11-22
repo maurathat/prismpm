@@ -55,7 +55,7 @@ export async function lexleanRun(module, files, args) {
         continue;
       }
       if (retried >= (fresh ? SAME_MODULE_TRIES + FRESH_MODULE_TRIES : SAME_MODULE_TRIES)) {
-        throw new PrismCodeError('lexlean.wasm-failed', `LexLean as WebAssembly trapped ${retried} times running \`${args.join(' ')}\` (${error.message}). This is the engine, not the model.`);
+        throw new PrismCodeError('lexlean.wasm-failed', `LexLean as WebAssembly trapped ${retried} times running \`${args.join(' ')}\` (${error.message}). This is a fault of the browser's WebAssembly engine and says nothing about the model; check again, or use another browser.`);
       }
     }
   }
