@@ -184,3 +184,32 @@ jobs:
           fingerprint=$(node -e 'const f = require("fs").readFileSync(process.argv[1]); console.log(f.subarray(f.length - 32).toString("hex"))' "$RUNNER_TEMP/attested.holo")
           node bin/prism-code.mjs pull "${REF%:*}@blake3:${fingerprint}" "$RUNNER_TEMP/by-fingerprint.holo"
           cmp "$RUNNER_TEMP/attested.holo" "$RUNNER_TEMP/by-fingerprint.holo"
+      # A holo v6 (ADR-018): GHCR takes the push with its ?also=, cosign accepts a statement whose object subject
+      # carries blake3 and sha256, and the holo comes back by tag and by its blake3 κ.
+      - name: A holo v6, signed keyless, goes to GHCR and comes back by its blake3 κ
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module -e '
+            import { readFileSync, writeFileSync } from "node:fs";
+            import { upgradeToV6 } from "./src/archive.mjs";
+            writeFileSync(process.argv[1], upgradeToV6(readFileSync("fixtures/Calculator.v5.holo")));
+          ' "$RUNNER_TEMP/v6.holo"
+          node bin/prism-code.mjs attest "$RUNNER_TEMP/v6.holo"             --predicate "$RUNNER_TEMP/predicate.json" --type "$TYPE" --output "$RUNNER_TEMP/attested-v6.holo"
+          node bin/prism-code.mjs push "$RUNNER_TEMP/attested-v6.holo" "${REF}-v6" --keyless
+          cosign verify-attestation "${REF}-v6" --type "$TYPE"             --certificate-identity "$IDENTITY" --certificate-oidc-issuer "$ISSUER" > "$RUNNER_TEMP/cosign-v6.jsonl"
+          node -e '
+            const line = require("fs").readFileSync(process.argv[1], "utf8").trim().split("\n")[0];
+            const statement = JSON.parse(Buffer.from(JSON.parse(line).payload, "base64"));
+            if (Object.keys(statement.subject[0].digest).join() !== "sha256") throw new Error("the manifest is not named by sha256 alone");
+            if (Object.keys(statement.subject[1].digest).sort().join() !== "blake3,sha256") throw new Error("the v6 object does not carry blake3 and sha256");
+          ' "$RUNNER_TEMP/cosign-v6.jsonl"
+          node bin/prism-code.mjs pull "${REF}-v6" "$RUNNER_TEMP/pulled-v6.holo" --type "$TYPE"             --certificate-identity "$IDENTITY" --certificate-oidc-issuer "$ISSUER"
+          cmp "$RUNNER_TEMP/attested-v6.holo" "$RUNNER_TEMP/pulled-v6.holo"
+          kappa=$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { blake3Hex } from "./src/blake3.mjs";
+            console.log(blake3Hex(readFileSync(process.argv[1])));
+          ' "$RUNNER_TEMP/attested-v6.holo")
+          node bin/prism-code.mjs pull "${REF%:*}@blake3:${kappa}" "$RUNNER_TEMP/by-kappa-v6.holo"
+          cmp "$RUNNER_TEMP/attested-v6.holo" "$RUNNER_TEMP/by-kappa-v6.holo"
