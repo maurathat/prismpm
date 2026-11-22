@@ -17,6 +17,7 @@
   #run form { display: flex; gap: .5rem; align-items: center; margin: .3rem 0; flex-wrap: wrap; }
   #run input[type="text"] { font: 12px/1.4 ui-monospace, monospace; flex: 1; min-width: 12rem; background: #111; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: .15rem .4rem; }
   #run button { font: inherit; color: #ddd; background: none; border: 1px solid #555; border-radius: 3px; padding: .1rem .5rem; cursor: pointer; }
+  #runView { display: block; width: 100%; height: 14rem; border: 1px solid #555; border-radius: 3px; background: #fff; margin: .3rem 0; }
   #runLog { margin: 0; font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
   #strip[data-state="ok"] { color: #6fcf8f; } #strip[data-state="bad"] { color: #ff8a8a; }
   #match { padding: .35rem .75rem; border-bottom: 1px solid #333; }
@@ -37,6 +38,7 @@
     <label title="For an app that keeps its state in the request, as the stateful starter does: each request is sent after the earlier ones, joined by a semicolon"><input id="runKeep" type="checkbox"> send the earlier requests with it</label>
     <button id="runClear" type="button">Start over</button>
   </form>
+  <iframe id="runView" title="The app's own page" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" hidden></iframe>
   <pre id="runLog" aria-label="Requests and answers"></pre>
 </div>
 <div id="match" role="status" hidden></div>
