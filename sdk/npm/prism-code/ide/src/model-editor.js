@@ -297,6 +297,64 @@ try {
   // The model as it stands in the editor, as one archive. The same model gives the same bytes, so the label names it.
   window.prismModel.archive = () => { const all = { ...files, ...current }; for (const path of removed) delete all[path]; return modelTar(all); };
   const took = document.getElementById('took');
+  // Run: the holo that was just built, opened and run by Holospace's library, published beside this page and held
+  // to its labels when the site was built. The library judges the holo again (its seal, its members, its examples
+  // replayed) before anything is run, and gives nothing to call unless its verdict is "verified". Each request is
+  // one call on a fresh instance: an app that keeps state keeps it in the request, and this page holds the earlier
+  // requests for it.
+  const runBox = document.getElementById('run');
+  const runVerdict = document.getElementById('runVerdict');
+  const runForm = document.getElementById('runForm');
+  const runInput = document.getElementById('runInput');
+  const runKeep = document.getElementById('runKeep');
+  const runLog = document.getElementById('runLog');
+  let holospace = null;
+  let running = null;
+  const library = () => (holospace ??= import(/* @vite-ignore */ EDIT + 'holospace/holospace.bundle.mjs').then((m) => m.openHolospace()));
+  async function openRun(bytes) {
+    running = null;
+    runLog.textContent = '';
+    runForm.hidden = true;
+    state.run = null;
+    if (!bytes) { runBox.hidden = true; return; }
+    runBox.hidden = false;
+    runBox.dataset.state = '';
+    runVerdict.textContent = 'Opening the holo to run it…';
+    try {
+      const h = await library();
+      const opened = await h.open(bytes.slice());
+      const replayed = opened.replay ? `; ${opened.replay.passed} of ${opened.replay.total} of its examples replayed` : '';
+      state.run = { verdict: opened.verdict, error: opened.error ?? null, kind: opened.kind ?? null, stateful: opened.stateful ?? null, replay: opened.replay ?? null, sent: [], answers: [] };
+      if (opened.verdict !== 'verified') {
+        runBox.dataset.state = 'refused';
+        runVerdict.textContent = `Not run: the holo was judged "${opened.verdict}"` + (opened.error ? ` (${opened.error})` : '') + '. Nothing of it was started.';
+        return;
+      }
+      running = { runner: h.run(opened), steps: [] };
+      runBox.dataset.state = 'verified';
+      runVerdict.textContent = `Ready to run ${opened.name ?? 'the app'}: its holo was judged verified in this tab${replayed}. Each request is one call on a fresh instance.`;
+      runForm.hidden = false;
+    } catch (error) {
+      state.run = { verdict: null, error: String(error?.message ?? error) };
+      runBox.dataset.state = 'refused';
+      runVerdict.textContent = `Not run: the holo could not be opened here (${state.run.error}).`;
+    }
+  }
+  // `send`, not `run`: this object is also the page's state, and `run` there is what the last run was.
+  window.prismModel.send = async (text) => {
+    if (!running) throw new Error('nothing is ready to run: build first');
+    const request = runKeep.checked ? [...running.steps, text].join(';') : text;
+    let answers;
+    try { answers = await running.runner.step(request); } catch (error) { answers = [`(the app did not answer: ${String(error?.message ?? error)})`]; }
+    if (runKeep.checked) running.steps.push(text);
+    state.run.sent.push(request);
+    state.run.answers.push(answers);
+    runLog.textContent += `> ${request}\n${answers.map((a) => '  ' + a).join('\n')}\n`;
+    runLog.scrollTop = runLog.scrollHeight;
+    return answers;
+  };
+  runForm.addEventListener('submit', (event) => { event.preventDefault(); const text = runInput.value; if (text === '') return; runInput.value = ''; window.prismModel.send(text); });
+  document.getElementById('runClear').addEventListener('click', () => { if (running) running.steps = []; runLog.textContent = ''; if (state.run) { state.run.sent = []; state.run.answers = []; } });
   // Build: the package's own build, in the worker that holds LexLean and Lean's kernel. The holo is offered only
   // when the build gives one: every theorem proved, the holo read back verified, every acceptance vector passing.
   const buildButton = document.getElementById('build');
@@ -321,6 +379,7 @@ try {
       diagnostics: (built.diagnostics ?? []).length, holo: built.holo ? { label: built.holo.label, name: built.holo.name, bytes: built.holo.bytes.length, semanticId: built.holo.semanticId } : null };
     // The bytes are kept for whoever runs or saves the holo next; a failed build keeps none.
     window.prismModel.holo = built.holo ? () => built.holo.bytes : null;
+    await openRun(built.holo ? built.holo.bytes : null);
     if (!built.holo) {
       took.textContent = `Not built (stopped at ${built.stage}): ${built.message}`;
       return state.built;

@@ -239,11 +239,36 @@ Tried by hand in one browser (Chromium), on the assembled site served from one m
 | Build the decision starter | Parking fee tier.holo, 41686 bytes; 3 of 3 theorems; 25 of 25 examples; 924 ms |
 | Build the rule-app starter | "The holo is not built: the model declares 0 text applications". A rule app is built another way, and this does not build one |
 
+### Run, in the tab
+
+When a build gives a holo, a run panel opens under it. The holo is opened and run by Holospace's library (`openHolospace`, `open`, `run`), which is published beside the page: `tools/build-edit-site.mjs` writes its four files into `holospace/` only when each derives to the BLAKE3 label `tools/holospace-pins.json` names, and nothing is fetched from Holospace's site at run time. The library judges the holo again before anything runs, its seal, its members and its examples replayed, and gives nothing to call unless its verdict is "verified".
+
+Each request is one call on a fresh instance. An app that keeps state keeps it in the request, as the stateful starter does: with "send the earlier requests with it" ticked, the page holds the earlier requests and sends each new one after them, joined by a semicolon. "Start over" forgets them.
+
+Tried by hand in the same browser, on the stateful starter, one run:
+
+| Step | Shown |
+|---|---|
+| Build | the run panel: "Ready to run Dinner seats: its holo was judged verified in this tab; 59 of 59 of its examples replayed." |
+| `book 4`, then `book 6`, each alone | "booked booked=4 list=open", then "booked booked=6 list=open": no state is kept between calls |
+| The same with the earlier requests sent | 4, then 10 |
+| `book 3` | "full booked=10 list=open" |
+| `cancel 2`, then `book 3` | "cancelled booked=8 list=open", then "booked booked=11 list=open": the answers the model's own examples record |
+| A request the app does not know | "invalid" |
+
+Limits of the run panel:
+
+- A request the app answers "invalid" is kept among the earlier requests like any other, so one mistyped step spoils the ones after it until "Start over".
+- The semicolon is the stateful starter's own way of carrying its history. Another app may carry its state otherwise, and the page does not know.
+- The app's own View is not shown: only requests and answers as text.
+- A holo that is not judged verified is not run, and the panel says which verdict it got. That path was not tried: every holo the build gives was verified.
+- Holospace's library keeps its store in this origin's private file system, in a folder named `holospace-store`.
+
 Limits of the build:
 
 - It builds text applications. A rule table is proved in the page and not built here.
 - The holo is format v5, as the package's builder writes it.
-- Nothing runs the holo yet, and it is kept only in the page: a reload loses it.
+- The holo is kept only in the page: a reload loses it.
 - For a theorem with no proof the reason shown can be "no proof found (process is not defined)". The verdict is right, nothing is called proved; the reason is the proof finder (`src/vendor/kernel-path/emit.mjs`) reading `process.env`, which a browser does not have. Whether that also hides a proof Node would find is not known.
 
 Limits of the workbench page:
