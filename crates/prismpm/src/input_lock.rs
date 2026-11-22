@@ -547,9 +547,7 @@ mod tests {
             ("hologram:guest/core-wasm@3", "core-wasm-3.wit"),
         ] {
             let path = manifest_dir().join("../../sdk/npm/spec/worlds").join(file);
-            let text = std::fs::read_to_string(path).unwrap().replace("
-", "
-");
+            let text = std::fs::read_to_string(path).unwrap().replace("\r\n", "\n");
             let pinned = world(Some(contract)).unwrap();
             let actual = digest_set(text.as_bytes());
             assert_eq!(pinned["contract"], contract);
