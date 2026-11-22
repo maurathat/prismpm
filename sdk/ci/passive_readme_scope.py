@@ -139,7 +139,7 @@ def check_readme_links(root: Path, head: str, readme: str) -> tuple[int, int]:
     html_links = list(HTML_LOCAL.finditer(readme))
     if readme.count("](") != len(markdown_links):
         raise Refused("unsupported Markdown link syntax")
-    if len(re.findall(r"\\b(?:src|href)\\s*=", readme, re.I)) != len(html_links):
+    if len(re.findall(r"\b(?:src|href)\s*=", readme, re.I)) != len(html_links):
         raise Refused("unsupported HTML link attribute")
     checked = 0
     for match in markdown_links + html_links:
