@@ -42,7 +42,8 @@ const guest = () => (evaluator ??= (async () => {
 })());
 async function open({ lexlean, kernel }) {
   const started = performance.now();
-  const pins = await (await fetch(kernel, { cache: 'no-store' })).json();
+  // A fresh copy when the network gives one; asked plainly when that request fails, as in a browser working offline.
+  const pins = await (await fetch(kernel, { cache: 'no-store' }).catch(() => fetch(kernel))).json();
   // A pin names its file beside the pins; the label it must have is in the pin, never taken from the file.
   const at = (pin) => ({ ...pin, url: new URL(pin.url, kernel).href });
   const admitted = (async () => {

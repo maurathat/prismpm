@@ -27,7 +27,8 @@ const unpack = async (response) => new Uint8Array(await new Response(response.bo
 async function open() {
   const started = performance.now();
   const base = new URL('./kernel/', import.meta.url).href;
-  const manifest = await (await fetch(base + 'manifest.json', { cache: 'no-store' })).json();
+  // A fresh copy when the network gives one; asked plainly when that request fails, as in a browser working offline.
+  const manifest = await (await fetch(base + 'manifest.json', { cache: 'no-store' }).catch(() => fetch(base + 'manifest.json'))).json();
   const [glue, wasm, library] = await Promise.all([manifest.glue, manifest.wasm, manifest.library].map(async (entry) => unpack(await fetch(base + entry.file))));
   const [g, w, l] = await Promise.all([glue, wasm, library].map(sha256));
   if (g !== manifest.glue.sha256 || w !== manifest.wasm.sha256 || l !== manifest.library.sha256) throw Object.assign(new Error('the kernel, its loader or its library is not the pinned one'), { reason: 'mismatch' });

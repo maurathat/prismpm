@@ -10,7 +10,10 @@
 
 // The pin of the LexLean executable (commit, BLAKE3 label, encoding), as prism-code states it in
 // src/journey/lexlean-wasm.mjs. That module reads files, so whoever serves the page hands the pin over as pin.json.
-const LEXLEAN_WASM = await (await fetch('./pin.json', { cache: 'no-store' })).json();
+// A fresh copy when the network gives one; when that request fails, as it does in a browser switched to work offline,
+// the same address asked plainly, which the site's worker answers from what it keeps.
+const fresh = (url) => fetch(url, { cache: 'no-store' }).catch(() => fetch(url));
+const LEXLEAN_WASM = await (await fresh('./pin.json')).json();
 
 const $ = (id) => document.getElementById(id);
 const state = (window.prismEdit = { ready: false, checks: 0, last: null, error: null, engine: null });
@@ -34,9 +37,9 @@ const PROJECT = asked ? new URL(asked.replace(/\/?$/, '/'), location.href).href 
 const files = {};
 let listing;
 try {
-  listing = await (await fetch(PROJECT ? PROJECT + 'project.json' : './project.json', { cache: 'no-store' })).json();
+  listing = await (await fresh(PROJECT ? PROJECT + 'project.json' : './project.json')).json();
   await Promise.all(listing.files.map(async (path) => {
-    const response = await fetch((PROJECT ?? './project/') + path, { cache: 'no-store' });
+    const response = await fresh((PROJECT ?? './project/') + path);
     if (!response.ok) throw new Error(path + ' answered ' + response.status);
     files['/' + path] = await response.text();
   }));
