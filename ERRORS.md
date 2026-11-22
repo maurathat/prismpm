@@ -1132,9 +1132,9 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `system.events` |  | `DK-41` | This client has no event bus; prism.system from createPrism() has one. |
 | `system.lock` |  | `DK-41` | prismpm.lock cannot be read, or this client cannot read files. |
 | `system.option` |  | `DK-41` | prism.system was given options that are not a plain object, an option it does not have, or a time that is not a Date, an ISO 8601 time or milliseconds. |
-| `template.altered` |  | `DK-50` | A file of the canonical template, fetched from its pinned commit, does not have its pinned SHA-256, so nothing was written. |
-| `template.exists` |  | `DK-50` | The project already holds a file of the canonical template with other bytes, so the app was not started there and nothing was written. |
-| `template.unavailable` |  | `DK-50` | A file of the canonical template could not be fetched from its pinned commit, so nothing was written; it is fetched once per app. |
+| `template.altered` |  | `DK-51` | A file of the canonical template, fetched from its pinned commit, does not have its pinned SHA-256, so nothing was written. |
+| `template.exists` |  | `DK-51` | The project already holds a file of the canonical template with other bytes, so the app was not started there and nothing was written. |
+| `template.unavailable` |  | `DK-51` | A file of the canonical template could not be fetched from its pinned commit, so nothing was written; it is fetched once per app. |
 | `tier.project` |  | `DK-41` | The LexLean project of a build tier cannot be found: --project is outside the root or has no project file, or more than one project is there. |
 | `transparency_failed` | `TransparencyError` | `CT-12` | The attestation's transparency log entry does not verify. |
 | `trust_root_invalid` | `TrustRootError` | `CT-12` | The trusted root is missing or malformed. |
