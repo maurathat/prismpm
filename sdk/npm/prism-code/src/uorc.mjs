@@ -1,18 +1,26 @@
 /**
- * Holo v5 container: a self-contained raw UORC archive of ordered objects
+ * The holo container: a self-contained raw UORC archive of ordered objects
  * (ADR-017; UOR-Foundation/compression `Uorc.Codec.Archive`, what
  * `uorc::archive::raw_objects` writes). The Rust twin is
  * `crates/prismpm/src/holo/v5.rs`; both are held to the same bytes.
  *
- *   "UORC" 02 01 00 00 uleb(count) uleb(length)* uleb(bodyLength) body seal[32]
+ *   "UORC" 02 profile 00 00 uleb(count) uleb(length)* uleb(bodyLength) body seal[32]
  *
- * `seal` is UORC-SHA256-CHAIN-v1 over every byte before it. Every identity is
- * a κ-label: `sha256:` and the lowercase hex SHA-256 of the bytes it names.
+ * The profile byte says how the archive seals and names what it holds:
+ *
+ *   1  holo v5 (ADR-017): the seal is UORC-SHA256-CHAIN-v1 of every byte before it; a κ-label is `sha256:`.
+ *   2  holo v6 (ADR-018): the seal is plain BLAKE3 of every byte before it; a κ-label is `blake3:`.
+ *
+ * `kappa`, `isKappa` and `chain` keep their v5 meaning; `labelOf`, `isLabel` and `sealOf` take the format.
  */
 import { DigestMismatchError, fail } from './errors.mjs';
 import { sha256HexSync } from './sha256.mjs';
+import { blake3, kappa as blake3Label } from './blake3.mjs';
 
+/** The magic of a holo v5: UORC format 2, profile 1. */
 export const MAGIC = Uint8Array.of(0x55, 0x4f, 0x52, 0x43, 0x02, 0x01);
+/** The magic of a holo v6: UORC format 2, profile 2 (ADR-018). */
+export const MAGIC_V6 = Uint8Array.of(0x55, 0x4f, 0x52, 0x43, 0x02, 0x02);
 export const SEAL_LENGTH = 32;
 export const KAPPA_LENGTH = 71;
 /** The decode budget every reader applies to an application holo. */
@@ -47,6 +55,37 @@ export function kappa(bytes) {
 export function isKappa(label) {
   return typeof label === 'string' && /^sha256:[0-9a-f]{64}$/.test(label);
 }
+
+const noFormat = (format) => fail('archive.version', `there is no holo format ${format}`);
+
+/** The κ-label of `bytes` in holo format 5 (`sha256:`) or 6 (`blake3:`). */
+export function labelOf(format, bytes) {
+  if (format === 6) return blake3Label(bytes);
+  if (format === 5) return kappa(bytes);
+  return noFormat(format);
+}
+
+/** Whether `label` is a well-formed κ-label of holo format 5 or 6. */
+export function isLabel(format, label) {
+  if (format === 5) return isKappa(label);
+  return format === 6 && typeof label === 'string' && /^blake3:[0-9a-f]{64}$/.test(label);
+}
+
+/** The holo format a UORC archive's magic names: 5, 6, or null for anything else. */
+export function formatOf(bytes) {
+  if (bytes.length < 6 || !equal(bytes.subarray(0, 5), MAGIC.subarray(0, 5))) return null;
+  return bytes[5] === 1 ? 5 : bytes[5] === 2 ? 6 : null;
+}
+
+/** The seal of `preimage` in holo format 5 (UORC-SHA256-CHAIN-v1) or 6 (BLAKE3), as bytes. */
+export function sealOf(format, preimage) {
+  if (format === 6) return blake3(preimage);
+  if (format === 5) return chain(preimage);
+  return noFormat(format);
+}
+
+/** The name of the seal a holo format uses, for messages. */
+export const sealName = (format) => (format === 6 ? 'BLAKE3' : 'UORC-SHA256-CHAIN-v1');
 
 /** Whether `bytes` start like a UORC archive. */
 export function isUorc(bytes) {
@@ -90,13 +129,14 @@ function readUleb(bytes, at) {
   }
 }
 
-/** The self-contained raw UORC archive of `objects`, in order. */
-export function writeObjects(objects) {
-  const header = [MAGIC, Uint8Array.of(0, 0), uleb(objects.length)];
+/** The self-contained raw UORC archive of `objects`, in order, as a holo of `format` (5 unless 6 is asked for). */
+export function writeObjects(objects, format = 5) {
+  const magic = format === 6 ? MAGIC_V6 : format === 5 ? MAGIC : noFormat(format);
+  const header = [magic, Uint8Array.of(0, 0), uleb(objects.length)];
   for (const object of objects) header.push(uleb(object.length));
   header.push(uleb(objects.reduce((n, o) => n + o.length, 0)));
   const preimage = concat([...header, ...objects]);
-  return concat([preimage, chain(preimage)]);
+  return concat([preimage, sealOf(format, preimage)]);
 }
 
 function equal(a, b) {
@@ -106,16 +146,17 @@ function equal(a, b) {
 }
 
 /**
- * The ordered objects of a raw self-contained UORC archive and whether its
- * seal matches. The framing and the budget are enforced; the seal is reported,
- * so `inspect` can still look at a damaged holo.
+ * The ordered objects of a raw self-contained UORC archive, its holo format
+ * and whether its seal matches. The framing and the budget are enforced; the
+ * seal is reported, so `inspect` can still look at a damaged holo.
  */
 export function layout(bytes, budget = APPLICATION_BUDGET) {
-  if (!equal(bytes.subarray(0, 6), MAGIC)) fail('archive.magic', 'a holo v5 file is a UORC archive (format 2, profile 1)');
+  const format = formatOf(bytes);
+  if (format === null) fail('archive.magic', 'a holo v5 or v6 file is a UORC archive (format 2, profile 1 or 2)');
   if (bytes.length < 8 + SEAL_LENGTH) fail('archive.bounds', 'UORC archive is truncated');
   const preimage = bytes.subarray(0, bytes.length - SEAL_LENGTH);
   const seal = bytes.subarray(bytes.length - SEAL_LENGTH);
-  const sealed = equal(chain(preimage), seal);
+  const sealed = equal(sealOf(format, preimage), seal);
   if (preimage[6] !== 0 || preimage[7] !== 0) fail('archive.bounds', 'a holo is a self-contained archive whose objects are stored raw');
   let read = readUleb(preimage, 8);
   if (!read) fail('archive.bounds', 'object count is not a ULEB128');
@@ -144,15 +185,17 @@ export function layout(bytes, budget = APPLICATION_BUDGET) {
     objects.push({ offset, length, bytes: preimage.subarray(offset, offset + length) });
     offset += length;
   }
-  return { objects, sealed, seal, preimage };
+  return { format, objects, sealed, seal, preimage };
 }
 
 /** The ordered objects of a UORC archive whose seal matches; anything else throws. */
 export function readObjects(bytes, budget = APPLICATION_BUDGET) {
-  if (equal(bytes.subarray(0, 6), MAGIC) && bytes.length >= SEAL_LENGTH) {
+  // The seal is checked before the framing, so any changed byte is an integrity failure, not a structural one.
+  const format = formatOf(bytes);
+  if (format !== null && bytes.length >= SEAL_LENGTH) {
     const preimage = bytes.subarray(0, bytes.length - SEAL_LENGTH);
-    if (!equal(chain(preimage), bytes.subarray(bytes.length - SEAL_LENGTH))) {
-      throw new DigestMismatchError('integrity failure: the holo was altered: its UORC-SHA256-CHAIN-v1 seal does not match', { check: 'holo.integrity' });
+    if (!equal(sealOf(format, preimage), bytes.subarray(bytes.length - SEAL_LENGTH))) {
+      throw new DigestMismatchError(`integrity failure: the holo was altered: its ${sealName(format)} seal does not match`, { check: 'holo.integrity' });
     }
   }
   return layout(bytes, budget).objects.map((object) => object.bytes);

@@ -7,202 +7,214 @@
  *
  * Hologram kappas, blob labels and the `.holo` footer are BLAKE3, which Node's
  * `crypto` does not provide, so the package carries its own.
+ *
+ * It is written for speed, because a page re-derives the label of every byte
+ * it keeps: the state of a compression is sixteen local numbers, a block is
+ * read from the input where it lies, and nothing is allocated for a block.
  */
 
 const IV = new Uint32Array([
   0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
 ]);
 const MSG_PERMUTATION = [2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
+// Which message word each of a round's sixteen places reads, for the seven rounds: the permutation, applied round
+// after round, written out once.
+const SCHEDULE = (() => {
+  const rows = [[...Array(16).keys()]];
+  for (let round = 1; round < 7; round++) rows.push(MSG_PERMUTATION.map((from) => rows[round - 1][from]));
+  return Uint8Array.from(rows.flat());
+})();
 
 const BLOCK_LEN = 64;
-const CHUNK_LEN = 1024;
+const BLOCKS_IN_CHUNK = 16;
 const CHUNK_START = 1;
 const CHUNK_END = 2;
 const PARENT = 4;
 const ROOT = 8;
+const TWO_32 = 4294967296;
 
-function rotr(x, n) {
-  return (x >>> n) | (x << (32 - n));
+/**
+ * The compression function. Reads the chaining value at `cv[cvAt..]` and the sixteen message words in `m`, and
+ * writes the new chaining value to `out[outAt..outAt + 8]`; with `wide`, the other eight words of the output too.
+ * `out` may be `cv`: the chaining value is read whole before anything is written.
+ */
+function compress(cv, cvAt, m, counterLow, counterHigh, blockLen, flags, out, outAt, wide) {
+  let s0 = cv[cvAt + 0] | 0;
+  let s1 = cv[cvAt + 1] | 0;
+  let s2 = cv[cvAt + 2] | 0;
+  let s3 = cv[cvAt + 3] | 0;
+  let s4 = cv[cvAt + 4] | 0;
+  let s5 = cv[cvAt + 5] | 0;
+  let s6 = cv[cvAt + 6] | 0;
+  let s7 = cv[cvAt + 7] | 0;
+  let s8 = IV[0] | 0;
+  let s9 = IV[1] | 0;
+  let s10 = IV[2] | 0;
+  let s11 = IV[3] | 0;
+  let s12 = counterLow | 0;
+  let s13 = counterHigh | 0;
+  let s14 = blockLen | 0;
+  let s15 = flags | 0;
+  for (let at = 0; at < 112; at += 16) {
+    s0 = (s0 + s4 + m[SCHEDULE[at + 0]]) | 0; s12 ^= s0; s12 = (s12 >>> 16) | (s12 << 16);
+    s8 = (s8 + s12) | 0; s4 ^= s8; s4 = (s4 >>> 12) | (s4 << 20);
+    s0 = (s0 + s4 + m[SCHEDULE[at + 1]]) | 0; s12 ^= s0; s12 = (s12 >>> 8) | (s12 << 24);
+    s8 = (s8 + s12) | 0; s4 ^= s8; s4 = (s4 >>> 7) | (s4 << 25);
+    s1 = (s1 + s5 + m[SCHEDULE[at + 2]]) | 0; s13 ^= s1; s13 = (s13 >>> 16) | (s13 << 16);
+    s9 = (s9 + s13) | 0; s5 ^= s9; s5 = (s5 >>> 12) | (s5 << 20);
+    s1 = (s1 + s5 + m[SCHEDULE[at + 3]]) | 0; s13 ^= s1; s13 = (s13 >>> 8) | (s13 << 24);
+    s9 = (s9 + s13) | 0; s5 ^= s9; s5 = (s5 >>> 7) | (s5 << 25);
+    s2 = (s2 + s6 + m[SCHEDULE[at + 4]]) | 0; s14 ^= s2; s14 = (s14 >>> 16) | (s14 << 16);
+    s10 = (s10 + s14) | 0; s6 ^= s10; s6 = (s6 >>> 12) | (s6 << 20);
+    s2 = (s2 + s6 + m[SCHEDULE[at + 5]]) | 0; s14 ^= s2; s14 = (s14 >>> 8) | (s14 << 24);
+    s10 = (s10 + s14) | 0; s6 ^= s10; s6 = (s6 >>> 7) | (s6 << 25);
+    s3 = (s3 + s7 + m[SCHEDULE[at + 6]]) | 0; s15 ^= s3; s15 = (s15 >>> 16) | (s15 << 16);
+    s11 = (s11 + s15) | 0; s7 ^= s11; s7 = (s7 >>> 12) | (s7 << 20);
+    s3 = (s3 + s7 + m[SCHEDULE[at + 7]]) | 0; s15 ^= s3; s15 = (s15 >>> 8) | (s15 << 24);
+    s11 = (s11 + s15) | 0; s7 ^= s11; s7 = (s7 >>> 7) | (s7 << 25);
+    s0 = (s0 + s5 + m[SCHEDULE[at + 8]]) | 0; s15 ^= s0; s15 = (s15 >>> 16) | (s15 << 16);
+    s10 = (s10 + s15) | 0; s5 ^= s10; s5 = (s5 >>> 12) | (s5 << 20);
+    s0 = (s0 + s5 + m[SCHEDULE[at + 9]]) | 0; s15 ^= s0; s15 = (s15 >>> 8) | (s15 << 24);
+    s10 = (s10 + s15) | 0; s5 ^= s10; s5 = (s5 >>> 7) | (s5 << 25);
+    s1 = (s1 + s6 + m[SCHEDULE[at + 10]]) | 0; s12 ^= s1; s12 = (s12 >>> 16) | (s12 << 16);
+    s11 = (s11 + s12) | 0; s6 ^= s11; s6 = (s6 >>> 12) | (s6 << 20);
+    s1 = (s1 + s6 + m[SCHEDULE[at + 11]]) | 0; s12 ^= s1; s12 = (s12 >>> 8) | (s12 << 24);
+    s11 = (s11 + s12) | 0; s6 ^= s11; s6 = (s6 >>> 7) | (s6 << 25);
+    s2 = (s2 + s7 + m[SCHEDULE[at + 12]]) | 0; s13 ^= s2; s13 = (s13 >>> 16) | (s13 << 16);
+    s8 = (s8 + s13) | 0; s7 ^= s8; s7 = (s7 >>> 12) | (s7 << 20);
+    s2 = (s2 + s7 + m[SCHEDULE[at + 13]]) | 0; s13 ^= s2; s13 = (s13 >>> 8) | (s13 << 24);
+    s8 = (s8 + s13) | 0; s7 ^= s8; s7 = (s7 >>> 7) | (s7 << 25);
+    s3 = (s3 + s4 + m[SCHEDULE[at + 14]]) | 0; s14 ^= s3; s14 = (s14 >>> 16) | (s14 << 16);
+    s9 = (s9 + s14) | 0; s4 ^= s9; s4 = (s4 >>> 12) | (s4 << 20);
+    s3 = (s3 + s4 + m[SCHEDULE[at + 15]]) | 0; s14 ^= s3; s14 = (s14 >>> 8) | (s14 << 24);
+    s9 = (s9 + s14) | 0; s4 ^= s9; s4 = (s4 >>> 7) | (s4 << 25);
+  }
+  if (wide) {
+    out[outAt + 8] = s8 ^ cv[cvAt + 0];
+    out[outAt + 9] = s9 ^ cv[cvAt + 1];
+    out[outAt + 10] = s10 ^ cv[cvAt + 2];
+    out[outAt + 11] = s11 ^ cv[cvAt + 3];
+    out[outAt + 12] = s12 ^ cv[cvAt + 4];
+    out[outAt + 13] = s13 ^ cv[cvAt + 5];
+    out[outAt + 14] = s14 ^ cv[cvAt + 6];
+    out[outAt + 15] = s15 ^ cv[cvAt + 7];
+  }
+  out[outAt + 0] = s0 ^ s8;
+  out[outAt + 1] = s1 ^ s9;
+  out[outAt + 2] = s2 ^ s10;
+  out[outAt + 3] = s3 ^ s11;
+  out[outAt + 4] = s4 ^ s12;
+  out[outAt + 5] = s5 ^ s13;
+  out[outAt + 6] = s6 ^ s14;
+  out[outAt + 7] = s7 ^ s15;
 }
 
-function g(s, a, b, c, d, mx, my) {
-  s[a] = (s[a] + s[b] + mx) >>> 0;
-  s[d] = rotr(s[d] ^ s[a], 16);
-  s[c] = (s[c] + s[d]) >>> 0;
-  s[b] = rotr(s[b] ^ s[c], 12);
-  s[a] = (s[a] + s[b] + my) >>> 0;
-  s[d] = rotr(s[d] ^ s[a], 8);
-  s[c] = (s[c] + s[d]) >>> 0;
-  s[b] = rotr(s[b] ^ s[c], 7);
-}
-
-function round(s, m) {
-  g(s, 0, 4, 8, 12, m[0], m[1]);
-  g(s, 1, 5, 9, 13, m[2], m[3]);
-  g(s, 2, 6, 10, 14, m[4], m[5]);
-  g(s, 3, 7, 11, 15, m[6], m[7]);
-  g(s, 0, 5, 10, 15, m[8], m[9]);
-  g(s, 1, 6, 11, 12, m[10], m[11]);
-  g(s, 2, 7, 8, 13, m[12], m[13]);
-  g(s, 3, 4, 9, 14, m[14], m[15]);
-}
-
-function permute(m) {
-  const out = new Uint32Array(16);
-  for (let i = 0; i < 16; i++) out[i] = m[MSG_PERMUTATION[i]];
-  return out;
-}
-
-/** The compression function: returns the 16-word output state. */
-function compress(cv, blockWords, counter, blockLen, flags) {
-  const s = new Uint32Array(16);
-  s.set(cv.subarray(0, 8), 0);
-  s.set(IV.subarray(0, 4), 8);
-  s[12] = Number(BigInt.asUintN(32, BigInt(counter)));
-  s[13] = Number(BigInt(counter) >> 32n);
-  s[14] = blockLen;
-  s[15] = flags;
-  let m = Uint32Array.from(blockWords);
-  for (let i = 0; i < 7; i++) {
-    round(s, m);
-    if (i < 6) m = permute(m);
-  }
-  for (let i = 0; i < 8; i++) {
-    s[i] ^= s[i + 8];
-    s[i + 8] ^= cv[i];
-  }
-  return s;
-}
-
-function wordsFromBlock(block, len) {
-  const words = new Uint32Array(16);
-  for (let i = 0; i < 16; i++) {
-    const o = i * 4;
-    words[i] =
-      (o < len ? block[o] : 0) |
-      ((o + 1 < len ? block[o + 1] : 0) << 8) |
-      ((o + 2 < len ? block[o + 2] : 0) << 16) |
-      ((o + 3 < len ? block[o + 3] : 0) << 24);
-  }
-  return words;
-}
-
-class Output {
-  constructor(inputCv, blockWords, counter, blockLen, flags) {
-    this.inputCv = inputCv;
-    this.blockWords = blockWords;
-    this.counter = counter;
-    this.blockLen = blockLen;
-    this.flags = flags;
-  }
-
-  chainingValue() {
-    return compress(this.inputCv, this.blockWords, this.counter, this.blockLen, this.flags).slice(0, 8);
-  }
-
-  rootBytes(length) {
-    const out = new Uint8Array(length);
-    let written = 0;
-    let outputCounter = 0;
-    while (written < length) {
-      const words = compress(this.inputCv, this.blockWords, outputCounter, this.blockLen, this.flags | ROOT);
-      for (let i = 0; i < 16 && written < length; i++) {
-        const w = words[i];
-        for (let b = 0; b < 4 && written < length; b++) out[written++] = (w >>> (8 * b)) & 0xff;
-      }
-      outputCounter++;
-    }
-    return out;
-  }
-}
-
-class ChunkState {
-  constructor(key, chunkCounter) {
-    this.cv = Uint32Array.from(key);
-    this.chunkCounter = chunkCounter;
-    this.block = new Uint8Array(BLOCK_LEN);
-    this.blockLen = 0;
-    this.blocksCompressed = 0;
-  }
-
-  length() {
-    return BLOCK_LEN * this.blocksCompressed + this.blockLen;
-  }
-
-  startFlag() {
-    return this.blocksCompressed === 0 ? CHUNK_START : 0;
-  }
-
-  update(input) {
-    let offset = 0;
-    while (offset < input.length) {
-      if (this.blockLen === BLOCK_LEN) {
-        const words = wordsFromBlock(this.block, BLOCK_LEN);
-        this.cv = compress(this.cv, words, this.chunkCounter, BLOCK_LEN, this.startFlag()).slice(0, 8);
-        this.blocksCompressed++;
-        this.block.fill(0);
-        this.blockLen = 0;
-      }
-      const take = Math.min(BLOCK_LEN - this.blockLen, input.length - offset);
-      this.block.set(input.subarray(offset, offset + take), this.blockLen);
-      this.blockLen += take;
-      offset += take;
-    }
-  }
-
-  output() {
-    const words = wordsFromBlock(this.block, this.blockLen);
-    return new Output(this.cv, words, this.chunkCounter, this.blockLen, this.startFlag() | CHUNK_END);
-  }
-}
-
-function parentOutput(left, right, key) {
-  const words = new Uint32Array(16);
-  words.set(left, 0);
-  words.set(right, 8);
-  return new Output(key, words, 0, BLOCK_LEN, PARENT);
+/** The sixteen little-endian words of the 64 bytes at `bytes[at..]`, into `m`. */
+function loadBlock(m, bytes, at) {
+  for (let i = 0, o = at; i < 16; i++, o += 4) m[i] = bytes[o] | (bytes[o + 1] << 8) | (bytes[o + 2] << 16) | (bytes[o + 3] << 24);
 }
 
 export class Blake3 {
   constructor() {
-    this.key = IV;
-    this.chunk = new ChunkState(this.key, 0);
-    this.stack = [];
+    // The chunk being read: its chaining value, how many of its blocks are compressed, and which chunk it is.
+    this.cv = Uint32Array.from(IV);
+    this.blocks = 0;
+    this.chunks = 0;
+    // The bytes not yet compressed: at most one block. The last block of a chunk, and of the input, waits here,
+    // because its flags are known only when it is known what follows.
+    this.block = new Uint8Array(BLOCK_LEN);
+    this.blockLen = 0;
+    // The chaining values of the subtrees to the left, deepest last: one for each set bit of the chunk count.
+    this.stack = new Uint32Array(8 * 54);
+    this.depth = 0;
+    this.m = new Uint32Array(16);
+    this.pair = new Uint32Array(16);
+    this.top = new Uint32Array(8);
   }
 
-  pushChunkCv(cv, totalChunks) {
-    let newCv = cv;
-    let n = totalChunks;
-    while ((n & 1) === 0) {
-      newCv = parentOutput(this.stack.pop(), newCv, this.key).chainingValue();
-      n = Math.floor(n / 2);
+  /** Compress the block at `bytes[at..]`, which more input follows. */
+  full(bytes, at) {
+    const m = this.m;
+    loadBlock(m, bytes, at);
+    const low = this.chunks >>> 0;
+    const high = (this.chunks / TWO_32) >>> 0;
+    const start = this.blocks === 0 ? CHUNK_START : 0;
+    if (this.blocks < BLOCKS_IN_CHUNK - 1) {
+      compress(this.cv, 0, m, low, high, BLOCK_LEN, start, this.cv, 0, false);
+      this.blocks++;
+      return;
     }
-    this.stack.push(newCv);
+    // The chunk's last block, and not the input's: the chunk is whole. Its chaining value joins the tree, merging
+    // with each subtree to its left that is now as large as it.
+    const top = this.top;
+    compress(this.cv, 0, m, low, high, BLOCK_LEN, start | CHUNK_END, top, 0, false);
+    const pair = this.pair;
+    for (let total = this.chunks + 1; total % 2 === 0; total /= 2) {
+      this.depth--;
+      pair.set(this.stack.subarray(this.depth * 8, this.depth * 8 + 8), 0);
+      pair.set(top, 8);
+      compress(IV, 0, pair, 0, 0, BLOCK_LEN, PARENT, top, 0, false);
+    }
+    this.stack.set(top, this.depth * 8);
+    this.depth++;
+    this.cv.set(IV);
+    this.blocks = 0;
+    this.chunks++;
   }
 
   update(input) {
     const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-    let offset = 0;
-    while (offset < bytes.length) {
-      if (this.chunk.length() === CHUNK_LEN) {
-        const cv = this.chunk.output().chainingValue();
-        const totalChunks = this.chunk.chunkCounter + 1;
-        this.pushChunkCv(cv, totalChunks);
-        this.chunk = new ChunkState(this.key, totalChunks);
+    const end = bytes.length;
+    let at = 0;
+    while (at < end) {
+      if (this.blockLen === BLOCK_LEN) {
+        this.full(this.block, 0);
+        this.blockLen = 0;
       }
-      const take = Math.min(CHUNK_LEN - this.chunk.length(), bytes.length - offset);
-      this.chunk.update(bytes.subarray(offset, offset + take));
-      offset += take;
+      // Whole blocks that more input follows are read where they lie.
+      if (this.blockLen === 0) for (; end - at > BLOCK_LEN; at += BLOCK_LEN) this.full(bytes, at);
+      const take = Math.min(BLOCK_LEN - this.blockLen, end - at);
+      this.block.set(bytes.subarray(at, at + take), this.blockLen);
+      this.blockLen += take;
+      at += take;
     }
     return this;
   }
 
+  /** The digest of what was read so far. Reading may go on after it. */
   digest(length = 32) {
-    let output = this.chunk.output();
-    for (let i = this.stack.length - 1; i >= 0; i--) {
-      output = parentOutput(this.stack[i], output.chainingValue(), this.key);
+    // The waiting block ends its chunk; bytes past its length are zero.
+    const last = new Uint8Array(BLOCK_LEN);
+    last.set(this.block.subarray(0, this.blockLen));
+    const m = new Uint32Array(16);
+    loadBlock(m, last, 0);
+    let cv = Uint32Array.from(this.cv);
+    let low = this.chunks >>> 0;
+    let high = (this.chunks / TWO_32) >>> 0;
+    let blockLen = this.blockLen;
+    let flags = (this.blocks === 0 ? CHUNK_START : 0) | CHUNK_END;
+    // Each subtree to the left becomes the left half of a parent, up to the root.
+    for (let d = this.depth - 1; d >= 0; d--) {
+      const right = new Uint32Array(8);
+      compress(cv, 0, m, low, high, blockLen, flags, right, 0, false);
+      m.set(this.stack.subarray(d * 8, d * 8 + 8), 0);
+      m.set(right, 8);
+      cv = IV;
+      low = 0;
+      high = 0;
+      blockLen = BLOCK_LEN;
+      flags = PARENT;
     }
-    return output.rootBytes(length);
+    const out = new Uint8Array(length);
+    const words = new Uint32Array(16);
+    for (let written = 0, block = 0; written < length; block++) {
+      compress(cv, 0, m, block >>> 0, (block / TWO_32) >>> 0, blockLen, flags | ROOT, words, 0, true);
+      for (let i = 0; i < 16 && written < length; i++) {
+        const w = words[i];
+        for (let b = 0; b < 4 && written < length; b++) out[written++] = (w >>> (8 * b)) & 0xff;
+      }
+    }
+    return out;
   }
 }
 
@@ -211,9 +223,11 @@ export function blake3(bytes, length = 32) {
   return new Blake3().update(bytes).digest(length);
 }
 
+const HEX = Array.from({ length: 256 }, (_, b) => b.toString(16).padStart(2, '0'));
+
 export function toHex(bytes) {
   let s = '';
-  for (const b of bytes) s += b.toString(16).padStart(2, '0');
+  for (const b of bytes) s += HEX[b];
   return s;
 }
 

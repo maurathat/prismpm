@@ -176,3 +176,104 @@ fn layout_and_seal_agree_with_the_uorc_cli() {
         );
     }
 }
+
+// Holo v6 (ADR-018): profile 2, sealed and named by BLAKE3. `src/uorc.mjs` is held to the same vectors.
+
+fn unhex(text: &str) -> Vec<u8> {
+    (0..text.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(&text[at..at + 2], 16).unwrap())
+        .collect()
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[test]
+fn v6_archives_are_the_recorded_bytes() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/data/holo-v6-container.json");
+    let vectors: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    let cases = vectors["cases"].as_array().unwrap();
+    assert!(cases.len() >= 12);
+    for case in cases {
+        let name = case["name"].as_str().unwrap();
+        let objects: Vec<Vec<u8>> = case["objects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|object| unhex(object.as_str().unwrap()))
+            .collect();
+        let archive = write_objects_as(Format::V6, &objects);
+        assert_eq!(
+            to_hex(&archive),
+            case["archive"].as_str().unwrap(),
+            "{name}"
+        );
+        assert!(archive.starts_with(b"UORC\x02\x02\x00\x00"), "{name}");
+        assert_eq!(format_of(&archive), Some(Format::V6), "{name}");
+        let (preimage, stored) = archive.split_at(archive.len() - SEAL);
+        assert_eq!(seal(Format::V6, preimage), stored, "{name}");
+        assert_eq!(to_hex(stored), case["seal"].as_str().unwrap(), "{name}");
+        assert_eq!(
+            label(Format::V6, &archive),
+            case["label"].as_str().unwrap(),
+            "{name}"
+        );
+        let read = read_objects(&archive, APPLICATION_BUDGET).unwrap();
+        assert_eq!(read.len(), objects.len(), "{name}");
+        for (got, want) in read.iter().zip(&objects) {
+            assert_eq!(got, want, "{name}");
+        }
+    }
+}
+
+#[test]
+fn v6_refuses_any_changed_byte_and_never_takes_the_other_seal() {
+    let objects = [b"guest".as_slice(), b"view".as_slice()];
+    let archive = write_objects_as(Format::V6, &objects);
+    for index in 0..archive.len() {
+        let mut bad = archive.clone();
+        bad[index] ^= 1;
+        let error = read_objects(&bad, APPLICATION_BUDGET).unwrap_err();
+        assert!(
+            ["PP3001", "PP3004"].contains(&error.code.as_str()),
+            "byte {index}: {error:?}"
+        );
+    }
+    let mut relabelled = write_objects(&objects);
+    relabelled[5] = 2;
+    assert_eq!(
+        read_objects(&relabelled, APPLICATION_BUDGET)
+            .unwrap_err()
+            .code,
+        "PP3004"
+    );
+    let mut back = archive.clone();
+    back[5] = 1;
+    assert_eq!(
+        read_objects(&back, APPLICATION_BUDGET).unwrap_err().code,
+        "PP3004"
+    );
+    let mut unknown = archive;
+    unknown[5] = 3;
+    assert_eq!(format_of(&unknown), None);
+    assert_eq!(
+        read_objects(&unknown, APPLICATION_BUDGET).unwrap_err().code,
+        "PP3001"
+    );
+}
+
+#[test]
+fn labels_follow_the_format() {
+    assert_eq!(
+        label(Format::V6, b"abc"),
+        "blake3:6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"
+    );
+    assert_eq!(label(Format::V5, b"abc"), kappa(b"abc"));
+    assert!(is_label(Format::V6, &label(Format::V6, b"")));
+    assert!(!is_label(Format::V6, &kappa(b"")));
+    assert!(!is_label(Format::V5, &label(Format::V6, b"")));
+    assert_eq!(Format::V6.number(), 6);
+}
