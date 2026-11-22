@@ -515,7 +515,11 @@ fn a_v6_composition_and_a_v5_upgraded_to_v6_keep_the_basis_an_oci_digest() {
     }
     let manifest: Value = serde_json::from_slice(&composed.application_manifest).unwrap();
     assert_eq!(manifest["schema"], json!(MANIFEST_SCHEMA_V6));
-    assert_eq!(manifest["basis"], json!(input.basis), "the SDK image stays named by its OCI digest (ADR-018 §3)");
+    assert_eq!(
+        manifest["basis"],
+        json!(input.basis),
+        "the SDK image stays named by its OCI digest (ADR-018 §3)"
+    );
 
     // The v5 of the same input, upgraded, is the v6 composed directly: the two writers agree.
     let v5 = compose_application(&input).unwrap();
