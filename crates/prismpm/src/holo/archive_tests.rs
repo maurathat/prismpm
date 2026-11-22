@@ -155,6 +155,7 @@ fn application_input() -> ApplicationArchiveInput {
     ApplicationArchiveInput {
         application_name: "Wire fixture".to_owned(),
         guest_wasm: b"\0asm\x01\0\0\0".to_vec(),
+        core_contract: "hologram:guest/core-wasm@1".to_owned(),
         view_bundle: b"HOLOVIEW\0\x01".to_vec(),
         model_document: br#"{"fixture":"wire-only"}"#.to_vec(),
         source_manifest: br#"{"version":4}"#.to_vec(),
@@ -178,7 +179,7 @@ fn application_input() -> ApplicationArchiveInput {
             cargo_version: "0.1.0".to_owned(),
             cargo_crate_sha256: digest.clone(),
             view_model_id: digest.clone(),
-            browser_projection_sha256: digest,
+            browser_projection_sha256: Some(digest),
         },
         basis: None,
     }

@@ -890,12 +890,6 @@ fn generate_in(
             "a server application is built through the production API, not the application generator",
         ));
     }
-    if matches!(application, Application::Binary(_)) {
-        return Err(PrismError::new(
-            "PP9001",
-            "this generator composes legacy, text and browser applications; a binary application (#630) is not composed by it",
-        ));
-    }
     let stdlib: StdlibRelease = serde_json::from_str(STDLIB_RELEASE_SOURCE)
         .map_err(|error| PrismError::new("PP4101", format!("stdlib release: {error}")))?;
     if stdlib.schema != "prismpm/stdlib-release/1"
@@ -1242,94 +1236,113 @@ fn generate_in(
             .bytes
             .as_slice(),
     );
-    let (generated_view, view_document_id, view_model_id) =
-        application_view(&module, model, application, &generated_core_sha)?;
+    let (generated_view, view_document_id, view_model_id) = match application {
+        Application::Binary(binary) => static_view(model, binary)?,
+        _ => application_view(&module, model, application, &generated_core_sha)?,
+    };
     add_application_to_registry(&registry, application, &crate_bytes, &stdlib.crate_sha256)?;
-    let browser_root = workspace.join("browser-adapter");
-    publish_package(&browser_root, &generated_view.browser_adapter)?;
-    run(
-        "browser-adapter-lock",
-        &cargo,
-        &["generate-lockfile", "--offline"],
-        &browser_root,
-        &cargo_env,
-        &replacements,
-        "PP5203",
-    )?;
-    run(
-        "browser-adapter-wasm",
-        &cargo,
-        &[
-            "build",
-            "--locked",
-            "--offline",
-            "--release",
-            "--target",
-            "wasm32-unknown-unknown",
-        ],
-        &browser_root,
-        &cargo_env,
-        &replacements,
-        "PP5203",
-    )?;
-    let wasm_bindgen = executable("wasm-bindgen")?;
-    let browser_stem = application.cargo_name().replace('-', "_");
-    let adapter_wasm = browser_root
-        .join("target/wasm32-unknown-unknown/release")
-        .join(format!("{browser_stem}_browser.wasm"));
-    let browser_binding = workspace.join("browser-binding");
-    std::fs::create_dir(&browser_binding)
-        .map_err(|error| PrismError::new("PP5203", format!("browser binding: {error}")))?;
-    let adapter_wasm_argument = adapter_wasm.to_string_lossy().into_owned();
-    let browser_binding_argument = browser_binding.to_string_lossy().into_owned();
-    run(
-        "browser-wasm-bindgen",
-        &wasm_bindgen,
-        &[
-            "--target",
-            "web",
-            "--no-typescript",
-            "--out-name",
-            &browser_stem,
-            "--out-dir",
-            &browser_binding_argument,
-            &adapter_wasm_argument,
-        ],
-        &browser_root,
-        &no_env,
-        &replacements,
-        "PP5203",
-    )?;
-    let browser_js_name = format!("{browser_stem}.js");
-    let browser_wasm_name = format!("{browser_stem}_bg.wasm");
-    let browser_js = std::fs::read(browser_binding.join(&browser_js_name))
-        .map_err(|error| PrismError::new("PP5203", format!("browser JavaScript: {error}")))?;
-    let browser_wasm = std::fs::read(browser_binding.join(&browser_wasm_name))
-        .map_err(|error| PrismError::new("PP5203", format!("browser Wasm: {error}")))?;
-    let browser_lock = std::fs::read(browser_root.join("Cargo.lock"))
-        .map_err(|error| PrismError::new("PP5203", format!("browser lock: {error}")))?;
-    // Closure v2 provenance names the digest of every other closure file.
-    let browser_files = generated_view
-        .browser_assets
-        .iter()
-        .map(|file| (file.path.clone(), json!(sha256(&file.bytes))))
-        .chain([
-            (browser_js_name.clone(), json!(sha256(&browser_js))),
-            (browser_wasm_name.clone(), json!(sha256(&browser_wasm))),
-        ])
-        .collect::<serde_json::Map<_, _>>();
-    let browser_provenance = encode_value(&json!({
-        "adapter_lock_sha256": sha256(&browser_lock),
-        "adapter_wasm_sha256": sha256(&browser_wasm),
-        "binding_javascript_sha256": sha256(&browser_js),
-        "generated_core_sha256": generated_core_sha,
-        "model_id": view_document_id,
-        "files": browser_files,
-        "schema": "prismpm/browser-provenance/2",
-        "view_manifest_sha256": sha256(&generated_view.view_manifest.bytes),
-        "view_model_id": view_model_id
-    }))?;
-    let browser_projection_sha = sha256(&browser_provenance);
+    // A static View runs nothing, so a binary application has no browser adapter.
+    let browser = if matches!(application, Application::Binary(_)) {
+        None
+    } else {
+        Some((|| -> Result<BrowserBuild, PrismError> {
+            let browser_root = workspace.join("browser-adapter");
+            publish_package(&browser_root, &generated_view.browser_adapter)?;
+            run(
+                "browser-adapter-lock",
+                &cargo,
+                &["generate-lockfile", "--offline"],
+                &browser_root,
+                &cargo_env,
+                &replacements,
+                "PP5203",
+            )?;
+            run(
+                "browser-adapter-wasm",
+                &cargo,
+                &[
+                    "build",
+                    "--locked",
+                    "--offline",
+                    "--release",
+                    "--target",
+                    "wasm32-unknown-unknown",
+                ],
+                &browser_root,
+                &cargo_env,
+                &replacements,
+                "PP5203",
+            )?;
+            let wasm_bindgen = executable("wasm-bindgen")?;
+            let browser_stem = application.cargo_name().replace('-', "_");
+            let adapter_wasm = browser_root
+                .join("target/wasm32-unknown-unknown/release")
+                .join(format!("{browser_stem}_browser.wasm"));
+            let browser_binding = workspace.join("browser-binding");
+            std::fs::create_dir(&browser_binding)
+                .map_err(|error| PrismError::new("PP5203", format!("browser binding: {error}")))?;
+            let adapter_wasm_argument = adapter_wasm.to_string_lossy().into_owned();
+            let browser_binding_argument = browser_binding.to_string_lossy().into_owned();
+            run(
+                "browser-wasm-bindgen",
+                &wasm_bindgen,
+                &[
+                    "--target",
+                    "web",
+                    "--no-typescript",
+                    "--out-name",
+                    &browser_stem,
+                    "--out-dir",
+                    &browser_binding_argument,
+                    &adapter_wasm_argument,
+                ],
+                &browser_root,
+                &no_env,
+                &replacements,
+                "PP5203",
+            )?;
+            let browser_js_name = format!("{browser_stem}.js");
+            let browser_wasm_name = format!("{browser_stem}_bg.wasm");
+            let browser_js =
+                std::fs::read(browser_binding.join(&browser_js_name)).map_err(|error| {
+                    PrismError::new("PP5203", format!("browser JavaScript: {error}"))
+                })?;
+            let browser_wasm = std::fs::read(browser_binding.join(&browser_wasm_name))
+                .map_err(|error| PrismError::new("PP5203", format!("browser Wasm: {error}")))?;
+            let browser_lock = std::fs::read(browser_root.join("Cargo.lock"))
+                .map_err(|error| PrismError::new("PP5203", format!("browser lock: {error}")))?;
+            // Closure v2 provenance names the digest of every other closure file.
+            let browser_files = generated_view
+                .browser_assets
+                .iter()
+                .map(|file| (file.path.clone(), json!(sha256(&file.bytes))))
+                .chain([
+                    (browser_js_name.clone(), json!(sha256(&browser_js))),
+                    (browser_wasm_name.clone(), json!(sha256(&browser_wasm))),
+                ])
+                .collect::<serde_json::Map<_, _>>();
+            let browser_provenance = encode_value(&json!({
+                "adapter_lock_sha256": sha256(&browser_lock),
+                "adapter_wasm_sha256": sha256(&browser_wasm),
+                "binding_javascript_sha256": sha256(&browser_js),
+                "generated_core_sha256": generated_core_sha,
+                "model_id": view_document_id,
+                "files": browser_files,
+                "schema": "prismpm/browser-provenance/2",
+                "view_manifest_sha256": sha256(&generated_view.view_manifest.bytes),
+                "view_model_id": view_model_id
+            }))?;
+            Ok(BrowserBuild {
+                js_name: browser_js_name,
+                js: browser_js,
+                wasm_name: browser_wasm_name,
+                wasm: browser_wasm,
+                lock: browser_lock,
+                projection_sha256: sha256(&browser_provenance),
+                provenance: browser_provenance,
+            })
+        })()?)
+    };
     // Text/3 applications also ship the modeled command line as static programs.
     let command_line = match application {
         Application::Text(text) if text.cli.is_some() => Some((
@@ -1350,6 +1363,7 @@ fn generate_in(
     let holo = compose_application(&ApplicationArchiveInput {
         application_name: application.name().clone(),
         guest_wasm: wasm.clone(),
+        core_contract: application.core_contract().clone(),
         view_bundle: generated_view.hologram_bundle.bytes.clone(),
         model_document: model_bytes.to_vec(),
         source_manifest: source_manifest.clone(),
@@ -1373,7 +1387,9 @@ fn generate_in(
             cargo_version: application.cargo_version().clone(),
             cargo_crate_sha256: sha256(&crate_bytes),
             view_model_id,
-            browser_projection_sha256: browser_projection_sha,
+            browser_projection_sha256: browser
+                .as_ref()
+                .map(|build| build.projection_sha256.clone()),
         },
         basis: sdk_basis(repository_root),
     })?;
@@ -1437,13 +1453,15 @@ fn generate_in(
             .into_iter()
             .map(|file| (format!("cargo/package/{}", file.path), file.bytes)),
     );
-    artifacts.push(("view/browser-adapter/Cargo.lock".to_owned(), browser_lock));
-    artifacts.push((format!("view/browser/{browser_js_name}"), browser_js));
-    artifacts.push((format!("view/browser/{browser_wasm_name}"), browser_wasm));
-    artifacts.push((
-        "view/browser/provenance.json".to_owned(),
-        browser_provenance,
-    ));
+    if let Some(browser) = browser {
+        artifacts.push(("view/browser-adapter/Cargo.lock".to_owned(), browser.lock));
+        artifacts.push((format!("view/browser/{}", browser.js_name), browser.js));
+        artifacts.push((format!("view/browser/{}", browser.wasm_name), browser.wasm));
+        artifacts.push((
+            "view/browser/provenance.json".to_owned(),
+            browser.provenance,
+        ));
+    }
     artifacts.extend(
         core_package
             .files
@@ -1669,6 +1687,91 @@ fn sdk_basis(repository_root: &Path) -> Option<String> {
         serde_json::from_slice(&std::fs::read(repository_root.join("prismpm.lock")).ok()?).ok()?;
     let digest = lock["sdk_image"].as_str()?.rsplit_once('@')?.1;
     crate::holo::v5::is_kappa(digest).then(|| digest.to_owned())
+}
+
+/// The browser projection of a View: the wasm-bindgen adapter and its provenance.
+struct BrowserBuild {
+    js_name: String,
+    js: Vec<u8>,
+    wasm_name: String,
+    wasm: Vec<u8>,
+    lock: Vec<u8>,
+    provenance: Vec<u8>,
+    projection_sha256: String,
+}
+
+fn escape_html(text: &str) -> String {
+    text.chars()
+        .map(|character| match character {
+            '&' => "&amp;".to_owned(),
+            '<' => "&lt;".to_owned(),
+            '>' => "&gt;".to_owned(),
+            '"' => "&quot;".to_owned(),
+            '\'' => "&#39;".to_owned(),
+            other => other.to_string(),
+        })
+        .collect()
+}
+
+/// The View of a binary application (#630, maintainer decision 2a, 2026-11-18):
+/// a static page that describes the application and its acceptance and runs
+/// nothing. Its view model is the fields it shows, so its identity changes
+/// exactly when the page does.
+fn static_view(
+    model: &ModelDocument,
+    binary: &crate::holo::binary_application::BinaryApplication,
+) -> Result<(GeneratedViewV1, String, String), PrismError> {
+    let view = json!({
+        "acceptance_sessions": binary.acceptance_sessions.len(),
+        "acceptance_vectors": binary.acceptance_vectors.len(),
+        "contract": binary.core_contract,
+        "description": binary.cargo_description,
+        "name": binary.name,
+        "request_maximum": binary.request_maximum,
+        "response_maximum": binary.response_maximum,
+        "schema": "prismpm/binary-view/1"
+    });
+    let model_id = content_id(&encode_value(
+        &serde_json::to_value(model)
+            .map_err(|error| PrismError::new("PP9001", error.to_string()))?,
+    )?);
+    let view_model_id = content_id(&encode_value(&view)?);
+    let name = escape_html(&binary.name);
+    let index = format!(
+        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{name}</title>\n</head>\n<body>\n<main>\n<h1>{name}</h1>\n<p>{}</p>\n<dl>\n<dt>Guest world</dt><dd>{}</dd>\n<dt>Largest request</dt><dd>{} bytes</dd>\n<dt>Largest response</dt><dd>{} bytes</dd>\n<dt>Acceptance</dt><dd>{} vectors, {} sessions</dd>\n</dl>\n<p>This application exchanges bytes with its host. This page describes it and runs nothing.</p>\n</main>\n</body>\n</html>\n",
+        escape_html(&binary.cargo_description),
+        escape_html(&binary.core_contract),
+        binary.request_maximum,
+        binary.response_maximum,
+        binary.acceptance_vectors.len(),
+        binary.acceptance_sessions.len(),
+    );
+    let assets = vec![prod_codegen::PackageFile {
+        path: "index.html".to_owned(),
+        bytes: index.into_bytes(),
+    }];
+    let bundle = prod_codegen::generate_holoview_bundle(&assets)
+        .map_err(|error| PrismError::new("PP5203", error.to_string()))?;
+    let manifest = encode_value(&json!({
+        "files": {"index.html": sha256(&assets[0].bytes)},
+        "model_id": model_id,
+        "profile": "prism.binary-view/1",
+        "view_model_id": view_model_id
+    }))?;
+    Ok((
+        GeneratedViewV1 {
+            hologram_assets: assets,
+            hologram_bundle: bundle,
+            browser_assets: Vec::new(),
+            browser_adapter: GeneratedPackage { files: Vec::new() },
+            view_manifest: prod_codegen::PackageFile {
+                path: "view-manifest.json".to_owned(),
+                bytes: manifest,
+            },
+        },
+        model_id,
+        view_model_id,
+    ))
 }
 
 /// The session guest a binary application in the session or checkpoint world

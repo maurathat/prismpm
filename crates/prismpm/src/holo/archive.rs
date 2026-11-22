@@ -23,8 +23,11 @@ pub const PRISM_EXTENSION: &str = "https://uor.foundation/extension/prismpm-mode
 pub struct ApplicationArchiveInput {
     /// Human product name, used only by generated metadata.
     pub application_name: String,
-    /// Core-Wasm v1 guest bytes.
+    /// The guest's bytes.
     pub guest_wasm: Vec<u8>,
+    /// The guest contract the wasm layer declares and is entered by: the
+    /// stateless world, the session world (#629) or the checkpoint world (HO-47).
+    pub core_contract: String,
     /// Canonical HOLOVIEW v1 payload.
     pub view_bundle: Vec<u8>,
     /// Canonical non-Holo Prism model document.
@@ -81,8 +84,9 @@ pub struct ArchiveProvenance {
     pub cargo_crate_sha256: String,
     /// Typed View-model identity.
     pub view_model_id: String,
-    /// SHA-256 of the generated browser projection.
-    pub browser_projection_sha256: String,
+    /// SHA-256 of the generated browser projection; `None` for a static View
+    /// that runs nothing (a binary application, #630 decision 2a).
+    pub browser_projection_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -288,9 +292,12 @@ fn validate_provenance(value: &ArchiveProvenance) -> Result<(), PrismError> {
         &value.generated_core_sha256,
         &value.cargo_crate_sha256,
         &value.view_model_id,
-        &value.browser_projection_sha256,
     ];
     if digests.into_iter().any(|digest| !digest_is_valid(digest))
+        || value
+            .browser_projection_sha256
+            .as_deref()
+            .is_some_and(|digest| !digest_is_valid(digest))
         || !revision_is_valid(&value.lexlean_commit)
         || !revision_is_valid(&value.lean4_prod_commit)
         || !revision_is_valid(&value.hologram_live_commit)
@@ -314,7 +321,13 @@ pub(crate) fn compose_application_v4(
 ) -> Result<GeneratedHolo, PrismError> {
     let content_kappa = v4_label;
     validate_provenance(&input.provenance)?;
+    let browser_projection_sha256 = input
+        .provenance
+        .browser_projection_sha256
+        .clone()
+        .ok_or_else(|| PrismError::new("PP3010", "a v4 archive binds a browser projection"))?;
     if input.application_name.is_empty()
+        || input.core_contract != wire::contractName()
         || !input.guest_wasm.starts_with(b"\0asm")
         || !input.view_bundle.starts_with(b"HOLOVIEW\0\x01")
         || input.model_document.first() != Some(&b'{')
@@ -395,7 +408,7 @@ pub(crate) fn compose_application_v4(
             view_model_id: provenance.view_model_id.clone(),
             view_content_kappa: view_kappa.to_string(),
             browser_projection: BrowserProjection::Present {
-                sha256: provenance.browser_projection_sha256.clone(),
+                sha256: browser_projection_sha256,
             },
         },
         application_kappa: application_kappa.to_string(),
@@ -917,6 +930,7 @@ pub(crate) fn encode_json<T: Serialize>(value: &T) -> Result<Vec<u8>, PrismError
 pub fn compose_application(input: &ApplicationArchiveInput) -> Result<GeneratedHolo, PrismError> {
     validate_provenance(&input.provenance)?;
     if input.application_name.is_empty()
+        || v5_entry(&input.core_contract).is_none()
         || !input.guest_wasm.starts_with(b"\0asm")
         || !input.view_bundle.starts_with(b"HOLOVIEW\0\x01")
         || input.model_document.first() != Some(&b'{')
@@ -954,7 +968,7 @@ pub fn compose_application(input: &ApplicationArchiveInput) -> Result<GeneratedH
         name: input.application_name.clone(),
         basis: input.basis.clone(),
         requires: capability_kappa.clone(),
-        layers: layers_v5(&guest_kappa, &view_kappa, &wire::contractName()),
+        layers: layers_v5(&guest_kappa, &view_kappa, &input.core_contract),
         objects,
     })?;
     let application_kappa = content_kappa(&manifest);
@@ -975,7 +989,7 @@ pub fn compose_application(input: &ApplicationArchiveInput) -> Result<GeneratedH
         hologram_live_commit: provenance.hologram_live_commit.clone(),
         uor_hologram_commit: provenance.uor_hologram_commit.clone(),
         target_profile_id: provenance.target_profile_id.clone(),
-        core_wasm_contract: wire::contractName(),
+        core_wasm_contract: input.core_contract.clone(),
         lean_manifest_sha256: provenance.lean_manifest_sha256.clone(),
         lcnf_manifest_sha256: provenance.lcnf_manifest_sha256.clone(),
         generated_core_sha256: provenance.generated_core_sha256.clone(),
@@ -986,8 +1000,11 @@ pub fn compose_application(input: &ApplicationArchiveInput) -> Result<GeneratedH
         view_binding: ViewBinding::Present {
             view_model_id: provenance.view_model_id.clone(),
             view_content_kappa: view_kappa.clone(),
-            browser_projection: BrowserProjection::Present {
-                sha256: provenance.browser_projection_sha256.clone(),
+            browser_projection: match &provenance.browser_projection_sha256 {
+                Some(sha256) => BrowserProjection::Present {
+                    sha256: sha256.clone(),
+                },
+                None => BrowserProjection::None,
             },
         },
         application_kappa: application_kappa.clone(),
@@ -1218,6 +1235,7 @@ pub fn upgrade_application(bytes: &[u8]) -> Result<Vec<u8>, PrismError> {
     let input = ApplicationArchiveInput {
         application_name,
         guest_wasm: blob(&identities.guest_content_kappa)?,
+        core_contract: wire::contractName(),
         view_bundle: blob(&identities.view_content_kappa)?,
         model_document,
         source_manifest: parsed.metadata.clone(),
@@ -1241,7 +1259,7 @@ pub fn upgrade_application(bytes: &[u8]) -> Result<Vec<u8>, PrismError> {
             cargo_version: provenance.cargo_version,
             cargo_crate_sha256: provenance.cargo_crate_sha256,
             view_model_id,
-            browser_projection_sha256,
+            browser_projection_sha256: Some(browser_projection_sha256),
         },
         basis: None,
     };

@@ -160,6 +160,7 @@ fn sample_application_holo(root: &Path) -> prismpm::holo::archive::GeneratedHolo
         application_name: "Conformance".to_owned(),
         basis: None,
         guest_wasm: b"\0asm\x01\0\0\0".to_vec(),
+        core_contract: "hologram:guest/core-wasm@1".to_owned(),
         view_bundle: b"HOLOVIEW\0\x01".to_vec(),
         model_document,
         source_manifest: br#"{"version":4}"#.to_vec(),
@@ -183,7 +184,7 @@ fn sample_application_holo(root: &Path) -> prismpm::holo::archive::GeneratedHolo
             cargo_version: "0.1.0".to_owned(),
             cargo_crate_sha256: digest.clone(),
             view_model_id: digest.clone(),
-            browser_projection_sha256: digest,
+            browser_projection_sha256: Some(digest),
         },
     })
     .expect("sample Holo/1 application composes")
@@ -915,7 +916,10 @@ pub fn run_at(root: &Path, id: &str) {
             &[
                 ("sdk/npm/prism-code/test/model-eval.test.mjs", 9),
                 ("sdk/npm/prism-code/test/model-guest.test.mjs", 10),
-                ("sdk/npm/prism-code/test/model-guest-primitives.test.mjs", 13),
+                (
+                    "sdk/npm/prism-code/test/model-guest-primitives.test.mjs",
+                    13,
+                ),
                 ("sdk/npm/prism-code/test/model-holo.test.mjs", 10),
                 ("sdk/npm/prism-code/test/model-bundle.test.mjs", 4),
                 ("sdk/npm/prism-code/test/model-site.test.mjs", 2),
