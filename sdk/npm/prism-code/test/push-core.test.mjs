@@ -38,7 +38,10 @@ test('push-core loads nothing of Node, so a page can load it', () => {
   const outside = [...graph.keys()].filter((key) => key.includes(' -> '));
   assert.deepEqual(outside, [], 'push-core.mjs reaches a module that is not a file of this package');
   for (const [file, text] of graph) {
-    assert.equal(/\bprocess\.(?:env|argv|cwd|platform)\b/.test(text), false, `${file} reads the process`);
+    // A comment says what a module does in words; only its code is held to this.
+    const code = text.split('\n').filter((line) => !/^\s*(?:\/\/|\/?\*)/.test(line)).join('\n');
+    assert.equal(/\bprocess\./.test(code), false, `${file} uses the process`);
+    assert.equal(/\bBuffer\b/.test(code), false, `${file} uses Buffer`);
     assert.equal(/\bimport\(\s*['"]node:/.test(text), false, `${file} imports a node: module while running`);
   }
   // The registry client a page pairs it with is as clean.
@@ -74,7 +77,7 @@ test('pushHolo opens its endpoint only after the holo has been judged, and refus
   const never = () => { opened++; throw new Error('the endpoint was opened'); };
   const broken = plain.slice();
   broken[broken.length - 9] ^= 1;
-  await assert.rejects(() => pushHolo(broken, never, { reference }), (error) => error instanceof VerificationError || /footer|label|holo/i.test(error.message));
+  await assert.rejects(() => pushHolo(broken, never, { reference }), (error) => error instanceof VerificationError && error.check === 'holo.integrity');
   assert.equal(opened, 0, 'a holo that does not verify reaches no endpoint');
   await assert.rejects(() => pushHolo(plain, never, { reference: { ...reference, fingerprint: 'blake3:' + '0'.repeat(64) } }), ReferenceInvalidError);
   assert.equal(opened, 0);
