@@ -10,7 +10,7 @@ python3 sdk/ci/passive_readme_scope.py --repo /path/to/checked-out-pr-head \\
   --head 40-character-trusted-pr-head
 ```
 
-The receipt schema is `prismpm/passive-readme-receipt/1`, and each result carries `classifier_sha256` computed over the exact executing file bytes. A trusted consumer independently verifies that value against its **base-owned pinned artifact digest**; it is an audit binding, not a substitute for the download checksum or provenance verification.
+The receipt schema is registered in `model/contracts.toml` as [`prismpm/passive-readme-receipt/1`](../../schemas/passive-readme-receipt.schema.json), and each result carries `classifier_sha256` computed over the exact executing file bytes. A trusted consumer independently verifies that value against its **base-owned pinned artifact digest**; it is an audit binding, not a substitute for the download checksum or provenance verification.
 
 The command emits exactly one JSON object: a `PASSIVE_README` receipt with base, head, merge base, complete changed path list, approved PNG Git blob identity and checked link/anchor counts; or `FULL_REQUIRED` and a refusal reason. The latter exits 2. The tool never merges, pushes, approves, modifies working files, executes product code, provisions credentials or reports product/release acceptance. **Only a future trusted qualification workflow may decide which required checks are run.** Do not advertise this command as an accepted bypass.
 
@@ -27,7 +27,7 @@ python3 -m unittest discover -s sdk/ci -p 'test_passive_readme_scope.py' -v
 cargo test --locked -p repo-conformance --test conformance conformance_rp_13 -- --exact
 ```
 
-`RP-13` checks the complete currently pinned **41-case** fixture inventory and refuses skipped/omitted cases. Additional repository conformance, model generation, Windows runner tests, reference-style Markdown links, HTML link interpretation, duplicate heading slugs, Unicode, symlink changes and trust-root forgery remain production-admission review targets. A green fixture run is *algorithm evidence*, not an independently released tool.
+`RP-13` checks the complete currently pinned **43-case** fixture inventory and refuses skipped/omitted cases. Additional repository conformance, model generation, Windows runner tests, reference-style Markdown links, HTML link interpretation, duplicate heading slugs, Unicode, symlink changes and trust-root forgery remain production-admission review targets. A green fixture run is *algorithm evidence*, not an independently released tool.
 
 ## Integration and release gates
 

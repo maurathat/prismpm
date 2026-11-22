@@ -744,3 +744,14 @@ maximum_bytes = 1048576
 maximum_items = 4096
 extension_policy = "closed"
 compatibility = "exact-major"
+
+[[contract]]
+schema = "prismpm/passive-readme-receipt/1"
+path = "schemas/passive-readme-receipt.schema.json"
+media_type = "application/vnd.prismpm.passive-readme-receipt.v1+json"
+identity = "sha256-canonical-json"
+maximum_bytes = 65536
+maximum_items = 32
+extension_policy = "closed"
+compatibility = "exact-major"
+

@@ -1,5 +1,8 @@
 """Planted defects for the passive README classifier; run without SDK/Docker."""
 import importlib.util
+import sys
+import json
+import hashlib
 import subprocess
 import tempfile
 import unittest
@@ -65,6 +68,43 @@ class PassiveReadmeTests(unittest.TestCase):
             self.check(expected)
         if reason:
             self.assertIn(reason, str(error.exception))
+
+    def test_cli_emits_closed_success_receipt_and_digest(self):
+        self.build()
+        result = subprocess.run(
+            [sys.executable, str(FILE), "--repo", str(self.root),
+             "--base", self.base, "--head", self.head],
+            text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        receipt = json.loads(result.stdout)
+        self.assertEqual(set(receipt), {
+            "schema", "classifier_sha256", "classification", "base", "head",
+            "merge_base", "paths", "banner_blob", "checked_local_links",
+            "known_anchors", "claim",
+        })
+        self.assertEqual(receipt["schema"], "prismpm/passive-readme-receipt/1")
+        self.assertEqual(receipt["classification"], "PASSIVE_README")
+        self.assertEqual(receipt["classifier_sha256"], hashlib.sha256(FILE.read_bytes()).hexdigest())
+        self.assertEqual(receipt["base"], self.base)
+        self.assertEqual(receipt["head"], self.head)
+
+    def test_cli_emits_closed_refusal_receipt_and_digest(self):
+        self.build()
+        result = subprocess.run(
+            [sys.executable, str(FILE), "--repo", str(self.root),
+             "--base", "1" * 40, "--head", self.head],
+            text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(result.returncode, 2, result.stderr)
+        receipt = json.loads(result.stdout)
+        self.assertEqual(set(receipt), {
+            "schema", "classifier_sha256", "classification", "reason",
+        })
+        self.assertEqual(receipt["schema"], "prismpm/passive-readme-receipt/1")
+        self.assertEqual(receipt["classification"], "FULL_REQUIRED")
+        self.assertEqual(receipt["classifier_sha256"], hashlib.sha256(FILE.read_bytes()).hexdigest())
+        self.assertNotIn("paths", receipt)
 
     def test_passes_two_regular_presentation_paths(self):
         self.build()
