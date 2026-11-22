@@ -9,6 +9,7 @@ mod browser_effect;
 mod browser_publication;
 mod browser_system;
 mod cbor_primitive;
+mod ci_scope;
 mod design_views;
 mod feature_journeys;
 mod holo_browser;
@@ -409,6 +410,7 @@ pub fn run_at(root: &Path, id: &str) {
         "RP-10" => verify_rp_10(root),
         "RP-11" => verify_rp_11(root),
         "RP-12" => verify_rp_12(root),
+        "RP-13" => ci_scope::verify(root),
 
         "FT-01" | "FT-02" | "FT-03" | "FT-04" | "FT-05" | "FT-06" | "FT-07" | "FT-08" | "FT-09"
         | "FT-10" => {
