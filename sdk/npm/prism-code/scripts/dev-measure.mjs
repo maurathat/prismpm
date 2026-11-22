@@ -201,8 +201,6 @@ async function main() {
 
   const args = [BIN, 'dev', directory, '--no-open', '--port', options.port ?? '0'];
   if (standIn) args.push('--build', 'node build.mjs', '--image', 'App.holo');
-  // A project built by a toolchain of its own names that build; without one, prism-code builds it in this process.
-  else if (options.build) args.push('--build', options.build);
   if (options.policy) args.push('--policy', resolve(options.policy));
   const dev = spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';

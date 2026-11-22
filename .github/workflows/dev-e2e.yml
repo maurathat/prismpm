@@ -3,13 +3,11 @@ name: dev end to end
 # Issue #288's acceptance, measured on a clean runner:
 #   offline   the studio in a real browser, in a network namespace with only
 #             loopback, so nothing it asks for from outside can arrive
-#   measure   edit to verdict on each reference archive with the real build in the SDK image.
-#             A verdict on new source costs one hermetic build, so the job compares
-#             each edit with this run's own cold build, and holds the time the loop
-#             adds on top of it (docs/proposals/288-prism-dev.md, The floor)
-#
-# It pulls a multi-gigabyte image, so it runs only on changes to the verb. No SDK
-# release exists yet (#194): the image is a development candidate until one does.
+#   measure   edit to verdict on a starter app, built in this process: prism-code checks the
+#             model, proves its theorems and writes the holo with nothing compiled, and the
+#             studio judges it. The job holds the time the loop adds on top of the build
+#             (docs/proposals/288-prism-dev.md, The floor). No image is pulled and no
+#             container runs.
 
 on:
   pull_request:
@@ -19,23 +17,13 @@ on:
       - sdk/npm/prism-code/scripts/dev-measure.mjs
       - .github/workflows/dev-e2e.yml
   workflow_dispatch:
-    inputs:
-      sdk_image:
-        description: SDK image to build with, NAME@sha256:DIGEST
-        required: false
-        type: string
 
 permissions:
   contents: read
-  packages: read
 
 concurrency:
   group: dev-e2e-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  # sdk-candidate.yml's build of 1010e48d.
-  SDK_IMAGE: ${{ inputs.sdk_image || 'ghcr.io/uor-foundation/prismpm-sdk-candidate@sha256:81e6bc91fffb077608e906cdcdd4047ae45e2d96a5b09382c221387e0b93382b' }}
 
 jobs:
   offline:
@@ -64,20 +52,20 @@ jobs:
           '
 
   measure:
-    name: edit to verdict on ${{ matrix.project }}, real build
+    name: edit to verdict on the ${{ matrix.starter }} starter, built in this process
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
           # Each edit is to text no theorem or acceptance vector reads, so the build still succeeds.
-          - project: Calculator
-            from: Enter a signed 64-bit integer.
-            to: Enter a signed 64 bit integer.
-          - project: PaymentApproval
-            from: a payment approval decision over a requester role
-            to: a payment approval decision over the requester's role
+          - starter: decision-app
+            from: from the hours parked and the vehicle type.
+            to: from the hours parked and the kind of vehicle.
+          - starter: stateful-app
+            from: Books seats at a dinner for twelve until the host closes the list.
+            to: Books seats at a dinner for twelve, until the host closes the list.
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -85,50 +73,28 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24'
-      - name: Admit only an immutable image reference
-        run: |
-          [[ "$SDK_IMAGE" =~ ^[a-z0-9.-]+(:[0-9]{1,5})?/[a-z0-9./_-]+@sha256:[0-9a-f]{64}$ ]]
-      - name: Log in to GHCR (read only)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ACTOR: ${{ github.actor }}
-        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
-      - name: Cache the SDK image (not timed)
-        run: docker pull "$SDK_IMAGE"
-      - name: Bind a copy of the project to the image
+      - name: Start the app from its starter
         shell: bash
         env:
-          PROJECT: ${{ matrix.project }}
+          STARTER: ${{ matrix.starter }}
         run: |
           set -euo pipefail
-          work="$RUNNER_TEMP/$PROJECT"
-          cp -a "examples/$PROJECT" "$work"
-          cd "$work"
-          docker run --rm --network none --entrypoint cat "$SDK_IMAGE" /opt/prismpm/share/standards.lock > standards.lock
-          docker run --rm --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,exec,nosuid,size=2g --volume "$PWD:$PWD" --workdir "$PWD" \
-            --env HOME=/tmp/prismpm-home --env PRISMPM_EPHEMERAL_HOME=1 "$SDK_IMAGE" prismpm update --toolchain "$SDK_IMAGE"
+          node sdk/npm/prism-code/bin/prism-code.mjs init "$RUNNER_TEMP/app" --template "$STARTER" --no-skill
       - name: Measure edit to verdict
         shell: bash
         env:
-          PROJECT: ${{ matrix.project }}
           EDIT_FROM: ${{ matrix.from }}
           EDIT_TO: ${{ matrix.to }}
+          # Nothing is fetched and nothing is kept from an earlier run: the home is new and empty.
+          PRISM_CODE_TIER: offline
+          PRISM_LEXLEAN_FETCH: '0'
+          PRISM_TELEMETRY: '0'
         run: |
           set -euo pipefail
-          # The reference archives are built by the SDK image. prism-code runs no image of its own, so the job names
-          # that build: the invocation the template uses, with the Docker socket the build needs.
-          cat > "$RUNNER_TEMP/sdk-build.sh" <<'SH'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          exec docker run --rm --user "$(id -u):$(id -g)" --group-add "$(stat -c %g /var/run/docker.sock)" \
-            --tmpfs /tmp:rw,exec,nosuid,size=2g --volume "$PWD:$PWD" --volume /var/run/docker.sock:/var/run/docker.sock \
-            --workdir "$PWD" --env HOME=/tmp/prismpm-home --env PRISMPM_EPHEMERAL_HOME=1 --env "SDK_IMAGE=$SDK_IMAGE" \
-            "$SDK_IMAGE" prismpm build --update --json
-          SH
-          chmod +x "$RUNNER_TEMP/sdk-build.sh"
+          export PRISM_HOME="$RUNNER_TEMP/prism-home"
+          # The build takes seconds, so an edit is held to the time the loop adds, not to a multiple of the build.
           node sdk/npm/prism-code/scripts/dev-measure.mjs \
-            --project "$RUNNER_TEMP/$PROJECT" \
-            --build "$RUNNER_TEMP/sdk-build.sh" \
+            --project "$RUNNER_TEMP/app" \
             --from "$EDIT_FROM" --to "$EDIT_TO" \
             --edits 4 --chrome "$(command -v google-chrome)" \
-            --cold-factor 1.25 --overhead-seconds 2 --summary "$GITHUB_STEP_SUMMARY"
+            --timeout-seconds 300 --overhead-seconds 2 --summary "$GITHUB_STEP_SUMMARY"

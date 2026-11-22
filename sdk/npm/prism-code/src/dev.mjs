@@ -231,6 +231,14 @@ export async function createWatcher({ root, patterns, ignored, extra, exclude, o
  * its old directory, so the result is the only way to tell which one is current.
  */
 async function holoFromResult(directory, stdout) {
+  // prism-code's own build prints one report, `prism/report/1`, whose summary names what it wrote.
+  try {
+    const report = JSON.parse(stdout.slice(stdout.indexOf('{')));
+    const artifact = report?.schema === 'prism/report/1' ? report.summary?.artifact : null;
+    if (typeof artifact === 'string' && artifact.endsWith('.holo')) return resolve(directory, artifact);
+  } catch {
+    // Not one JSON value: another build's output, read line by line below.
+  }
   for (const line of stdout.split(/\r?\n/).reverse()) {
     const text = line.trim();
     if (!text.startsWith('{')) continue;
@@ -252,6 +260,8 @@ async function holoFromResult(directory, stdout) {
 async function holoWrittenSince(directory, buildRoot, since) {
   const candidates = [directory];
   const builds = join(directory, buildRoot, 'build');
+  // prism-code's own build writes the holo in the build folder itself; a build by another toolchain, one folder down.
+  candidates.push(builds);
   for (const name of await readdir(builds).catch(() => [])) candidates.push(join(builds, name));
   let best = null;
   for (const folder of candidates) {
