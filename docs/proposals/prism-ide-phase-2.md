@@ -1,6 +1,6 @@
 # Prism IDE, phase 2: open any Prism app to audit it and edit it, in any browser
 
-Status: proposed, and partly built. Since this was written, `main` has gained the audit page, the edit pages, the model in the VS Code workbench, LexLean colouring, a published model and the check that a model is the one its app runs, all live at https://uor-foundation.github.io/prismpm/ (`audit/`, `edit/`, `edit/ide/`). The table below was read before that work; the rows the terminal phase depends on are corrected, the rest are as written. Phase 2f is built: the terminal is in the plain edit page and in the workbench's terminal panel. Phase 2d is built but for installing an extension by content label (below). Phase 2e is merged in both repositories and the frame is live; no app has been built from the template since (below). Phase 2c's table is measured, and its gate is met in part (below).
+Status: proposed, and partly built. Since this was written, `main` has gained the audit page, the edit pages, the model in the VS Code workbench, LexLean colouring, a published model and the check that a model is the one its app runs, all live at https://uor-foundation.github.io/prismpm/ (`audit/`, `edit/`, `edit/ide/`). The table below was read before that work; the rows the terminal phase depends on are corrected, the rest are as written. Phase 2f is built: the terminal is in the plain edit page and in the workbench's terminal panel. Phase 2d is built but for installing an extension by content label (below). Phase 2e is merged in both repositories and the frame is live; no app has been built from the template since (below). Phase 2c's table is measured, and its starters prove in the tab; models on Lean 4.32.1 are still refused (below).
 
 ## Why
 
@@ -73,9 +73,9 @@ Gates: the starter apps (`templates/starters/*`) prove in the tab. A measured ta
 
 Budgets: none promised for arbitrary models. The table is the deliverable.
 
-Measured (2026-11-21): the table is in `ide/edit/README.md`, "Which models prove in the tab", for this package's twelve models and the three starters. All eight rule tables prove in the tab, in 0.2 to 6.8 s. The gate is met in part:
+Measured (2026-11-21): the table is in `ide/edit/README.md`, "Which models prove in the tab", for this package's twelve models and the three starters. All eight rule tables prove in the tab, in 0.2 to 6.8 s. The gate:
 
-- Of the three starters, `rule-app` proves. `decision-app` and `stateful-app` have theorems of their own; the page checks them and says they are not proved here. `modelProve` is not wired into the page. A prover behind a build port is in review (#791) and is the way to close this.
+- The three starters prove in the tab. `rule-app` did from the start. `decision-app` and `stateful-app` have theorems of their own, and since 2026-11-22 the workbench puts those to Lean's kernel with the package's prover (`prove-core.mjs`, merged in #791): 3 of 3 and 10 of 10. An edit that makes a theorem false leaves it "not settled", marked where it is stated.
 - Five models are on Lean 4.32.1 and are refused before any check, `model/ide-scope` among them, so the page does not get as far as saying it cannot prove it or offering the build's attestation.
 
 ### Phase 2d: by content, offline
