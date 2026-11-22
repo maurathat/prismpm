@@ -206,6 +206,16 @@ class PassiveReadmeTests(unittest.TestCase):
         with self.assertRaises(scope.Refused):
             scope.qualify(self.root, self.base, self.base, self.expected)
 
+    def test_rejects_outdated_base_before_declaring_passive(self):
+        self.build()
+        self.git("switch", "-c", "base-update")
+        (self.root / "unrelated.md").write_text("new base has moved\\n")
+        self.git("add", "unrelated.md")
+        self.git("commit", "-qm", "base advanced after PR head")
+        self.base = self.git("rev-parse", "HEAD").strip()
+        self.git("checkout", "--detach", self.head)
+        self.refuse("head must descend from one exact trusted base")
+
     def test_rejects_no_readme_change(self):
         self.build(text=None)
         self.refuse("no README change")

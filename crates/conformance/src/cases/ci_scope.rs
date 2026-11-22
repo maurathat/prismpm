@@ -37,6 +37,7 @@ pub(super) fn verify(root: &Path) {
         "test_rejects_unknown_generated_marker",
         "test_rejects_missing_base",
         "test_rejects_mismatched_head",
+        "test_rejects_outdated_base_before_declaring_passive",
         "test_rejects_no_readme_change",
         "test_rejects_renamed_readme",
         "test_rejects_asset_alone_or_delete",

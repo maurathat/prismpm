@@ -163,9 +163,10 @@ def qualify(root: Path, base: str, head: str, expected_banner_blob: str = EXPECT
         raise Refused("working tree HEAD does not equal trusted pull-request head")
     git(root, "cat-file", "-e", f"{base}^{{commit}}")
     git(root, "cat-file", "-e", f"{head}^{{commit}}")
-    merge_base = git(root, "merge-base", base, head).decode().strip()
-    if not SHA.fullmatch(merge_base):
-        raise Refused("no trusted merge base")
+    ancestors = git(root, "merge-base", "--all", base, head).decode().splitlines()
+    if ancestors != [base]:
+        raise Refused("pull-request head must descend from one exact trusted base")
+    merge_base = base
     raw = git(root, "diff", "--name-status", "-z", "--no-ext-diff", "--no-textconv",
               "--no-renames", merge_base, head)
     fields = [p.decode("utf-8", errors="strict") for p in raw.split(b"\0") if p]
