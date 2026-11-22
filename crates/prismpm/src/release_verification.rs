@@ -941,23 +941,37 @@ fn selected_application_snapshot(
         )?;
     }
     // The production roots of the selected modules are exported with their
-    // eligibility records (LexLean language 1.2); nothing else is added.
+    // eligibility records, and, from LexLean 0.4.3, every selected module with
+    // its declaration identities (both LexLean language 1.2); nothing else is
+    // added.
     let selected_names = modules
         .iter()
         .map(|module| string(&module["lean_module"]))
         .collect::<Result<BTreeSet<_>, _>>()?;
     for row in array(&full_manifest["outputs"])? {
-        if row["kind"] != "production-eligibility" {
-            continue;
-        }
+        let (kind, prefix, suffix, refusal) = match string(&row["kind"])? {
+            "production-eligibility" => (
+                "production-eligibility",
+                "production/",
+                ".eligibility.json",
+                "LexLean production eligibility path is not canonical",
+            ),
+            "declarations" => (
+                "declarations",
+                "declarations/",
+                ".json",
+                "LexLean declarations path is not canonical",
+            ),
+            _ => continue,
+        };
         let path = string(&row["path"])?;
         let name = path
-            .strip_prefix("production/")
-            .and_then(|path| path.strip_suffix(".eligibility.json"))
-            .ok_or_else(|| invalid("LexLean production eligibility path is not canonical"))?
+            .strip_prefix(prefix)
+            .and_then(|path| path.strip_suffix(suffix))
+            .ok_or_else(|| invalid(refusal))?
             .replace('/', ".");
         if selected_names.contains(name.as_str()) {
-            expected_rows.push(("production-eligibility".to_owned(), path.to_owned()));
+            expected_rows.push((kind.to_owned(), path.to_owned()));
         }
     }
     expected_rows.sort();
