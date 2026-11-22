@@ -55,6 +55,8 @@ pub(super) fn verify_generator(root: &Path) {
             "every_bound_that_cannot_be_generated_is_refused_by_name",
             "the_turn_and_answer_maxima_follow_the_frames",
             "the_session_probe_is_the_generated_shim_around_its_test_entry",
+            "a_compiled_session_guest_is_checked_against_its_world_and_memory",
+            "a_session_guest_is_built_and_checked_against_its_model",
         ],
     );
 }

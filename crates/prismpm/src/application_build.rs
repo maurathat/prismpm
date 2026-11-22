@@ -1977,7 +1977,7 @@ mod resource_tests {
     /// and checks the module and its recorded bounds against the model; a
     /// planted disagreement in either is refused.
     #[test]
-    fn a_session_application_builds_and_checks_its_session_guest() {
+    fn a_session_guest_is_built_and_checked_against_its_model() {
         use crate::session_guest::{CHECKPOINT_CONTRACT, SESSION_CONTRACT};
         let ir = "(module SessionProbe (def step ((turn Bytes)) Bytes turn))";
         let (remaining, module) = prod_ir::parser::parse_module(ir).unwrap();
