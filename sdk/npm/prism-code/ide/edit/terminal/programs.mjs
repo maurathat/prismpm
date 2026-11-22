@@ -97,10 +97,11 @@ export function createPins({ pin, manifest, kappa, held }) {
  *   sink(bytes, done)   the terminal's write, with its callback; echo(text) the same for keys, written at once
  *   clear()       clear the screen
  *   kept          where outputs are kept; this tab's memory when none is given
+ *   askLines      resolves whether these pasted lines may be entered, when the effects table says to ask
  *   change        { write(path, text), remove(path) }: how the page changes a file of the model; without it the
  *                 commands that change a file say the page holds the model read-only
  */
-export function createCommandLine({ tables, luts = {}, rules, kappa, reuseAdmits, project, check, snapshotOf, prove, held, pin, manifest, sink, echo, clear, kept = createKept(), change = null }) {
+export function createCommandLine({ tables, luts = {}, rules, kappa, reuseAdmits, project, check, snapshotOf, prove, held, pin, manifest, sink, echo, clear, kept = createKept(), change = null, askLines = null }) {
   // The words the command line answers are exactly the words the proved table lists, or it does not start.
   const listed = tables.commands.fields[0].values.filter((word) => word !== 'other');
   if ([...listed].sort().join(' ') !== [...WORDS].sort().join(' ')) throw new Error('the command line and the proved command table list different commands');
@@ -118,6 +119,14 @@ export function createCommandLine({ tables, luts = {}, rules, kappa, reuseAdmits
   const { labelOf, bytesOf } = createPins({ pin, manifest, kappa, held });
   const writer = createWriter({ judge, sink });
   const session = createSession({ judge, writer, files: () => new Map(Object.entries(project())), bytesOf, labelOf, programs, kappa, reuseAdmits, kept, clear, change });
-  const editor = createLineEditor({ echo, submit: (line) => session.run(line), interrupt: () => session.interrupt(), clear, complete: session.complete, prompt: session.prompt });
+  const editor = createLineEditor({ echo, submit: (line) => session.run(line), interrupt: () => session.interrupt(), clear, complete: session.complete, prompt: session.prompt,
+    hold: () => writer.hold(), release: () => writer.release(),
+    // Several lines that reach the command line at once, without the page's own paste handler having asked.
+    multiline: async (lines) => {
+      let answer = 'ignore';
+      try { answer = judge('effects', { effect: 'paste', gesture: 'yes', scheme: 'none', multiline: 'yes' }); } catch { /* no effects table: ignore */ }
+      return answer === 'apply' || (answer === 'ask' && askLines !== null && await askLines(lines) === true);
+    },
+  });
   return { judge, writer, session, editor, luts: Object.fromEntries(Object.entries(made).map(([name, lut]) => [name, lut.kappa])), greeting: 'Prism terminal. A command line for this model, in this tab: no machine is behind it. Type help.' };
 }

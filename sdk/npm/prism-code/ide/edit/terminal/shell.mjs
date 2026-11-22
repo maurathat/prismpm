@@ -3,7 +3,8 @@
 //
 // A line is commands joined by `;`, `&&` and `||`, and may loop and choose: `for NAME in words; do …; done`,
 // `while …; do …; done`, `if …; then …; else …; fi`. `$( … )` in a word stands for the output of the commands inside
-// it, and `run file` enters the lines of a file of the model. None of these runs anything the line could not: each
+// it, `$(( … ))` for a sum, and `run file` enters the lines of a file of the model, handing it words as $1, $2 and
+// so on. `case WORD in pattern) … ;; esac` chooses by a pattern, and `name() { …; }` gives lines a name. None of these runs anything the line could not: each
 // command they reach is put to the tables like any other.
 //
 // A simple line is commands joined by `;`, `&&` and `||`. A command may pipe its output to the next (`|`), take a file as
@@ -33,7 +34,7 @@ export const USAGE = [
   ['save [name]', "keep this session's transcript in this browser", 'This terminal'],
   ['restore [name]', 'print a kept transcript', 'This terminal'],
   ['sessions', 'list the kept transcripts', 'This terminal'],
-  ['run file', 'enter the lines of a file of the model', 'This terminal'],
+  ['run file [word…]', 'enter the lines of a file of the model; the words are its $1, $2, …', 'This terminal'],
   ['check', 'lexlean check, on the model as it is in the editor', 'The model'],
   ['snapshot', 'lexlean snapshot: what the model means, as JSON', 'The model'],
   ['prove', "have Lean's kernel judge each guarantee", 'The model'],
@@ -57,6 +58,7 @@ export const USAGE = [
   ['sort [-run] [file…]', 'print the lines in order', 'Text'],
   ['uniq [-c] [file…]', 'drop a line that repeats the one before', 'Text'],
   ['diff a b', 'print the lines in which two files differ', 'Text'],
+  ['test … (also [ … ])', 'say by its status whether a comparison holds: = != -eq -lt -gt -z -n -f -d -e', 'Text'],
 ];
 export const WORDS = USAGE.map(([usage]) => usage.split(' ')[0]);
 
@@ -64,7 +66,7 @@ const PROGRAMS = ['check', 'snapshot', 'prove', 'audit'];
 // Which of a command's words are paths, the options it takes, and the one option that takes a value.
 const SHAPE = {
   ls: { paths: 'all', flags: 'l' }, cd: { paths: 'all' }, cat: { paths: 'all' }, kappa: { paths: 'all' }, touch: { paths: 'all' },
-  run: { paths: 'all' }, write: { paths: 'all' }, append: { paths: 'all' }, cp: { paths: 'all' }, mv: { paths: 'all' }, rm: { paths: 'all', flags: 'r' },
+  run: { paths: 'head' }, write: { paths: 'all' }, append: { paths: 'all' }, cp: { paths: 'all' }, mv: { paths: 'all' }, rm: { paths: 'all', flags: 'r' },
   grep: { paths: 'rest', flags: 'ivncq' }, head: { paths: 'all', value: 'n' }, tail: { paths: 'all', value: 'n' },
   wc: { paths: 'all', flags: 'lwc' }, sort: { paths: 'all', flags: 'run' }, uniq: { paths: 'all', flags: 'c' }, diff: { paths: 'all' },
   check: { paths: 'first', free: true }, snapshot: { paths: 'first', free: true }, prove: { paths: 'first', free: true }, audit: { paths: 'first', free: true },
@@ -77,6 +79,7 @@ const MAX_TRANSCRIPT = 512 * 1024;
 // A loop stops after this many turns, and scripts and $( … ) nest no deeper than this.
 const MAX_LOOPS = 10000;
 const MAX_DEPTH = 8;
+const MAX_FUNCTIONS = 64;
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SESSION_NAME = /^[A-Za-z0-9._-]{1,40}$/;
 const SESSION = 'prism/terminal-session/1';
@@ -108,6 +111,13 @@ export function lex(line) {
   const end = () => { if (word) { tokens.push({ word }); word = null; } };
   const variable = (at, quoted) => {
     // `at` is just past the $. Resolves [part, next index], or null when the $ stands for itself.
+    if (line[at] === '(' && line[at + 1] === '(') {
+      const close = line.indexOf('))', at + 2);
+      if (close < 0) throw new Error('A $(( is not closed.');
+      return [{ sum: line.slice(at + 2, close), quoted }, close + 2];
+    }
+    // $1 … $9 are the words a script or a function was handed, $# their number, $@ and $* all of them.
+    if (/[0-9#@*]/.test(line[at] ?? '')) return [{ name: line[at], quoted }, at + 1];
     if (line[at] === '(') {
       // $( … ): the commands inside are run when the word is used, and what they print stands in the word.
       let depth = 1;
@@ -173,7 +183,7 @@ export function lex(line) {
       continue;
     }
     const two = line.slice(i, i + 2);
-    if (two === '&&' || two === '||' || two === '>>') { end(); tokens.push({ op: two }); i += 2; continue; }
+    if (two === '&&' || two === '||' || two === '>>' || two === ';;') { end(); tokens.push({ op: two }); i += 2; continue; }
     if (ch === '&') throw new Error('& is not part of this command line: nothing runs in the background.');
     if ('|;<>'.includes(ch)) { end(); tokens.push({ op: ch }); i++; continue; }
     let j = i;
@@ -185,7 +195,7 @@ export function lex(line) {
   return tokens;
 }
 
-const RESERVED = ['for', 'in', 'do', 'done', 'while', 'if', 'then', 'else', 'fi'];
+const RESERVED = ['for', 'in', 'do', 'done', 'while', 'if', 'then', 'else', 'fi', 'case', 'esac', '{', '}'];
 /** The reserved word a token is, when it is one written plainly; null otherwise. */
 const keyword = (token) => {
   const w = token?.word;
@@ -196,6 +206,7 @@ const keyword = (token) => {
  * Tokens as a list of items, each joined to the one before by `join` (null, ';', '&&' or '||'). An item is a
  * pipeline, { stages: [{ words, from, to, append }] }, or one of
  *   { kind: 'for', name, words, body }   { kind: 'while', test, body }   { kind: 'if', test, then, else }
+ *   { kind: 'case', subject, arms: [{ patterns, body }] }   { kind: 'function', name, body }
  * whose test, body, then and else are lists again. A reserved word is one only where a command could start.
  */
 export function build(tokens) {
@@ -226,13 +237,15 @@ export function build(tokens) {
     close();
     return stages;
   }
-  function list(stops) {
+  /** A plain word, as written, or null. */
+  const plain = (token) => (token?.word?.length === 1 && token.word[0].text !== undefined && !token.word[0].quoted ? token.word[0].text : null);
+  function list(stops, arm = false) {
     const items = [];
     let join = null;
     for (;;) {
       skip();
       const word = keyword(tokens[i]);
-      if (i >= tokens.length || (word && stops.includes(word))) {
+      if (i >= tokens.length || (word && stops.includes(word)) || (arm && tokens[i].op === ';;')) {
         if (join && join !== ';') throw new Error('A command is missing.');
         break;
       }
@@ -265,12 +278,48 @@ export function build(tokens) {
         if (keyword(tokens[i]) === 'else') { i++; other = list(['fi']); }
         expect('fi', 'if');
         item = { kind: 'if', test, then, else: other };
+      } else if (word === 'case') {
+        const subject = tokens[++i]?.word;
+        if (!subject) throw new Error('case needs a word.');
+        if (keyword(tokens[++i]) !== 'in') throw new Error('case WORD needs in.');
+        i++;
+        const arms = [];
+        for (;;) {
+          skip();
+          if (keyword(tokens[i]) === 'esac') { i++; break; }
+          // One or more patterns joined by |, the last one ending in ).
+          const patterns = [];
+          for (;;) {
+            const w = tokens[i]?.word;
+            if (!w) throw new Error('case needs a pattern ending in ).');
+            const end = w[w.length - 1];
+            const closes = end.text !== undefined && !end.quoted && end.text.endsWith(')');
+            patterns.push(closes ? [...w.slice(0, -1), { ...end, text: end.text.slice(0, -1) }] : w);
+            i++;
+            if (closes) break;
+            if (tokens[i]?.op !== '|') throw new Error('case needs a pattern ending in ).');
+            i++;
+          }
+          const body = list(['esac'], true);
+          if (tokens[i]?.op === ';;') i++;
+          arms.push({ patterns, body });
+        }
+        item = { kind: 'case', subject, arms };
       } else if (word) throw new Error(`${word} is out of place.`);
-      else item = { stages: pipelineOf() };
+      else {
+        const named = /^([A-Za-z_][A-Za-z0-9_]*)\(\)$/.exec(plain(tokens[i]) ?? '');
+        if (named && keyword(tokens[i + 1]) === '{') {
+          i += 2;
+          const body = list(['}']);
+          expect('}', 'A function');
+          item = { kind: 'function', name: named[1], body };
+        } else item = { stages: pipelineOf() };
+      }
       item.join = join;
       items.push(item);
       const t = tokens[i];
       if (!t) break;
+      if (arm && t.op === ';;') break;
       if (t.op !== ';' && t.op !== '&&' && t.op !== '||') throw new Error('A ; is missing.');
       join = t.op;
       i++;
@@ -353,14 +402,76 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
   /** What the commands of a $( … ) print, without the line breaks at its end. */
   const substitute = async (text) => (await captured(() => runList(build(lex(text)), text))).replace(/\n+$/, '');
 
+  // The words handed to the script or function running now; none at the prompt.
+  const frames = [[]];
+  const functions = new Map();
+  /** The value of a sum: whole numbers, + - * / %, comparisons and ( ). A name is a variable; one unset is 0. */
+  function sum(text) {
+    const tokens = text.match(/\s*(\d+|\$?[A-Za-z_][A-Za-z0-9_]*|\$[0-9#]|<=|>=|==|!=|&&|\|\||[-+*\/%()<>!])/g)?.map((x) => x.trim()) ?? [];
+    if (tokens.join('') !== text.replace(/\s+/g, '')) throw new Error(`$(( ${text.trim()} )) is not a sum.`);
+    let at = 0;
+    const whole = (n) => { if (!Number.isSafeInteger(n)) throw new Error('$(( … )): the number is too large.'); return n; };
+    const number = (raw) => { const n = Number(raw); return /^-?\d+$/.test(String(raw).trim()) && Number.isSafeInteger(n) ? n : 0; };
+    const level = (next, ops) => () => { let left = next(); while (ops[tokens[at]]) left = whole(ops[tokens[at++]](left, next())); return left; };
+    const unary = () => {
+      const t = tokens[at++];
+      if (t === undefined) throw new Error('$(( … )) ends too soon.');
+      if (t === '(') { const inside = top(); if (tokens[at++] !== ')') throw new Error('$(( … )): a ( is not closed.'); return inside; }
+      if (t === '-') return whole(-unary());
+      if (t === '+') return unary();
+      if (t === '!') return unary() === 0 ? 1 : 0;
+      if (/^\d+$/.test(t)) return whole(Number(t));
+      if (/^\$[0-9]$/.test(t)) return number(frames[frames.length - 1][Number(t[1]) - 1] ?? 0);
+      if (t === '$#') return frames[frames.length - 1].length;
+      if (/^\$?[A-Za-z_]/.test(t)) return number(vars.get(t.replace(/^\$/, '')) ?? 0);
+      throw new Error(`$(( … )): ${t} is out of place.`);
+    };
+    const divide = (a, b) => { if (b === 0) throw new Error('$(( … )): division by zero.'); return Math.trunc(a / b); };
+    const times = level(unary, { '*': (a, b) => a * b, '/': divide, '%': (a, b) => { if (b === 0) throw new Error('$(( … )): division by zero.'); return a % b; } });
+    const plus = level(times, { '+': (a, b) => a + b, '-': (a, b) => a - b });
+    const order = level(plus, { '<': (a, b) => +(a < b), '<=': (a, b) => +(a <= b), '>': (a, b) => +(a > b), '>=': (a, b) => +(a >= b) });
+    const same = level(order, { '==': (a, b) => +(a === b), '!=': (a, b) => +(a !== b) });
+    const both = level(same, { '&&': (a, b) => +(a !== 0 && b !== 0) });
+    const top = level(both, { '||': (a, b) => +(a !== 0 || b !== 0) });
+    const value = top();
+    if (at < tokens.length) throw new Error(`$(( … )): ${tokens[at]} is out of place.`);
+    return value;
+  }
+  /** One part of a word, as text. */
+  async function pieceOf(p) {
+    if (p.sub !== undefined) return substitute(p.sub);
+    if (p.sum !== undefined) return String(sum(p.sum));
+    if (p.name === undefined) return p.text;
+    const given = frames[frames.length - 1];
+    if (p.name === '?') return String(status);
+    if (p.name === '#') return String(given.length);
+    if (p.name === '@' || p.name === '*') return given.join(' ');
+    if (p.name === '0') return 'prism';
+    if (/^[1-9]$/.test(p.name)) return given[Number(p.name) - 1] ?? '';
+    if (p.name === 'PWD') return cwd === '/' ? '/' : cwd.slice(0, -1);
+    return vars.get(p.name) ?? '';
+  }
+  /** A case pattern as a test: * and ? written plainly match any run and any one character. */
+  async function matcher(word) {
+    let pattern = '';
+    for (const p of word) {
+      const piece = await pieceOf(p);
+      pattern += p.text !== undefined && !p.quoted ? escape(piece).replace(/\\\*/g, '[\\s\\S]*').replace(/\\\?/g, '[\\s\\S]') : escape(piece);
+    }
+    return new RegExp('^' + pattern + '$');
+  }
+
   /** A word as the words it stands for: one, or the files a pattern matches, or the words a lone $( … ) printed. */
   async function expand(word) {
     if (word.length === 1 && word[0].sub !== undefined && !word[0].quoted) return (await substitute(word[0].sub)).split(/\s+/).filter(Boolean);
+    // "$@" alone is each word it was handed, as its own word.
+    const said = word.filter((p) => p.text !== '');
+    if (said.length === 1 && said[0].name === '@') return [...frames[frames.length - 1]];
     let text = '';
     let pattern = '';
     let wild = false;
     for (const p of word) {
-      const piece = p.sub !== undefined ? await substitute(p.sub) : p.name === undefined ? p.text : p.name === '?' ? String(status) : p.name === 'PWD' ? (cwd === '/' ? '/' : cwd.slice(0, -1)) : vars.get(p.name) ?? '';
+      const piece = await pieceOf(p);
       text += piece;
       if (p.text !== undefined && !p.quoted && /[*?]/.test(piece)) { wild = true; pattern += escape(piece).replace(/\\\*/g, '[^/]*').replace(/\\\?/g, '[^/]'); } else pattern += escape(piece);
     }
@@ -390,7 +501,7 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
         if (letter === shape.value) { value = Number(args[++i]); if (!Number.isInteger(value) || value < 0) bad = `-${letter} needs a number`; } else if ((shape.flags ?? '').includes(letter)) flags.add(letter); else bad = `unknown option -${letter}`;
       }
     }
-    const named = shape.paths === 'all' ? rest : shape.paths === 'rest' ? rest.slice(1) : shape.paths === 'first' ? rest.filter((a) => !a.startsWith('-')).slice(0, 1) : [];
+    const named = shape.paths === 'all' ? rest : shape.paths === 'head' ? rest.slice(0, 1) : shape.paths === 'rest' ? rest.slice(1) : shape.paths === 'first' ? rest.filter((a) => !a.startsWith('-')).slice(0, 1) : [];
     return { flags, rest, value, bad, named };
   }
 
@@ -453,7 +564,7 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
       const groups = [...new Set(USAGE.map(([, , group]) => group))];
       return hand.print('A command line for the open model. It starts no native program: the commands are these, and nothing else runs.\n'
         + groups.map((group) => group + '\n' + USAGE.filter(([, , g]) => g === group).map(([usage, what]) => '  ' + usage.padEnd(30) + what).join('\n')).join('\n')
-        + '\nOn a line: a | b pipes, a ; b and a && b and a || b join, > file and >> file write, < file reads,\n\'…\' and "…" quote, $NAME is a variable, $( … ) is what its commands print, * and ? match files.\nfor NAME in words; do …; done   while …; do …; done   if …; then …; else …; fi\nTab completes; Ctrl+R searches the history.\n');
+        + '\nOn a line: a | b pipes, a ; b and a && b and a || b join, > file and >> file write, < file reads,\n\'…\' and "…" quote, $NAME is a variable, $( … ) is what its commands print, * and ? match files.\nfor NAME in words; do …; done   while …; do …; done   if …; then …; else …; fi\ncase WORD in pattern) … ;; *) … ;; esac   name() { …; }   $(( 1 + 2 ))   in a script or function: $1 $2 $# $@\nTab completes; Ctrl+R searches the history; Ctrl+S holds what is being written and Ctrl+Q lets it go.\n');
     },
     clear: () => clear(),
     history: (hand) => hand.print(entered.map((line, i) => String(i + 1).padStart(4) + '  ' + line).join('\n') + (entered.length ? '\n' : '')),
@@ -581,12 +692,38 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
       if (!found || found.output !== kappa(found.bytes)) return hand.fail(`restore: no transcript is kept as ${name}.\n`);
       return hand.print(ended(dec.decode(found.bytes)));
     },
+    test: (hand, c) => {
+      let args = c.args;
+      let negate = false;
+      while (args[0] === '!') { negate = !negate; args = args.slice(1); }
+      const whole = (text) => (/^-?\d+$/.test(text) && Number.isSafeInteger(Number(text)) ? Number(text) : null);
+      const numbers = { '-eq': (a, b) => a === b, '-ne': (a, b) => a !== b, '-lt': (a, b) => a < b, '-le': (a, b) => a <= b, '-gt': (a, b) => a > b, '-ge': (a, b) => a >= b };
+      let holds;
+      if (args.length === 0) holds = false;
+      else if (args.length === 1) holds = args[0] !== '';
+      else if (args.length === 2 && ['-z', '-n'].includes(args[0])) holds = (args[1] === '') === (args[0] === '-z');
+      else if (args.length === 2 && ['-f', '-d', '-e'].includes(args[0])) {
+        // Whether a path names a file or a folder of the model. A path outside it names neither.
+        hand.list();
+        const at = resolveTarget(args[1], files(), cwd);
+        holds = at.target === 'model' && (args[0] === '-e' || (args[0] === '-f' ? at.file !== undefined : at.folder !== undefined));
+      } else if (args.length === 3 && ['=', '==', '!='].includes(args[1])) holds = (args[0] === args[2]) === (args[1] !== '!=');
+      else if (args.length === 3 && numbers[args[1]]) {
+        const a = whole(args[0]);
+        const b = whole(args[2]);
+        if (a === null || b === null) { hand.status(2); return hand.note(`test: ${a === null ? args[0] : args[2]} is not a whole number.\n`); }
+        holds = numbers[args[1]](a, b);
+      } else { hand.status(2); return hand.note('test: that is not a comparison it knows. Type help.\n'); }
+      hand.status(holds !== negate ? 0 : 1);
+    },
     run: async (hand, c) => {
       if (c.ats.length !== 1 || !c.ats[0].file) return hand.fail('run takes one file of the model.\n');
       let list;
       try { list = build(lex(hand.read(c.ats[0].file))); } catch (error) { return hand.fail(`run: ${rel(c.ats[0].file)}: ${String(error?.message ?? error)}\n`); }
       // Each line is entered as if it were typed: every command of it is put to the tables on its own.
-      const text = await captured(() => runList(list, 'run ' + rel(c.ats[0].file), !hand.piped));
+      frames.push(c.rest.slice(1));
+      let text;
+      try { text = await captured(() => runList(list, 'run ' + rel(c.ats[0].file), !hand.piped)); } finally { frames.pop(); }
       if (hand.piped) await hand.print(text);
       hand.status(status);
     },
@@ -681,11 +818,13 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
       const assigned = argv.length === 1 && stage.words[0][0].text !== undefined && !stage.words[0][0].quoted ? /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s.exec(argv[0]) : null;
       if (assigned) argv = ['set', assigned[1], assigned[2]];
       if (argv[0] === 'lexlean' && ['check', 'snapshot'].includes(argv[1])) argv.shift();
+      // [ … ] is `test …`.
+      if (argv[0] === '[') { if (argv[argv.length - 1] !== ']') throw new Error('A [ needs a ].'); argv = ['test', ...argv.slice(1, -1)]; }
       const one = async (word, what) => { const got = await expand(word); if (got.length !== 1) throw new Error(`${what} names ${got.length} files; it takes one.`); return got[0]; };
       plan.push({ argv, from: stage.from ? await one(stage.from, '<') : null, to: stage.to ? await one(stage.to, stage.append ? '>>' : '>') : null, append: stage.append });
     }
     // Nothing of a pipeline runs when one of its words is not a command.
-    const unknown = plan.find((p) => !WORDS.includes(p.argv[0]));
+    const unknown = plan.find((p) => !WORDS.includes(p.argv[0]) && !functions.has(p.argv[0]));
     if (unknown) {
       const refused = await exec(unknown.argv[0], unknown.argv.slice(1), { stdin: null, piped: false }, line);
       status = refused.status;
@@ -703,7 +842,14 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
         stdin = read.out;
       }
       const last = i === plan.length - 1;
-      const ran = await exec(p.argv[0], p.argv.slice(1), { stdin, piped: !last || p.to !== null || collect !== null }, line);
+      const piped = !last || p.to !== null || collect !== null;
+      let ran;
+      if (functions.has(p.argv[0])) {
+        // A function is its lines, entered with these words as $1, $2, …. It runs nothing itself, so it is not put
+        // to the tables; each command of its lines is.
+        frames.push(p.argv.slice(1));
+        try { ran = { out: await captured(() => runList(functions.get(p.argv[0]), line, !piped)), answer: 'builtin', status }; } finally { frames.pop(); }
+      } else ran = await exec(p.argv[0], p.argv.slice(1), { stdin, piped }, line);
       answer = ran.answer;
       status = ran.status;
       if (ran.answer === 'refuse') return answer;
@@ -744,6 +890,20 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
               if (status !== 0) { status = 0; break; }
               answer = await runList(item.body, line, shown) ?? answer;
             }
+          } else if (item.kind === 'case') {
+            const subject = (await expand(item.subject)).join(' ');
+            let chosen = null;
+            for (const arm of item.arms) {
+              for (const pattern of arm.patterns) if (!chosen && (await matcher(pattern)).test(subject)) chosen = arm;
+              if (chosen) break;
+            }
+            status = 0;
+            if (chosen) answer = await runList(chosen.body, line, shown) ?? answer;
+          } else if (item.kind === 'function') {
+            if (WORDS.includes(item.name) || RESERVED.includes(item.name) || item.name === 'lexlean') throw new Error(`${item.name} is a command here; a function cannot take its name.`);
+            if (!functions.has(item.name) && functions.size >= MAX_FUNCTIONS) throw new Error(`There are ${MAX_FUNCTIONS} functions already.`);
+            functions.set(item.name, item.body);
+            status = 0;
           } else if (item.kind === 'if') {
             await runList(item.test, line, shown);
             if (status === 0) answer = await runList(item.then, line, shown) ?? answer;
@@ -777,7 +937,7 @@ export function createSession({ judge, writer, files, change = null, bytesOf, la
     const word = before.slice(from);
     const head = before.slice(0, from).trimEnd();
     const first = head === '' || /[|;&]$/.test(head);
-    if (first) return { from, options: WORDS.filter((name) => name.startsWith(word)).sort().map((name) => name + ' ') };
+    if (first) return { from, options: [...WORDS, ...functions.keys()].filter((name) => name.startsWith(word)).sort().map((name) => name + ' ') };
     if (/['"$\\*?]/.test(word)) return { from, options: [] };
     const slash = word.lastIndexOf('/');
     const base = word.slice(0, slash + 1);

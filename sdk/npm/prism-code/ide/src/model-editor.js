@@ -199,7 +199,10 @@ async function commandLine(io) {
     check: (project) => lexlean.ask({ files: project }), snapshotOf: (project) => lexlean.ask({ files: project, snapshot: true }),
     prove: (words, guarantees) => kernel.ask({ words, guarantees }),
     held: async () => ({ lexlean: await settled.lexlean, kernel: await settled.kernel }),
-    pin, manifest, kept: createKeptIn(await openStore({ kappa })), change: { write: changing('write'), remove: changing('remove') }, ...io,
+    pin, manifest, kept: createKeptIn(await openStore({ kappa })), change: { write: changing('write'), remove: changing('remove') },
+    // A paste of several lines is one block; the effects table says to ask before it is entered.
+    askLines: async (lines) => window.confirm(`Run these ${lines.length} pasted lines?\n\n` + lines.join('\n').slice(0, 600)),
+    ...io,
   });
 }
 

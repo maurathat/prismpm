@@ -105,6 +105,23 @@ prover.onmessage = ({ data }) => {
 const prove = (words, guarantees) => (state.kernel?.failed ? Promise.resolve({ error: state.kernel.failed })
   : new Promise((resolve) => { const id = ++nextId; proving.set(id, resolve); prover.postMessage({ id, words, guarantees }); }));
 
+// The search for a breaking request runs in its own worker, so the page, and a key pressed in the terminal, does not
+// wait for it. Where a worker cannot be started the search is done here, as it was.
+const searching = new Map();
+let searcher = null;
+try {
+  searcher = new Worker(new URL('./search-worker.mjs', import.meta.url), { type: 'module' });
+  searcher.onmessage = ({ data }) => { searching.get(data.id)?.(data); searching.delete(data.id); };
+  searcher.onerror = () => { searcher = null; for (const done of searching.values()) done({ error: 'the search worker failed' }); searching.clear(); };
+} catch { searcher = null; }
+async function breaking(table) {
+  if (searcher) {
+    const reply = await new Promise((resolve) => { const id = ++nextId; searching.set(id, resolve); searcher.postMessage({ id, table, guarantees: table.guarantees }); });
+    if (reply.found) return reply.found;
+  }
+  return table.guarantees.map((g) => counterexample(table, g));
+}
+
 // After a clean check: read the model as a rule table, look for a request that breaks each guarantee, then have the
 // kernel judge each. A breaking request is found by trying every request in the bounds; proved is the kernel's word.
 async function guarantees(project, mine) {
@@ -124,9 +141,11 @@ async function guarantees(project, mine) {
   const value = (f, v) => (f.values ? f.values[v] : v);
   const said = (g) => 'When ' + g.when.map(([f, op, v]) => table.fields[f].name + ' ' + OPS[op] + ' ' + value(table.fields[f], v)).join(' and ')
     + ', the answer is ' + (g.always ? 'always ' : 'never ') + table.answers[g.outcome] + '.';
-  const rows = table.guarantees.map((g) => {
+  const searched = await breaking(table);
+  if (mine !== latest) return;
+  const rows = table.guarantees.map((g, at) => {
     const tr = document.createElement('tr');
-    const found = counterexample(table, g);
+    const found = searched[at];
     const broken = found.request !== null;
     for (const text of [said(g), broken ? 'broken' : 'proving…', broken ? 'the request "' + found.request + '" answers ' + found.answer : '']) tr.append(Object.assign(document.createElement('td'), { textContent: text }));
     cell(tr, 1).className = 's';

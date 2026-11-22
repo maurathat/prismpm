@@ -200,12 +200,13 @@ Both pages have a terminal, and both are answered by one command line (`terminal
 - The plain page: below the guarantees, on xterm.js itself (`@xterm/xterm` 6.0.0, MIT) with the fit, webgl, web-links, search and unicode11 addons, installed by `ide/package-lock.json` and published beside the page as the files npm ships.
 - The workbench page: the workbench's own terminal panel (`@codingame/monaco-vscode-terminal-service-override` 39.0.5, which brings VS Code's terminal and the xterm.js it pins, 6.1.0-beta.327). The panel, its tabs, its find box and its renderer are VS Code's. `src/model-terminal.js` is the "process" behind it.
 
-xterm.js draws and reports keys; a browser tab has no operating system to run anything else. What answers the keys is a command language over a fixed list of 33 commands, each of them the page's own code or a question to one of the page's two workers:
+xterm.js draws and reports keys; a browser tab has no operating system to run anything else. What answers the keys is a command language over a fixed list of 34 commands, each of them the page's own code or a question to one of the page's two workers:
 
 | Commands | What they do |
 |---|---|
 | `help`, `clear`, `history`, `set`, `unset`, `env` | the terminal itself: the commands, the screen, the lines entered, variables |
-| `run file` | enter the lines of a file of the model, as a script |
+| `run file [word…]` | enter the lines of a file of the model, as a script; the words are its `$1`, `$2`, … |
+| `test …`, `[ … ]` | say by its status whether a comparison holds: `=`, `!=`, `-eq`, `-lt`, `-gt`, `-z`, `-n`, `-f`, `-d`, `-e` |
 | `ls [-l]`, `cd`, `pwd`, `cat`, `kappa` | the model's files: list, move about, print, print a `blake3:` label |
 | `echo`, `grep`, `head`, `tail`, `wc`, `sort`, `uniq`, `diff` | text, from files of the model or from the command before in a pipe |
 | `write`, `append`, `touch`, `cp`, `mv`, `rm` | make, change or remove a file of the model, as the editor holds it |
@@ -214,11 +215,11 @@ xterm.js draws and reports keys; a browser tab has no operating system to run an
 | `audit` | each guarantee's status by the rule of `model/ide-audit` |
 | `save`, `restore`, `sessions` | keep this session's transcript in this browser, print one, list them |
 
-A line is commands joined as in a shell: `a | b` pipes, `a ; b`, `a && b` and `a || b` join, `> file` and `>> file` write a file of the model, `< file` reads one. `'…'` and `"…"` quote, `$NAME` and `${NAME}` are variables (`NAME=value` sets one, `$?` is the last command's status), `*` and `?` match the model's files, `#` starts a comment. `$( … )` in a word stands for what the commands inside it print. A line loops and chooses with `for NAME in words; do …; done`, `while …; do …; done` and `if …; then …; else …; fi`; a loop stops after 10000 turns, and scripts and `$( … )` nest eight deep.
+A line is commands joined as in a shell: `a | b` pipes, `a ; b`, `a && b` and `a || b` join, `> file` and `>> file` write a file of the model, `< file` reads one. `'…'` and `"…"` quote, `$NAME` and `${NAME}` are variables (`NAME=value` sets one, `$?` is the last command's status), `*` and `?` match the model's files, `#` starts a comment. `$( … )` in a word stands for what the commands inside it print. A line loops and chooses with `for NAME in words; do …; done`, `while …; do …; done` and `if …; then …; else …; fi`; a loop stops after 10000 turns, and scripts, functions and `$( … )` nest eight deep. `case WORD in pattern) … ;; *) … ;; esac` chooses by a pattern. `name() { …; }` gives lines a name; a function cannot take a command's name. `$(( … ))` is a sum over whole numbers, with comparisons. In a script or a function, `$1` to `$9`, `$#` and `$@` are the words it was handed.
 
-It is a command line for the model, in this tab, and no more than that. Any other word is refused: there is no bash, no native program, no package manager, no git and no connection to any machine, because nothing in a browser tab can run them and this page talks to no server. Nothing runs in the background (`&`), and there are no functions, no `case`, no arithmetic and no `test`: a condition is a command's own status, such as `grep -q`.
+It is a command line for the model, in this tab, and no more than that. Any other word is refused: there is no bash, no native program, no package manager, no git and no connection to any machine, because nothing in a browser tab can run them and this page talks to no server. Nothing runs in the background (`&`). A condition is a command's own status: `test`, `[ … ]`, `grep -q`.
 
-The line is edited as in a terminal: Left, Right, Home, End, Ctrl+A, Ctrl+E; by word with Ctrl+Left, Ctrl+Right, Alt+B, Alt+F; Backspace, Delete, Ctrl+D; Ctrl+U, Ctrl+K, Ctrl+W, Alt+Backspace and Alt+D cut, and Ctrl+Y puts back; Up, Down, Ctrl+P and Ctrl+N walk the history and Ctrl+R searches it; Tab completes a command or a file of the model, and a second Tab lists what fits; Ctrl+C abandons the line or stops the running line; Ctrl+L clears. Keys pressed while a command runs are entered after it.
+The line is edited as in a terminal: Left, Right, Home, End, Ctrl+A, Ctrl+E; by word with Ctrl+Left, Ctrl+Right, Alt+B, Alt+F; Backspace, Delete, Ctrl+D; Ctrl+U, Ctrl+K, Ctrl+W, Alt+Backspace and Alt+D cut, and Ctrl+Y puts back; Up, Down, Ctrl+P and Ctrl+N walk the history and Ctrl+R searches it; Tab completes a command or a file of the model, and a second Tab lists what fits; Ctrl+C abandons the line or stops the running line; Ctrl+L clears; Ctrl+S holds what is being written and Ctrl+Q lets it go. A paste of several lines is one block: the page asks first, as the effects table says, and the block is then entered whole, so a loop pasted over several lines is read as one. Keys pressed while a command runs are entered after it.
 
 ### What decides
 
@@ -236,12 +237,12 @@ The line is edited as in a terminal: Left, Right, Home, End, Ctrl+A, Ctrl+E; by 
 - `terminal/pins.json` names each published file of xterm.js by its `blake3:` label, and the plain page runs a file only when its bytes have that label. `node tools/terminal-site.mjs pin` rewrites the pins after a version change; the site builder refuses an installed file that is not the pinned one. The workbench's xterm.js is part of the workbench bundle and is held by the lockfile, not by a label the page checks.
 - A program's output is kept under the label of its program's label and the label of everything it read, and shown again only when `reuseAdmits` (proved in `model/rule-app`) admits it. A second `check` of an unchanged model starts nothing, on this visit or a later one, in either page.
 - The store (`terminal/kappa-space.mjs`) follows the browser store of Hologram (github.com/Hologram-Technologies/hologram, `crates/hologram-store/src/opfs/js_api.rs` at `e8fcdc70`): one file to a blob in the origin's private file system, named by its label, returned only when it re-derives to that label. It is that layout written in JavaScript, because Hologram publishes no browser build of its store. Where the browser has no such file system, things are kept for the visit only.
-- Hologram's rule that a pure function over a finite domain is computed once and kept as a table is applied to the decision tables: the command, reach, effects and audit tables are each computed once into a lookup table (816, 272, 108 and 108 answers, one byte each), named by its label, and a request is answered with one read. The flow table has a number in it and is judged rule by rule. `tables.json` carries the label each lookup table must have, and a terminal whose tables compute to another label does not start.
+- Hologram's rule that a pure function over a finite domain is computed once and kept as a table is applied to the decision tables: the command, reach, effects and audit tables are each computed once into a lookup table (840, 280, 108 and 108 answers, one byte each), named by its label, and a request is answered with one read. The flow table has a number in it and is judged rule by rule. `tables.json` carries the label each lookup table must have, and a terminal whose tables compute to another label does not start.
 - `site.json` names every published file by its `blake3:` label, beside its SHA-256.
 
 What this does and does not buy: content addressing makes a repeated command cost a few milliseconds and makes what is stored checkable. It does not make a key press faster. That time is xterm.js drawing, and it was already short.
 
-The tables reach the pages as `terminal/tables.json`, read at build time from the models through LexLean's own snapshot. The guarantees are proved of the tables; that this code asks them and obeys, and that each lookup table answers as its rules do, is tested by `node tools/terminal-test.mjs` (33 tests), not proved.
+The tables reach the pages as `terminal/tables.json`, read at build time from the models through LexLean's own snapshot. The guarantees are proved of the tables; that this code asks them and obeys, and that each lookup table answers as its rules do, is tested by `node tools/terminal-test.mjs` (38 tests), not proved.
 
 ### Measured
 
@@ -264,15 +265,20 @@ What the command line adds to a key: 0.35 µs to edit the line and hand the echo
 
 The prompt no longer waits for the WebGL renderer: it is drawn by xterm.js's own renderer and the fast one is put in just after. `window.prismTerminal.timing` says when each part of starting was done. The first load's 0.8 s is fetching xterm.js, hashing it against its pins and compiling it.
 
+### In a browser, in CI
+
+`node tools/terminal-browser-test.mjs` opens both pages in headless Chrome, enters nine lines in each terminal and checks the answers, and times 1000 keys in each. It fails on a page error, a file not fetched, a wrong answer, a key never drawn, or a 95th percentile over 50 ms. `.github/workflows/ide-kernels-model.yml` runs it on the CI runner (job `terminal-browser`) and prints the figures. On the development machine on 2026-11-22: 1000 keys in each page, median 5.5 ms, 95th percentile 5.9 ms, worst 7.0 ms in the plain page and 8.9 ms in the workbench. With `--base <address>` it tests a published site; on the live pages that day the worst key was 6.0 ms and 7.9 ms.
+
+The plain page used to hold a key for up to 1.6 s while it looked for a request that breaks each guarantee, on the page's own thread after every change to the model. That search now runs in a worker (`search-worker.mjs`).
+
 ### Not built
 
 - A shell that runs programs. No native program, package manager, git or SSH, and no connection to any machine. A WASI shell with core utilities is a later phase with its own proposal.
-- Functions, `case`, arithmetic, `test` and background commands. A script is a file of the model entered by `run`; it takes no arguments.
-- A paste of several lines is entered line by line, so a loop pasted over several lines is refused; in a script file it may span lines.
-- A program is not paused mid-run: its output is produced whole, then written under flow control. Ctrl+C stops what is being written and the rest of the line.
+- Background commands, here-documents, arrays and `local`. `test` knows the comparisons listed above and no others.
+- A program is not paused mid-run: its output is produced whole, then written under flow control. What is being written can be held with Ctrl+S and let go with Ctrl+Q, and Ctrl+C stops it and the rest of the line. In the workbench the panel may take Ctrl+S for itself.
 - A transcript is kept only by `save`, as text. The screen itself (colours, the scrollback as drawn) is not kept, and the serialize addon is not loaded.
 - The history is this visit's. It is not kept between visits unless a transcript is saved.
-- A character is taken to be one column wide by the line editor, so a line with wide characters is edited out of place.
+- The line editor takes a wide character as two columns and a joining mark as none, by a table of its own; an emoji made of several joined characters may still be placed a column out.
 - `prove` is held to the SHA-256 names in the kernel's manifest; only the label of the whole list is BLAKE3.
 - The workbench bundle grew by the terminal: the published `edit/ide/` folder is 31 MiB.
 - Leaving the workbench page logs one more of the workbench's own shutdown notices (`join.terminalAutoReplies`).
