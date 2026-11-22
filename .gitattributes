@@ -1,5 +1,7 @@
 # Fixtures whose exact bytes are hashed by a test: never convert line endings (#268).
 sdk/npm/prism-code/test/fixtures/Calculator.provenance-min.bundle.jsonl text eol=lf
+# Rust signs a holo from these bundle lines and compares it byte for byte with the JavaScript output.
+sdk/npm/prism-code/test/fixtures/attestation/*.jsonl text eol=lf
 # A rendered kernel's BLAKE3 address is over the printer's exact bytes.
 sdk/npm/prism-code/test/fixtures/webgpu/*.wgsl text eol=lf
 sdk/npm/spec/test/fixtures/documents/sdk-lock-v3/calculator.json text eol=lf

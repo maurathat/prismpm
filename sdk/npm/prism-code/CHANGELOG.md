@@ -6,6 +6,48 @@ Version 0.1.0 was a canonicalization library with no entry here; its API lives o
 
 To move to 1.0, read the [migration guide](../../../docs/site/migration/to-1-0.md).
 
+## [0.10.4](https://github.com/UOR-Foundation/prismpm/compare/prism-code-v0.10.3...prism-code-v0.10.4) (2026-11-21)
+
+### Features Added
+
+* **holo:** ADR-018 and the v6 container, sealed and addressed by BLAKE3 ([9d18bf8](https://github.com/UOR-Foundation/prismpm/commit/9d18bf8242ba2955ba0bb4fad0e7eb64d4100c8c))
+* **holo:** ADR-018 and the v6 container, sealed and addressed by BLAKE3 ([9ea58df](https://github.com/UOR-Foundation/prismpm/commit/9ea58df8065b679cc4a269cef9403a3e91678c91))
+* **prism-code:** a built holo app is published with its model beside it ([9fe637a](https://github.com/UOR-Foundation/prismpm/commit/9fe637a05dab3a9648be477a825d46590970a327))
+* **prism-code:** a reference evaluator that runs a model's semantic snapshot as it stands ([17d07c1](https://github.com/UOR-Foundation/prismpm/commit/17d07c10049b36f64a67b1a999601f2646cf42a8))
+* **prism-code:** build a decision or stateful app's holo with nothing compiled ([d68ef81](https://github.com/UOR-Foundation/prismpm/commit/d68ef81a820f8dac295735677a15270b3609edc6))
+* **prism-code:** build every text application's holo with nothing compiled (DK-50) ([681ac7e](https://github.com/UOR-Foundation/prismpm/commit/681ac7e50b1ec33874257fedd67c7739da6748b7))
+* **prism-code:** publish-model writes a holo app's model beside its page ([b65e3e8](https://github.com/UOR-Foundation/prismpm/commit/b65e3e86b8fd7df2e80391e1ccb3eeda5d75d109))
+* **prism-code:** publish-model writes a holo app's model beside its page ([61535ec](https://github.com/UOR-Foundation/prismpm/commit/61535ecea26deff3a437fde4798803dd7a157c9c))
+* **prism-code:** push and pull carry a built holo, named by its BLAKE3 label ([4d98ea3](https://github.com/UOR-Foundation/prismpm/commit/4d98ea39bfccdce03a3105da15a3755af34976f6))
+* **prism-code:** the edit pages say whether a model is the one its holo app was built from ([f9a5be4](https://github.com/UOR-Foundation/prismpm/commit/f9a5be428f369aaf213180a039e8ca724065b2cd))
+* **prism-code:** the edit pages say whether a model is the one its holo app was built from ([161ec8a](https://github.com/UOR-Foundation/prismpm/commit/161ec8aeb3b2b0783d82a1c8f88a4c62adcdda58))
+* **prism-code:** the evaluator guest runs every primitive the reference evaluator runs ([4532613](https://github.com/UOR-Foundation/prismpm/commit/4532613672103869e2a7ee3cc9a485bd34a31a2c))
+* **prism-code:** the no-toolchain holo build is a stated capability, DK-50 ([91e3f58](https://github.com/UOR-Foundation/prismpm/commit/91e3f581470a5a81d215b94c31e0501a46a24a24))
+* **prism-code:** the Prism IDE's site works offline, every file served by its BLAKE3 label ([e61efc4](https://github.com/UOR-Foundation/prismpm/commit/e61efc4ecf5f2cd1bca0716485a336143fcbb529))
+* **prism-code:** the Prism IDE's site works offline, every file served by its BLAKE3 label ([76e970a](https://github.com/UOR-Foundation/prismpm/commit/76e970ad91c8d620551511c657b289bf0950a9c2))
+* **prism-code:** the Prism terminal gains pipes, redirection, variables and 23 more commands, six of which change the model ([6d31931](https://github.com/UOR-Foundation/prismpm/commit/6d31931ab92730edb886f6bcaa56ad4eae8811f5))
+* **prism-code:** the Prism terminal gains pipes, redirection, variables and 23 more commands, six of which change the model ([3e2bbad](https://github.com/UOR-Foundation/prismpm/commit/3e2bbad42f36947ba3e6129b75a35e9475814b11))
+* **prism-code:** the workbench opens a model by its BLAKE3 label from a kappa-registry ([35cbd60](https://github.com/UOR-Foundation/prismpm/commit/35cbd6093bfef68607be0073925e826d03ffde79))
+* **prism-code:** the workbench opens a model by its BLAKE3 label from a kappa-registry ([f5e83ad](https://github.com/UOR-Foundation/prismpm/commit/f5e83ad625ce832830bcfa1fd5689c1838b1d770))
+
+### Breaking Changes
+
+None.
+
+### Bugs Fixed
+
+* **prism-code:** the workbench's terminal panel no longer calls the Prism command line pwsh ([967a95e](https://github.com/UOR-Foundation/prismpm/commit/967a95ea28e9d954d352ac412ccf0f66fa9e109f))
+* **prism-code:** the workbench's terminal panel no longer calls the Prism command line pwsh ([3d01ce1](https://github.com/UOR-Foundation/prismpm/commit/3d01ce17681e9562589171394cd972fb1123b93f))
+
+### Other Changes
+
+* **prism-code:** a 3 KiB package allowance for the holo v6 container ([277d477](https://github.com/UOR-Foundation/prismpm/commit/277d477cf1c8a2666d243a911fe48b7dd0f9fb64))
+* **prism-code:** build a holo in a browser worker and compare it with Node, in three engines ([cc05d07](https://github.com/UOR-Foundation/prismpm/commit/cc05d07b29c42815d83dc7b711a33c1097f4b875))
+* **prism-code:** list publish-model where the commands are listed ([03fd1c0](https://github.com/UOR-Foundation/prismpm/commit/03fd1c0de7a367db783de78a753da20e68fbc3e5))
+* **prism-code:** phase 2d met against kappa-registry itself; what phase 2e needs ([54b1fb1](https://github.com/UOR-Foundation/prismpm/commit/54b1fb12f6a425b96b387536c071490842e4bed0))
+* **prism-code:** phase 2d met against kappa-registry itself; what phase 2e needs ([cbeb903](https://github.com/UOR-Foundation/prismpm/commit/cbeb90395fae9ced8a9d8fb5df0fdfb924f19dba))
+* **prism-code:** publish-model writes the record model-site.mjs defines ([f536171](https://github.com/UOR-Foundation/prismpm/commit/f536171289fbaaf01d9f35ead6ff76729712537b))
+
 ## [0.10.3](https://github.com/UOR-Foundation/prismpm/compare/prism-code-v0.10.2...prism-code-v0.10.3) (2026-11-21)
 
 ### Features Added
