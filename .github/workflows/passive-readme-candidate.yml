@@ -1,0 +1,65 @@
+# Candidate tool verification only. Not the universal required qualification gate.
+name: SDK passive README candidate proof
+
+on:
+  pull_request:
+    paths:
+      - 'sdk/ci/**'
+      - '.github/workflows/passive-readme-candidate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    name: passive README / isolated SDK CLI and consumer fixtures
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout candidate source with no persisted token
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Exercise complete standalone planted suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          start=$SECONDS
+          python3 --version
+          python3 -m unittest discover -s sdk/ci -p test_passive_readme_scope.py -v
+          echo "fixture_seconds=$((SECONDS-start))" >> "$GITHUB_STEP_SUMMARY"
+      - name: Replay two immutable consumer README PRs
+        shell: bash
+        run: |
+          set -euo pipefail
+          start=$SECONDS
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          for row in \
+            "mnist 515f75f9f01470df8cac095cdc22f5aebcc252c7 9ab4144c325b08ab3e1522b7915b531818244745" \
+            "calculator-example 5051dc6adb18e9ca2b6ae4ca7090e638329831ef 3e501e41e8c2ef45a83c0669cc5ca9b09e595a87"
+          do
+            read -r name base head <<< "$row"
+            git clone --filter=blob:none --no-checkout \
+              "https://github.com/UOR-Foundation/$name.git" "$tmp/$name"
+            git -C "$tmp/$name" fetch origin "$base" "$head"
+            git -C "$tmp/$name" checkout --detach "$head"
+            python3 sdk/ci/passive_readme_scope.py --repo "$tmp/$name" \
+              --base "$base" --head "$head" > "$tmp/receipt.json"
+            python3 - "$tmp/receipt.json" "$name" sdk/ci/passive_readme_scope.py <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import sys
+          receipt = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          expected = hashlib.sha256(pathlib.Path(sys.argv[3]).read_bytes()).hexdigest()
+          assert receipt["schema"] == "prismpm/passive-readme-receipt/1", receipt
+          assert receipt["classification"] == "PASSIVE_README", receipt
+          assert receipt["classifier_sha256"] == expected, receipt
+          assert sorted(receipt["paths"]) == ["README.md", "assets/readme-banner-PLACEHOLDER.png"], receipt
+          print(sys.argv[2], "PASSIVE_README; classifier", expected, "paths", receipt["paths"])
+          PY
+          done
+          echo "consumer_seconds=$((SECONDS-start))" >> "$GITHUB_STEP_SUMMARY"
