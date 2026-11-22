@@ -522,6 +522,10 @@ path = "sdk/npm/prism-code/src/oci-store.mjs"
 module = "images"
 
 [[owner]]
+path = "sdk/npm/prism-code/src/outgoing.mjs"
+module = "verify"
+
+[[owner]]
 path = "sdk/npm/prism-code/src/plugins.mjs"
 module = "system"
 
@@ -532,6 +536,10 @@ module = "images"
 [[owner]]
 path = "sdk/npm/prism-code/src/providers.mjs"
 module = "client"
+
+[[owner]]
+path = "sdk/npm/prism-code/src/push-core.mjs"
+module = "images"
 
 [[owner]]
 path = "sdk/npm/prism-code/src/push-pull-cli.mjs"
