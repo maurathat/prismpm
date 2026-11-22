@@ -1197,11 +1197,21 @@ fn generate_in(
         maximum_pages: application.core_memory_pages(),
         input_ir_sha256: sha256(&kernel_bytes),
     };
-    let core_package = match application.core_stack_bytes() {
-        Some(stack) => generate_core_wasm_package_v2(&module, &core_spec, stack),
-        None => generate_core_wasm_package(&module, &core_spec),
-    }
-    .map_err(|error| PrismError::new("PP5101", error.to_string()))?;
+    // A binary application in the session or checkpoint world (#629, HO-47)
+    // takes the session shim; every other guest is the stateless core.
+    let session = session_spec(
+        application,
+        &core_spec.crate_name,
+        entry,
+        &core_spec.input_ir_sha256,
+    );
+    let core_package = match (&session, application.core_stack_bytes()) {
+        (Some(spec), _) => crate::session_guest::generate_session_guest_package(&module, spec),
+        (None, Some(stack)) => generate_core_wasm_package_v2(&module, &core_spec, stack)
+            .map_err(|error| PrismError::new("PP5101", error.to_string())),
+        (None, None) => generate_core_wasm_package(&module, &core_spec)
+            .map_err(|error| PrismError::new("PP5101", error.to_string())),
+    }?;
     let core_root = workspace.join("core-wasm");
     publish_package(&core_root, &core_package)?;
     let core_cargo_env =
@@ -1221,12 +1231,7 @@ fn generate_in(
         .join(format!("{wasm_stem}.wasm"));
     let wasm = std::fs::read(&wasm_path)
         .map_err(|error| PrismError::new("PP5101", format!("Core-Wasm output: {error}")))?;
-    validate_core_wasm_resources(
-        &wasm,
-        application.core_memory_pages(),
-        application.core_stack_bytes(),
-    )
-    .map_err(|error| PrismError::new("PP5103", error.to_string()))?;
+    validate_guest(application, &wasm)?;
 
     let generated_core_sha = sha256(
         package
@@ -1666,7 +1671,67 @@ fn sdk_basis(repository_root: &Path) -> Option<String> {
     crate::holo::v5::is_kappa(digest).then(|| digest.to_owned())
 }
 
+/// The session guest a binary application in the session or checkpoint world
+/// generates, or `None` for every stateless guest.
+fn session_spec(
+    application: &Application,
+    crate_name: &str,
+    entry: &str,
+    input_ir_sha256: &str,
+) -> Option<crate::session_guest::SessionGuestSpec> {
+    match application {
+        Application::Binary(binary) => binary.session_spec(crate_name, entry, input_ir_sha256),
+        _ => None,
+    }
+}
+
+/// The session guest of `application` with its declared bounds, named as the build names it.
+fn declared_session(application: &Application) -> Option<crate::session_guest::SessionGuestSpec> {
+    let entry_root = application.entry_root();
+    let entry = entry_root.rsplit('.').next().unwrap_or("");
+    session_spec(
+        application,
+        &format!("{}-core-wasm", application.cargo_name()),
+        entry,
+        "",
+    )
+}
+
+/// Check the compiled guest of `application` against its world and declared resources.
+fn validate_guest(application: &Application, wasm: &[u8]) -> Result<(), PrismError> {
+    match declared_session(application) {
+        Some(spec) => {
+            crate::session_guest::validate_session_guest(wasm, spec.contract(), spec.maximum_pages)
+        }
+        None => validate_core_wasm_resources(
+            wasm,
+            application.core_memory_pages(),
+            application.core_stack_bytes(),
+        )
+        .map_err(|error| PrismError::new("PP5103", error.to_string())),
+    }
+}
+
+/// The target profile of a session guest: its world, its entry and every bound
+/// its shim is generated from (`prismpm/core-wasm-session-target/1`).
+fn session_target_profile(spec: &crate::session_guest::SessionGuestSpec) -> Value {
+    json!({
+        "contract": spec.contract(),
+        "export": "holo_step",
+        "maximum_pages": spec.maximum_pages,
+        "request_maximum": spec.request_maximum,
+        "response_count_maximum": spec.response_count_maximum,
+        "response_maximum": spec.response_maximum,
+        "schema": crate::session_guest::TARGET_SCHEMA,
+        "stack_bytes": spec.stack_bytes,
+        "state_maximum": spec.state_maximum
+    })
+}
+
 pub(crate) fn application_target_profile(application: &Application) -> Value {
+    if let Some(spec) = declared_session(application) {
+        return session_target_profile(&spec);
+    }
     let mut target = json!({
         "contract": application.core_contract(),
         "export": "holo_run",
@@ -1702,6 +1767,25 @@ pub(crate) fn validate_application_core_resources(
     let generation: Value = serde_json::from_slice(generation).map_err(|error| {
         PrismError::new("PP5103", format!("Core-Wasm generation metadata: {error}"))
     })?;
+    if let Some(spec) = declared_session(application) {
+        // The session manifest is the target profile with the entry for the
+        // export, plus the generated files and the IR they come from.
+        let mut expected = session_target_profile(&spec);
+        let mut actual = generation.clone();
+        let expected_record = expected.as_object_mut().expect("the profile is an object");
+        expected_record.remove("export");
+        expected_record.insert("entry".to_owned(), json!(spec.entry));
+        let stripped = actual.as_object_mut().is_some_and(|record| {
+            record.remove("files").is_some() && record.remove("input_ir_sha256").is_some()
+        });
+        if !stripped || actual != expected {
+            return Err(PrismError::new(
+                "PP5103",
+                "session guest generation bounds differ from the source-owned model",
+            ));
+        }
+        return validate_guest(application, wasm);
+    }
     let mut fields = vec![
         "entry",
         "export",
@@ -1751,6 +1835,126 @@ pub(crate) fn validate_application_core_resources(
 #[cfg(test)]
 mod resource_tests {
     use super::*;
+
+    /// A binary application in a session world, with the bounds of the ABI probes.
+    fn session_application(contract: &str) -> Application {
+        Application::Binary(Box::new(
+            serde_json::from_value(json!({
+                "profile": "prismpm/binary-application/1",
+                "name": "Session Probe",
+                "cargo_name": "session-probe",
+                "cargo_version": "0.1.0",
+                "cargo_description": "A session guest probe.",
+                "cargo_repository": "https://github.com/UOR-Foundation/PrismPM",
+                "cargo_homepage": "https://github.com/UOR-Foundation/PrismPM",
+                "library_roots": ["SessionProbe.step"],
+                "entry_root": "SessionProbe.step",
+                "core_contract": contract,
+                "request_maximum": 60,
+                "response_maximum": 256,
+                "input_count_maximum": 0,
+                "input_maximum": 0,
+                "input_total_maximum": 0,
+                "core_memory_pages": 2,
+                "core_stack_bytes": 16384,
+                "session": {"state_maximum": 256, "response_count_maximum": 4},
+                "acceptance_vectors": [],
+                "acceptance_sessions": [],
+                "acceptance_inputs": [],
+                "capabilities_empty": true,
+                "fat_archive": true,
+                "primary_layer": 0,
+                "view_layer": 1
+            }))
+            .expect("the probe declaration deserializes"),
+        ))
+    }
+
+    /// The build generates a binary application's session shim, compiles it,
+    /// and checks the module and its recorded bounds against the model; a
+    /// planted disagreement in either is refused.
+    #[test]
+    fn a_session_application_builds_and_checks_its_session_guest() {
+        use crate::session_guest::{CHECKPOINT_CONTRACT, SESSION_CONTRACT};
+        let ir = "(module SessionProbe (def step ((turn Bytes)) Bytes turn))";
+        let (remaining, module) = prod_ir::parser::parse_module(ir).unwrap();
+        assert!(remaining.trim().is_empty());
+        let directory = tempfile::tempdir().unwrap();
+        let base = BTreeMap::from([("CARGO_NET_OFFLINE".to_owned(), "true".to_owned())]);
+        for (contract, other) in [
+            (SESSION_CONTRACT, CHECKPOINT_CONTRACT),
+            (CHECKPOINT_CONTRACT, SESSION_CONTRACT),
+        ] {
+            let application = session_application(contract);
+            let spec = session_spec(
+                &application,
+                "session-probe-core-wasm",
+                "step",
+                &sha256(ir.as_bytes()),
+            )
+            .expect("a session world has a session spec");
+            assert_eq!(spec.contract(), contract);
+            let package =
+                crate::session_guest::generate_session_guest_package(&module, &spec).unwrap();
+            let root = directory.path().join(contract.rsplit('@').next().unwrap());
+            publish_package(&root, &package).unwrap();
+            let env =
+                core_wasm_cargo_environment(&package, &base, directory.path(), directory.path())
+                    .unwrap();
+            run(
+                "application-core-wasm",
+                &executable("cargo").unwrap(),
+                &["build", "--locked", "--offline", "--release"],
+                &root,
+                &env,
+                &[],
+                "PP5101",
+            )
+            .unwrap();
+            let wasm = std::fs::read(
+                root.join("target/wasm32-unknown-unknown/release/session_probe_core_wasm.wasm"),
+            )
+            .unwrap();
+            let target = encode_value(&application_target_profile(&application)).unwrap();
+            let manifest = package
+                .files
+                .iter()
+                .find(|file| file.path == "generation-manifest.json")
+                .unwrap()
+                .bytes
+                .clone();
+            validate_application_core_resources(&application, &wasm, &target, &manifest).unwrap();
+
+            let mut wider: Value = serde_json::from_slice(&manifest).unwrap();
+            wider["state_maximum"] = json!(257);
+            let mut stateless = application_target_profile(&application);
+            stateless["export"] = json!("holo_run");
+            let mut renamed: Value = serde_json::from_slice(&manifest).unwrap();
+            renamed["contract"] = json!(other);
+            let elsewhere = session_application(other);
+            let elsewhere_target = encode_value(&application_target_profile(&elsewhere)).unwrap();
+            for (declared, target, manifest) in [
+                (&application, target.clone(), encode_value(&wider).unwrap()),
+                (
+                    &application,
+                    encode_value(&stateless).unwrap(),
+                    manifest.clone(),
+                ),
+                (
+                    &elsewhere,
+                    elsewhere_target,
+                    encode_value(&renamed).unwrap(),
+                ),
+            ] {
+                assert_eq!(
+                    validate_application_core_resources(declared, &wasm, &target, &manifest)
+                        .expect_err("a disagreement is refused")
+                        .code,
+                    "PP5103"
+                );
+            }
+        }
+    }
 
     #[test]
     fn text_v2_resource_bounds_fallible_browser_entry_propagates_compute_error() {

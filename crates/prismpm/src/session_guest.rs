@@ -146,6 +146,60 @@ fn refused(message: impl Into<String>) -> PrismError {
     PrismError::new("PP5101", message)
 }
 
+/// Check a compiled session guest against its world and its declared memory:
+/// a valid module with no imports and no start function, exactly the exports
+/// of `contract` (@2 or @3), and one 32-bit memory whose maximum is exactly
+/// `maximum_pages`. The generation manifest is not evidence of any of these.
+pub fn validate_session_guest(
+    wasm: &[u8],
+    contract: &str,
+    maximum_pages: u32,
+) -> Result<(), PrismError> {
+    let wrong = |why: &str| {
+        PrismError::new(
+            "PP5103",
+            format!("the session guest disagrees with {contract}: {why}"),
+        )
+    };
+    if contract != SESSION_CONTRACT && contract != CHECKPOINT_CONTRACT {
+        return Err(wrong("not a session world"));
+    }
+    wasmparser::Validator::new()
+        .validate_all(wasm)
+        .map_err(|_| wrong("not a valid module"))?;
+    let mut memories = 0;
+    for payload in wasmparser::Parser::new(0).parse_all(wasm) {
+        match payload.map_err(|_| wrong("not a valid module"))? {
+            wasmparser::Payload::ImportSection(section) if section.count() != 0 => {
+                return Err(wrong("it imports"));
+            }
+            wasmparser::Payload::StartSection { .. } => {
+                return Err(wrong("it has a start function"))
+            }
+            wasmparser::Payload::MemorySection(section) => {
+                for memory in section {
+                    let memory = memory.map_err(|_| wrong("not a valid module"))?;
+                    memories += 1;
+                    if memory.memory64
+                        || memory.shared
+                        || memory.maximum != Some(u64::from(maximum_pages))
+                    {
+                        return Err(wrong("its memory is not the declared maximum"));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if memories != 1 {
+        return Err(wrong("it has no single memory"));
+    }
+    if !crate::inspect::guest_conforms(contract, wasm) {
+        return Err(wrong("its exports are not exactly the world's"));
+    }
+    Ok(())
+}
+
 fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }

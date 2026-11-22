@@ -384,3 +384,36 @@ fn the_session_package_is_unchanged_when_checkpoints_are_off() {
         &probe_bounds("prism-session-probe-core-wasm", false),
     );
 }
+
+/// The committed probes are the generated shims compiled: each validates as its
+/// own world at its declared maximum, and every planted disagreement is refused.
+#[test]
+fn a_compiled_session_guest_is_checked_against_its_world_and_memory() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../sdk/npm/prism-code/test/fixtures");
+    let probe = |directory: &str| {
+        std::fs::read(fixtures.join(directory).join("probe.wasm")).expect("the probe is committed")
+    };
+    let session = probe("session-probe");
+    let checkpoint = probe("checkpoint-probe");
+    let pages = probe_bounds("unused", false).maximum_pages;
+    validate_session_guest(&session, SESSION_CONTRACT, pages).expect("the session probe is @2");
+    validate_session_guest(&checkpoint, CHECKPOINT_CONTRACT, pages)
+        .expect("the checkpoint probe is @3");
+    for (wasm, contract, maximum) in [
+        (&session, CHECKPOINT_CONTRACT, pages),
+        (&checkpoint, SESSION_CONTRACT, pages),
+        (&session, SESSION_CONTRACT, pages + 1),
+        (&session, "hologram:guest/core-wasm@1", pages),
+    ] {
+        assert_eq!(
+            validate_session_guest(wasm, contract, maximum)
+                .expect_err("a disagreement is refused")
+                .code,
+            "PP5103"
+        );
+    }
+    let mut truncated = session.clone();
+    truncated.truncate(session.len() - 1);
+    assert!(validate_session_guest(&truncated, SESSION_CONTRACT, pages).is_err());
+}

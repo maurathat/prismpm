@@ -59,6 +59,8 @@ p256 = { version = "=0.14.0", default-features = false, features = ["ecdsa", "pk
 p384 = { version = "=0.14.0", default-features = false, features = ["ecdsa", "std"] }
 ed25519-dalek = { version = "=3.0.0", default-features = false, features = ["pem"] }
 regex = "1"
+# The session guest check (#630): the same parser, version and features prod-codegen validates the stateless guest with.
+wasmparser = { version = "=0.245.1", default-features = false, features = ["validate", "features", "prefer-btree-collections"] }
 
 [workspace.lints.rust]
 missing_docs = "deny"

@@ -167,6 +167,11 @@ pub(crate) fn world_of(contract: &str) -> Option<&'static World> {
     WORLDS.iter().find(|world| world.contract == contract)
 }
 
+/// Whether `guest` imports nothing and exports exactly the world of `contract`.
+pub(crate) fn guest_conforms(contract: &str, guest: &[u8]) -> bool {
+    world_of(contract).is_some_and(|world| conforms(Some(guest), world.exports) == json!(true))
+}
+
 fn modeled<T>(value: Result<T, wire::ComputeError>) -> Result<T, PrismError> {
     value.map_err(|error| {
         PrismError::new("PP3003", format!("modeled Holo wire arithmetic: {error:?}"))
