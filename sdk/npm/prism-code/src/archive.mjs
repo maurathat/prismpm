@@ -464,8 +464,8 @@ function relabel(value, labels) {
  * object's bytes kept except the manifest's and the provenance's. Those two are v5's documents with every κ
  * relabelled `blake3:` over the same bytes, under schemas `prism/holo/6` and `prismpm/model-provenance/3`; the
  * provenance's `application_kappa` names the new manifest. The build's `*_sha256` fields and LexLean's ids are kept
- * as they are (ADR-018 §7). A κ that names bytes outside the holo, such as a `basis`, cannot be relabelled, so it is
- * refused. A signed holo is refused: its statements name v5 subjects; sign the v6 holo again.
+ * as they are (ADR-018 §7), and so is a `basis`, the SDK image's OCI digest (ADR-018 §3). Any other κ that names bytes
+ * outside the holo cannot be relabelled, so it is refused. A signed holo is refused: its statements name v5 subjects; sign the v6 holo again.
  *
  * @param {Uint8Array | ArrayBuffer | object} source the holo's bytes, or a parsed archive
  * @returns {Uint8Array} the holo v6, sealed with BLAKE3
@@ -479,7 +479,10 @@ export function upgradeToV6(source) {
   if (!resolved.identities.verified) fail('archive.manifest', 'only a holo v5 that verifies is upgraded to v6');
   const objects = parsed.sections.map((section) => section.body);
   const labels = new Map([1, 3, 4, 5, 6].map((index) => [labelOf(5, objects[index]), labelOf(6, objects[index])]));
-  const manifest = relabel({ ...resolved.manifest, schema: MANIFEST_SCHEMA_V6 }, labels);
+  // The basis names the SDK image by its OCI digest, not bytes of the holo (ADR-018 §3): it is kept as it is.
+  const { basis, ...rest } = resolved.manifest;
+  const manifest = relabel({ ...rest, schema: MANIFEST_SCHEMA_V6 }, labels);
+  if (basis !== undefined) manifest.value.basis = basis;
   if (manifest.unmapped) fail('archive.manifest', `the manifest names ${manifest.unmapped}, which is not an object of this holo, so it has no blake3 label here`);
   const manifestBytes = encoder.encode(canonicalJson(manifest.value));
   labels.set(resolved.identities.applicationKappa, labelOf(6, manifestBytes));

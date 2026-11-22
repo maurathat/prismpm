@@ -498,3 +498,26 @@ fn write_v5_reference_fixtures() {
         .unwrap();
     }
 }
+
+#[test]
+fn a_v6_composition_and_a_v5_upgraded_to_v6_keep_the_basis_an_oci_digest() {
+    let mut input = application_input();
+    input.basis = Some(format!("sha256:{}", "a".repeat(64)));
+    let composed = compose_application_as(v5::Format::V6, &input).unwrap();
+    assert!(composed.bytes.starts_with(b"UORC\x02\x02\x00\x00\x07"));
+    let parsed = parse_application(&composed.bytes).unwrap();
+    assert_eq!(
+        parsed.identities.archive_kappa,
+        format!("blake3:{}", blake3::hash(&composed.bytes).to_hex())
+    );
+    for label in parsed.blobs.keys() {
+        assert!(label.starts_with("blake3:"));
+    }
+    let manifest: Value = serde_json::from_slice(&composed.application_manifest).unwrap();
+    assert_eq!(manifest["schema"], json!(MANIFEST_SCHEMA_V6));
+    assert_eq!(manifest["basis"], json!(input.basis), "the SDK image stays named by its OCI digest (ADR-018 §3)");
+
+    // The v5 of the same input, upgraded, is the v6 composed directly: the two writers agree.
+    let v5 = compose_application(&input).unwrap();
+    assert_eq!(upgrade_application_v6(&v5.bytes).unwrap(), composed.bytes);
+}

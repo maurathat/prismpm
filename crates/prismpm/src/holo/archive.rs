@@ -947,7 +947,8 @@ pub fn compose_application_as(
         || input
             .basis
             .as_deref()
-            .is_some_and(|basis| !v5::is_label(format, basis))
+            // The basis names the SDK image by its OCI digest, so it is `sha256:` in either format (ADR-018 §3).
+            .is_some_and(|basis| !v5::is_kappa(basis))
     {
         return Err(PrismError::new(
             "PP3010",
@@ -1100,7 +1101,8 @@ fn parse_application_v5(bytes: &[u8]) -> Result<ParsedApplicationArchive, PrismE
         || manifest
             .basis
             .as_deref()
-            .is_some_and(|basis| !v5::is_label(format, basis))
+            // The basis names the SDK image by its OCI digest, so it is `sha256:` in either format (ADR-018 §3).
+            .is_some_and(|basis| !v5::is_kappa(basis))
         || manifest.requires != capability_kappa
         || manifest.layers
             != layers_v5(
@@ -1299,10 +1301,9 @@ type SplitV5 = (Vec<Vec<u8>>, Option<Vec<u8>>);
 /// objects keep their bytes. The manifest and the provenance are v5's with every
 /// κ relabelled `blake3:` over the same bytes, under `prism/holo/6` and
 /// `prismpm/model-provenance/3`, and the provenance names the new manifest. The
-/// build's `*_sha256` fields and LexLean's ids are kept (ADR-018 §7). A `basis`
-/// names bytes outside the holo, so it cannot be relabelled and is refused; so
-/// is a signed holo, whose statements name v5 subjects. A v6 is returned
-/// unchanged.
+/// build's `*_sha256` fields and LexLean's ids are kept (ADR-018 §7), and so is a
+/// `basis`, the SDK image's OCI digest (ADR-018 §3). A signed holo is refused:
+/// its statements name v5 subjects. A v6 is returned unchanged.
 pub fn upgrade_application_v6(bytes: &[u8]) -> Result<Vec<u8>, PrismError> {
     match v5::format_of(bytes) {
         Some(v5::Format::V6) => {
@@ -1328,12 +1329,7 @@ pub fn upgrade_application_v6(bytes: &[u8]) -> Result<Vec<u8>, PrismError> {
     let relabel = |bytes: &[u8]| v5::label(v5::Format::V6, bytes);
     let mut manifest: ManifestV5 = serde_json::from_slice(objects[0])
         .map_err(|error| PrismError::new("PP3012", format!("holo manifest: {error}")))?;
-    if manifest.basis.is_some() {
-        return Err(PrismError::new(
-            "PP3010",
-            "the manifest names a basis, which is not an object of this holo, so it has no blake3 label here",
-        ));
-    }
+    // The basis names the SDK image by its OCI digest, not bytes of the holo: it is kept as it is.
     manifest.schema = MANIFEST_SCHEMA_V6.to_owned();
     manifest.requires = relabel(objects[3]);
     for (layer, index) in manifest.layers.iter_mut().zip([4, 5]) {

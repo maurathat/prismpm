@@ -109,7 +109,8 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
             if manifest
                 .basis
                 .as_deref()
-                .is_some_and(|basis| !v5::is_label(format, basis))
+                // The SDK image's OCI digest: `sha256:` in either format (ADR-018 §3).
+                .is_some_and(|basis| !v5::is_kappa(basis))
             {
                 problems.push("the manifest basis is not a κ-label".to_owned());
             }
