@@ -768,7 +768,7 @@ const VV_CONFORMANCE_PARTS: [(&str, &[&str]); 5] = [
     ("st-sy", &["conformance_st_", "conformance_sy_"]),
     ("dk-0-1", &["conformance_dk_0", "conformance_dk_1"]),
     ("dk-2", &["conformance_dk_2"]),
-    ("dk-3", &["conformance_dk_3", "conformance_dk_4"]),
+    ("dk-3", &["conformance_dk_3", "conformance_dk_4", "conformance_dk_5"]),
 ];
 
 /// Every registered conformance test must belong to exactly one named part, and
