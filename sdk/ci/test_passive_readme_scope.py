@@ -140,6 +140,41 @@ class PassiveReadmeTests(unittest.TestCase):
         self.build(VALID + "\n\x60\x60\x60text\n## Fake heading\n")
         self.refuse("unterminated Markdown fence")
 
+    def test_rejects_unparseable_markdown_nested_title(self):
+        self.build(VALID + "\n[Broken](missing.md (a title))\n")
+        self.refuse("unsupported Markdown link syntax")
+
+    def test_rejects_unquoted_html_link_attribute(self):
+        self.build(VALID + "\n<a href=missing.md>Broken</a>\n")
+        self.refuse("unsupported HTML link attribute")
+
+    def test_rejects_hidden_html_comment_heading(self):
+        self.build(VALID + "\n[Ghost](#ghost)\n<!-- unrendered\n## Ghost\n-->\n")
+        self.refuse("unresolved README anchor")
+
+    def test_rejects_missing_cross_document_anchor(self):
+        self.build(VALID + "\n[Broken](details.md#missing)\n")
+        self.refuse("unsupported cross-document fragment")
+
+    def test_rejects_gitlinks_hidden_by_repo_configuration(self):
+        self.build()
+        self.git("config", "diff.ignoreSubmodules", "all")
+        self.git("update-index", "--add", "--cacheinfo", f"160000,{self.base},vendor")
+        self.git("commit", "-qm", "hidden source gitlink")
+        self.head = self.git("rev-parse", "HEAD").strip()
+        self.refuse("not passive")
+
+    def test_rejects_replacement_object_spoof(self):
+        self.build(extra=lambda: (self.root / "src" / "model.rs").write_text("fn changed() {}\n"))
+        malicious = self.head
+        self.git("checkout", "--detach", self.base)
+        self.build()
+        benign = self.head
+        self.git("replace", malicious, benign)
+        self.git("checkout", "--detach", malicious)
+        self.head = malicious
+        self.refuse("not passive")
+
     def test_rejects_traversal(self):
         self.build(VALID.replace("details.md", "../secret.md"))
         self.refuse("escapes repository")
@@ -203,8 +238,8 @@ class PassiveReadmeTests(unittest.TestCase):
 
     def test_rejects_mismatched_head(self):
         self.build()
-        with self.assertRaises(scope.Refused):
-            scope.qualify(self.root, self.base, self.base, self.expected)
+        self.git("checkout", "--detach", self.base)
+        self.refuse("working tree HEAD does not equal trusted pull-request head")
 
     def test_rejects_outdated_base_before_declaring_passive(self):
         self.build()
