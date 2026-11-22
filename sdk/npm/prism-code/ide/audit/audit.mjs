@@ -8,8 +8,12 @@
 // found. "Proved" then means the kernel, in this tab.
 //
 // A holo app (app.holo): the holo is judged in this tab by prism-code's verifier, loaded, and its examples replayed.
-// Lean does not run here for a holo. "Proved" then means the holo carries a proof statement that the verifier
-// accepted at level P2 or above, about this holo's own model.
+// When the app publishes its model beside it (model/project.json), the model is built again here: LexLean checks it,
+// Lean's kernel judges every theorem it states, and the package's own build makes a holo from it, all in this tab.
+// "Proved" then means the kernel accepted the theorem in this tab, and the model it was proved for builds, byte for
+// byte, the holo on show. A model that builds another holo proves nothing about this one, and is said so.
+// With no model published, Lean does not run here: "proved" then means the holo carries a proof statement that the
+// verifier accepted at level P2 or above, about this holo's own model.
 //
 // A holo app may be anywhere that lets its files be fetched (?app=https://owner.github.io/app/): they are read as
 // data and no code of the app's is run, except its guest, inside the loader's sandbox. A rule app must be on this
@@ -170,6 +174,46 @@ async function auditRuleApp(recordBytes, lib) {
 }
 
 const PROOF_PREDICATE = 'https://uor.foundation/prism/proof/v1';
+
+// The model an app publishes, built again in this tab by the editor's own worker (../edit/model-prove-worker.mjs):
+// the package's build, with Lean's kernel judging each theorem. Gives `{ theorems, label, stage, message, ms }`, the
+// label being that of the holo the model builds, or null when it built none; or `{ absent }` / `{ error }`.
+// Nothing here is the app's word: the files are read as text and judged, and no code of the app's is run.
+async function rebuiltInTab() {
+  let listing = null;
+  try { listing = JSON.parse(dec.decode(await bytesOrNull(appBase + 'model/project.json') ?? enc.encode('null'))); } catch { listing = null; }
+  if (!listing || !Array.isArray(listing.files) || listing.files.length > 400) return { absent: true };
+  const EDIT = new URL('../edit/', location.href).href;
+  try {
+    const files = {};
+    for (const path of listing.files) {
+      if (typeof path !== 'string' || /(^|\/)\.\.(\/|$)|^\/|^[a-z][a-z0-9+.-]*:/i.test(path)) throw new Error('the model lists a path that leaves its folder');
+      const bytes = await bytesOrNull(appBase + 'model/' + path);
+      if (!bytes) throw new Error(`the model lists ${path}, which could not be read`);
+      files['/' + path] = dec.decode(bytes);
+    }
+    const pin = JSON.parse(dec.decode(await bytesOrNull(EDIT + 'pin.json') ?? enc.encode('null')));
+    if (!pin?.kappa) throw new Error('this site does not carry the editor, so nothing can be built here');
+    const worker = new Worker(EDIT + 'model-prove-worker.mjs', { type: 'module' });
+    const started = performance.now();
+    const reply = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve({ error: 'the build did not finish in 180 seconds' }), 180000);
+      worker.onmessage = ({ data }) => {
+        if (data.failed) { clearTimeout(timer); resolve({ error: 'the kernel could not be opened here: ' + data.failed }); }
+        if (data.id === 1) { clearTimeout(timer); resolve(data); }
+      };
+      worker.onerror = (event) => { clearTimeout(timer); resolve({ error: 'the worker stopped: ' + (event.message ?? 'no reason given') }); };
+      worker.postMessage({ start: { lexlean: { url: EDIT + 'lexlean.wasm.gz', pin: { kappa: pin.kappa, encoding: pin.encoding } }, kernel: EDIT + 'model-kernel/pins.json' } });
+      worker.postMessage({ id: 1, build: true, files });
+    });
+    worker.terminate();
+    if (!reply.built) return { error: reply.error ?? 'the build gave no answer' };
+    const built = reply.built;
+    return { theorems: built.theorems ?? [], label: built.holo?.label ?? null, stage: built.stage, message: built.message, ms: Math.round(performance.now() - started) };
+  } catch (error) {
+    return { error: String(error?.message ?? error) };
+  }
+}
 const LEVELS = ['P0', 'P1', 'P2', 'P3'];
 
 async function auditHolo(holoBytes, lib) {
@@ -251,10 +295,32 @@ async function auditHolo(holoBytes, lib) {
   const reachedP2 = verdict ? LEVELS.indexOf(verdict.level) >= 2 : false;
   const aboutThis = proof?.model?.document?.sha256 === info?.model?.digest?.sha256;
   const theorems = proof?.theorems ?? [];
+  // The model the app publishes, built again here. Each theorem it states is a row: proved when Lean's kernel
+  // accepted it just now and the model builds the very holo on show; otherwise the reason it is not.
+  const rebuilt = await rebuiltInTab();
+  const kernelRows = rebuilt.theorems ?? [];
+  const sameHolo = typeof rebuilt.label === 'string' && rebuilt.label === label.blake3;
+  state.rebuilt = rebuilt.absent ? null : { error: rebuilt.error ?? null, stage: rebuilt.stage ?? null, label: rebuilt.label ?? null, sameHolo, theorems: kernelRows.length, proved: kernelRows.filter((k) => k.status === 'proved').length, ms: rebuilt.ms ?? null };
+  if (!rebuilt.absent) row('verdict', [['th', 'Model'], ['td', rebuilt.error ? `The app publishes its model, but it could not be built in this tab: ${rebuilt.error}`
+    : sameHolo ? `The app publishes its model. Built again in this tab in ${rebuilt.ms} ms, it gives this holo, byte for byte (${rebuilt.label}).`
+    : rebuilt.label ? `The app publishes a model, but built in this tab it gives another holo (${rebuilt.label}), so what is proved of it is not proved of this one.`
+    : `The app publishes a model, but it does not build in this tab (stopped at ${rebuilt.stage}): ${rebuilt.message}`, rebuilt.error || !sameHolo ? undefined : 'ok']]);
+  for (const [i, k] of kernelRows.entries()) {
+    const tr = guaranteeRow(`${k.name ?? k.theorem}${k.axioms?.length ? `, axioms: ${k.axioms.join(', ')}` : ''}`);
+    const request = [k.status === 'proved' ? 'accepted' : k.status === 'not proved' ? 'refused' : 'none', sameHolo ? 'this' : 'other', 'none', 'other', refusal ? 'failed' : replayed];
+    const status = audit.ask ? await audit.ask(request) : 'unknown';
+    settle(tr, i, request, status, !audit.ask ? 'the rule judge archive is not the verified one, so nothing is claimed'
+      : refusal ? 'the holo is refused: ' + refusal
+      : k.status === 'not proved' ? `Lean's kernel did not accept it${k.detail ? ': ' + k.detail : ''}`
+      : k.status !== 'proved' ? `not settled in this tab${k.detail ? ': ' + k.detail : ''}`
+      : !sameHolo ? "Lean's kernel accepted it in this tab, but for a model that does not build this holo"
+      : status === 'proved' ? "Lean's kernel accepted it in this tab, for the model that builds this holo" : WHY[status] ?? 'an example gives a different answer than recorded');
+  }
   // With no proof statement, what the app's own page claims Lean proved (the template's app.json). A claim is the
-  // app's word: it is shown, and marked by what this tab could check, which is the examples.
+  // app's word: it is shown, and marked by what this tab could check, which is the examples. When the kernel has
+  // just judged the model's own theorems above, those rows stand and the claims are not repeated.
   let claims = [];
-  if (theorems.length === 0) {
+  if (theorems.length === 0 && kernelRows.length === 0) {
     try { claims = JSON.parse(dec.decode(await bytesOrNull(appBase + 'app.json') ?? enc.encode('{}'))).theorems ?? []; } catch { claims = []; }
   }
   state.claims = claims.length;
@@ -267,7 +333,7 @@ async function auditHolo(holoBytes, lib) {
       : `claimed by the app, not checked here: the holo carries no proof statement. The app says: "${c.how ?? 'no account given'}"`
         + (status === 'tested' ? ' Its examples pass.' : ''));
   }
-  if (theorems.length === 0 && claims.length === 0) {
+  if (theorems.length === 0 && claims.length === 0 && kernelRows.length === 0) {
     const tr = guaranteeRow('The app answers its own examples as recorded.');
     const request = ['none', 'other', 'none', 'other', refusal ? 'failed' : replayed];
     const status = audit.ask ? await audit.ask(request) : 'unknown';
@@ -288,12 +354,12 @@ async function auditHolo(holoBytes, lib) {
       : !reachedP2 ? `the proof statement is not accepted, so the holo is at ${verdict?.level}: ${verdict?.reasons.find((r) => r.withholds === 'P2' || r.withholds === 'P1')?.message ?? 'no reason given'}`
       : WHY[status] ?? 'an example gives a different answer than recorded');
   }
-  summarise(verdict ? ` Level ${verdict.level}.` : unjudged ? ' No level in this tab.' : '');
+  summarise((verdict ? ` Level ${verdict.level}.` : unjudged ? ' No level in this tab.' : '') + (kernelRows.length && sameHolo ? ` Lean's kernel judged the model in this tab in ${rebuilt.ms} ms.` : ''));
 }
 
 // An app may publish its model beside its page (model/project.json, as prism-code's rule-app build writes it). When
-// it does, the editor can open it from the app's own address. This page checks nothing about the model: the editor
-// has LexLean check it and Lean's kernel judge its guarantees, in its own tab.
+// it does, the editor can open it from the app's own address, to change it; for a holo app this page has also built
+// it again above and judged its theorems.
 async function offerEditor() {
   let listing = null;
   try { listing = JSON.parse(dec.decode(await bytesOrNull(appBase + 'model/project.json') ?? enc.encode('null'))); } catch { listing = null; }
