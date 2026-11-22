@@ -3,6 +3,9 @@
  * module lives, so a run that finds the compiled code broken can compile the same admitted bytes again
  * (lexlean-core.mjs, `lexleanRun`). Only toolchain.mjs records a module here, and only after its bytes have the
  * pinned κ-label, so what is compiled again is never other bytes than the ones admitted.
+ *
+ * The cost is that the bytes live as long as the module: about 19 MB decoded for LexLean in a page. compileAdmitted
+ * already returns the same bytes to its caller, so a caller that keeps them pays nothing more.
  */
 const sources = new WeakMap();
 
