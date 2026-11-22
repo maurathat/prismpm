@@ -962,8 +962,7 @@ pub fn compose_application_as(
         &input.view_bundle,
         &input.model_document,
     ];
-    let [capability_kappa, guest_kappa, view_kappa, model_kappa] =
-        contents.map(|bytes| content_kappa(bytes));
+    let [capability_kappa, guest_kappa, view_kappa, model_kappa] = contents.map(&content_kappa);
     let object_row = |role: &str, bytes: &[u8]| ObjectV5 {
         role: role.to_owned(),
         kappa: content_kappa(bytes),
@@ -1080,7 +1079,7 @@ fn parse_application_v5(bytes: &[u8]) -> Result<ParsedApplicationArchive, PrismE
         .map_err(|error| PrismError::new("PP3012", format!("holo manifest: {error}")))?;
     let [capabilities, guest, view, model] = [objects[3], objects[4], objects[5], objects[6]];
     let [capability_kappa, guest_kappa, view_kappa, model_kappa] =
-        [capabilities, guest, view, model].map(|bytes| content_kappa(bytes));
+        [capabilities, guest, view, model].map(&content_kappa);
     let mut expected_objects = vec![ObjectV5 {
         role: "source-manifest".to_owned(),
         kappa: content_kappa(objects[1]),
