@@ -26,16 +26,48 @@ export interface VerdictReason {
 }
 
 /** The result of `prism check`, `holo.verify()` and `@prism-code/verify`. */
+/** A claim reported beside the level, never a rung on it. */
+export type AssuranceClaim = 'reproved' | 'sources';
+
+/** Lean's kernel, run again by the verifier, on every theorem the holo's snapshot states. */
+export interface ReprovedClaim {
+  /** True only when the kernel accepted a proof of every theorem within its declared axioms just now. */
+  passed: boolean;
+  theorems: { name: string; status: 'proved' | 'refused' | 'unsupported'; axioms: string[] }[];
+  /** The model the theorems were judged for. */
+  semantic_id: string | null;
+  /** The `blake3:` labels of the kernel and the base library that judged them. */
+  kernel: string | null;
+  library: string | null;
+  /** Why it did not pass, or null. */
+  reason: string | null;
+}
+
+/** Whether the holo's sources, run through LexLean by the verifier, give its snapshot. */
+export interface SourcesClaim {
+  present: boolean;
+  /** null when the verifier did not run LexLean. */
+  matchesSnapshot: boolean | null;
+  semantic_id: string | null;
+  /** The `blake3:` label of the LexLean that ran. */
+  lexlean: string | null;
+  reason: string | null;
+}
+
 export interface Verdict {
   schema: 'prism/verdict/1';
   /** The holo's archive fingerprint, `blake3:` and 64 lowercase hex characters. */
   holo: string;
   /** The level computed from the evidence. The policy never changes it. */
   level: AssuranceLevel;
-  /** The policy the holo was judged against and the lowest level it accepts. */
-  policy: { name: string; minimum: AssuranceLevel };
+  /** The policy the holo was judged against, the lowest level it accepts, and the claims it requires beside it. */
+  policy: { name: string; minimum: AssuranceLevel; require?: AssuranceClaim[] };
   /** True when the policy accepts the holo. */
   passed: boolean;
+  /** Present only when the verifier ran Lean's kernel again on the holo's carried snapshot. */
+  reproved?: ReprovedClaim;
+  /** Present when the holo carries a sources object, or the verifier ran LexLean on it. */
+  sources?: SourcesClaim;
   /** Every check that did not pass, in evaluation order. Empty when every check passed. */
   reasons: VerdictReason[];
 }
@@ -50,6 +82,9 @@ export declare const ASSURANCE: Readonly<{
     P2: readonly ['proof'];
     P3: readonly ['replay', 'world'];
   }>;
+  CLAIMS: readonly ['reproved', 'sources'];
+  CLAIM_NAMES: Readonly<{ reproved: 're-proved by the kernel'; sources: 'sources give the snapshot' }>;
+  CLAIM_PREDICATES: Readonly<{ reproved: 'https://uor.foundation/prism/kernel-proof/v1' }>;
   PREDICATES: Readonly<{
     provenance: 'https://slsa.dev/provenance/v1';
     proof: 'https://uor.foundation/prism/proof/v1';

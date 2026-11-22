@@ -1,0 +1,5 @@
+{
+  "status": "experimental",
+  "owner": { "milestone": "holo v6 (ADR-018)" },
+  "description": "Lean's kernel's verdict on every theorem a model states, as a build judged it: unsigned, re-checked by a verifier that runs the kernel again."
+}
