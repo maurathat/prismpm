@@ -264,6 +264,35 @@ Limits of the run panel:
 - A holo that is not judged verified is not run, and the panel says which verdict it got. That path was not tried: every holo the build gives was verified.
 - Holospace's library keeps its store in this origin's private file system, in a folder named `holospace-store`.
 
+### A workspace kept in the store
+
+`edit/ide/?workspace=<name>` keeps the model's files in a workspace of Holospace's store, in this browser, and mounts them in the workbench through Holospace's own file provider (`h.workbench(h.workspace(name))`, given to `registerFileSystemOverlay`). The IDE writes no file provider of its own. A name is lowercase letters, digits, dots, dashes and underscores, 63 at most.
+
+- The first visit puts the model there as fetched, all its files in one step. Later visits open what was saved, and files removed there stay removed.
+- A change is saved by the workbench's own save, which the page asks for a moment after each change: this workbench does not save by itself after a pause. Every save is a new manifest under a new BLAKE3 label, so each saved state of the workspace has a name.
+- In a workspace there is no draft: the line under the strip names the workspace and what differs from the model as fetched.
+- Without `?workspace=` nothing changes: the files are held in memory and changes are kept as a draft, as before.
+
+Tried by hand in the same browser, on the stateful starter, one run:
+
+| Step | Shown |
+|---|---|
+| Open with `?workspace=dinner-2` | the Explorer lists the model from the store; 10 of 10 theorems; "Workspace "dinner-2", kept in this browser's store. Its files are the model as fetched." |
+| Let a booking pass 12 seats | 8 of 10; the workspace's label changes; "Changed from the model as fetched: src/DinnerSeats.lex.tex." |
+| Load the page again | the change is there, 8 of 10 |
+| Undo it | 10 of 10; "Its files are the model as fetched." |
+| Build, then run `book 5` | the same holo as from memory, by its label; "booked booked=5 list=open" |
+| Ctrl+S after typing | the file in the store has the typed text, and the label moved |
+| Open without `?workspace=` | as before: no workspace, a draft |
+
+Limits of a workspace:
+
+- It is in this browser only, in this site's storage. Nothing sends it anywhere.
+- Two tabs on one workspace were not tried. Holospace refuses a save made from a stale view; what the workbench then shows was not looked at.
+- The terminal's commands that change a file write through the same store; that path was not tried in a workspace.
+- The gate is not asked on file requests here: the workspace is opened ungated.
+- The editor's drafts and the terminal's kept output are still in their own stores. Moving them into this one is decided and not done.
+
 Limits of the build:
 
 - It builds text applications. A rule table is proved in the page and not built here.
