@@ -23,6 +23,7 @@ test_case!(conformance_rp_09, "RP-09");
 test_case!(conformance_rp_10, "RP-10");
 test_case!(conformance_rp_11, "RP-11");
 test_case!(conformance_rp_12, "RP-12");
+test_case!(conformance_rp_13, "RP-13");
 
 test_case!(conformance_ft_01, "FT-01");
 test_case!(conformance_ft_02, "FT-02");
