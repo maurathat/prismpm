@@ -709,10 +709,22 @@ async function commandManifest(positional, options) {
   const bad = missingValue(options);
   if (bad) return usage(`--${bad} takes a value`);
   if (options.target !== undefined && !['browser', 'node'].includes(options.target)) return usage('--target is browser or node');
-  const result = await readManifest(resolve(positional[0] ?? '.'), { target: options.target ?? null });
+  // --json prints one prism/report/1 report, as check, build, verify and vectors do, and keeps the members it always
+  // had (files, target, manifest, warnings) beside the report's. A refused manifest is a report too, then the error.
+  const started = Date.now();
+  const report = (ok, summary, diagnostics, rest = {}) => process.stdout.write(`${canonicalJson({ schema: 'prism/report/1', ok, command: 'manifest', durationMs: Date.now() - started, summary, diagnostics, ...rest })}\n`);
+  const row = (code, severity, message, file) => ({ code, severity, file, line: null, column: null, message, remediation: null });
+  let result;
+  try {
+    result = await readManifest(resolve(positional[0] ?? '.'), { target: options.target ?? null });
+  } catch (error) {
+    if (options.json && error instanceof PrismCodeError) report(false, {}, [row(error.code, 'error', error.message, 'prism.toml')]);
+    throw error;
+  }
   const { manifest, warnings, files, grant } = result;
   if (options.json) {
-    process.stdout.write(`${canonicalJson({ files, target: result.target, manifest, warnings })}\n`);
+    const summary = { application: manifest.application.name, version: manifest.application.version, files: files.length, warnings: warnings.length };
+    report(true, summary, warnings.map((w) => row(w.rule, 'warning', w.message, files[0] ?? 'prism.toml')), { files, target: result.target, manifest, warnings });
     return 0;
   }
   const app = manifest.application;
