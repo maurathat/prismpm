@@ -132,9 +132,10 @@ Its model document digests are BLAKE3 `e76544838a98c46341ed8807f72897ec68de5a8a9
 ### World hash
 
 The world is the WIT file that defines the guest contract named by the model's `application.core_contract`.
-Today there is one contract, `hologram:guest/core-wasm@1`, and its world is `worlds/core-wasm.wit` in `@prism-code/spec`.
-PrismPM compiles in the digests of that file, and a Rust test reads the file and checks them.
-For the file as committed today they are BLAKE3 `0774a8ecbfa945a427712ee7d7ad406195b2d07492ceae15cca0067276c9ced8` and sha256 `a566c87a359cadf98f652747f1b3574aa307ff5f652a190c6d99c350db9cf369`.
+Three contracts have a world in `@prism-code/spec`: `hologram:guest/core-wasm@1` (`worlds/core-wasm.wit`), the session world `@2` (`worlds/core-wasm-2.wit`, #629) and the checkpoint world `@3` (`worlds/core-wasm-3.wit`, HO-47).
+PrismPM compiles in the digests of each file once, in the world table the archive inspector also reads, and a Rust test reads every file and checks them.
+For `@1` as committed today they are BLAKE3 `0774a8ecbfa945a427712ee7d7ad406195b2d07492ceae15cca0067276c9ced8` and sha256 `a566c87a359cadf98f652747f1b3574aa307ff5f652a190c6d99c350db9cf369`.
+A contract with no world in that table is refused with `PP5401`.
 A model with no application (a library or a system model alone) has `world: null`.
 
 ### Staleness and `--update`

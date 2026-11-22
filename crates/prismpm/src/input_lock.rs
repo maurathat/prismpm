@@ -21,13 +21,10 @@ pub(crate) const SDK_LOCK_V3: &str = "prismpm/sdk-lock/3";
 pub(crate) const RUSTC_VERSION: &str = "1.97.1";
 /// The wasm-bindgen CLI inside the SDK image (`tools.lock` `[sdk-tools]`).
 pub(crate) const WASM_BINDGEN_VERSION: &str = "0.2.122";
-/// The only guest contract today, and the digests of its committed WIT world
-/// (`sdk/npm/spec/worlds/core-wasm.wit`). A test recomputes both.
+/// The stateless guest contract. The digests of every pinned world, @1, the
+/// session world @2 and the checkpoint world @3, are the inspector's world
+/// table (`inspect::world_of`); a test recomputes them from the WIT files.
 const CORE_WASM_CONTRACT: &str = "hologram:guest/core-wasm@1";
-const CORE_WASM_WORLD_BLAKE3: &str =
-    "0774a8ecbfa945a427712ee7d7ad406195b2d07492ceae15cca0067276c9ced8";
-const CORE_WASM_WORLD_SHA256: &str =
-    "a566c87a359cadf98f652747f1b3574aa307ff5f652a190c6d99c350db9cf369";
 
 const SPEC_DOMAIN: &[u8] = b"prismpm/spec-inputs/1\n";
 const SPEC_MAX_FILES: usize = 4096;
@@ -232,18 +229,16 @@ fn toolchain() -> Value {
 }
 
 fn world(core_contract: Option<&str>) -> Result<Value, PrismError> {
-    match core_contract {
-        None => Ok(Value::Null),
-        Some(CORE_WASM_CONTRACT) => Ok(json!({
-            "blake3": CORE_WASM_WORLD_BLAKE3,
-            "contract": CORE_WASM_CONTRACT,
-            "sha256": CORE_WASM_WORLD_SHA256
-        })),
-        Some(other) => Err(PrismError::new(
+    let Some(contract) = core_contract else {
+        return Ok(Value::Null);
+    };
+    let world = crate::inspect::world_of(contract).ok_or_else(|| {
+        PrismError::new(
             "PP5401",
-            format!("no pinned WIT world for guest contract {other}"),
-        )),
-    }
+            format!("no pinned WIT world for guest contract {contract}"),
+        )
+    })?;
+    Ok(json!({"blake3": world.blake3, "contract": world.contract, "sha256": world.sha256}))
 }
 
 /// BLAKE3 over the domain, then each file as (u32 path length, path, u64
@@ -546,15 +541,24 @@ mod tests {
 
     #[test]
     fn world_digests_equal_the_committed_wit_file() {
-        let path = manifest_dir().join("../../sdk/npm/spec/worlds/core-wasm.wit");
-        let text = std::fs::read_to_string(path).unwrap().replace("\r\n", "\n");
-        let pinned = world(Some(CORE_WASM_CONTRACT)).unwrap();
-        let actual = digest_set(text.as_bytes());
-        assert_eq!(pinned["blake3"], actual["blake3"]);
-        assert_eq!(pinned["sha256"], actual["sha256"]);
+        for (contract, file) in [
+            (CORE_WASM_CONTRACT, "core-wasm.wit"),
+            ("hologram:guest/core-wasm@2", "core-wasm-2.wit"),
+            ("hologram:guest/core-wasm@3", "core-wasm-3.wit"),
+        ] {
+            let path = manifest_dir().join("../../sdk/npm/spec/worlds").join(file);
+            let text = std::fs::read_to_string(path).unwrap().replace("
+", "
+");
+            let pinned = world(Some(contract)).unwrap();
+            let actual = digest_set(text.as_bytes());
+            assert_eq!(pinned["contract"], contract);
+            assert_eq!(pinned["blake3"], actual["blake3"], "{contract}");
+            assert_eq!(pinned["sha256"], actual["sha256"], "{contract}");
+        }
         assert_eq!(world(None).unwrap(), Value::Null);
         assert_eq!(
-            world(Some("hologram:guest/core-wasm@2")).unwrap_err().code,
+            world(Some("hologram:guest/core-wasm@4")).unwrap_err().code,
             "PP5401"
         );
     }

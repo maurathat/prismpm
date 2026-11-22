@@ -110,11 +110,11 @@ type WorldExport = (
 
 /// A guest world a format revision admits: `sdk/npm/spec/constants.mjs`, `WORLDS`.
 pub(crate) struct World {
-    contract: &'static str,
+    pub(crate) contract: &'static str,
     package: &'static str,
-    file: &'static str,
-    blake3: &'static str,
-    sha256: &'static str,
+    pub(crate) file: &'static str,
+    pub(crate) blake3: &'static str,
+    pub(crate) sha256: &'static str,
     exports: &'static [WorldExport],
 }
 
