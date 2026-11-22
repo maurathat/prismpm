@@ -77,8 +77,9 @@ jobs:
             console.log(`unpacked size: ${pack.unpackedSize} bytes, ${pack.entryCount} files`);
             // A Windows checkout writes CRLF, which adds about 7 KiB to the same files; the package is about 330 KiB from a Linux checkout. Raised from 320 KiB for the replay predicate and history schemas and types (#284),
             // to 356 KiB for the checkpoint world: worlds/core-wasm-3.wit, CORE_WASM_CHECKPOINT, its WORLDS row and types (HO-47), 1.4 KiB over 352 measured,
-            // and to 388 KiB for format revision 2026-11-18 and the binary application document: model-document-v9.schema.json and its fixtures (HO-49, HO-50), 383 KiB measured from a Linux checkout.
-            if (pack.unpackedSize > 397312) throw new Error("package exceeds 388 KiB");
+            // and to 388 KiB for format revision 2026-11-18 and the binary application document: model-document-v9.schema.json and its fixtures (HO-49, HO-50), 383 KiB measured from a Linux checkout,
+            // and to 396 KiB for holo v6 (ADR-018): HOLO_V6, model-provenance-v3.schema.json and its fixture, 391.2 KiB measured from a Linux checkout.
+            if (pack.unpackedSize > 405504) throw new Error("package exceeds 396 KiB");
             const stray = pack.files.map((f) => f.path).filter((p) => /^(test|scripts)\//.test(p));
             if (stray.length) throw new Error(`tests or scripts in the package: ${stray}`);
             const paths = pack.files.map((f) => f.path);

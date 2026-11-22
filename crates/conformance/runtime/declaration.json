@@ -57,6 +57,7 @@
     "load.damage.guest-label-allowed": "The Rust runtime has no load operation yet (#298).",
     "load.damage.guest-label-refused": "The Rust runtime has no load operation yet (#298).",
     "load.reference-v5.opens": "The Rust runtime has no load operation yet (#298).",
+    "load.reference-v6.opens": "The Rust runtime has no load operation yet (#298).",
     "load.reference.opens": "The Rust runtime has no load operation yet (#298).",
     "load.refuse.bad-flags": "The Rust runtime has no load operation yet (#298).",
     "load.refuse.bad-magic": "The Rust runtime has no load operation yet (#298).",
@@ -80,7 +81,8 @@
     "world.checkpoint.loaded": "The Rust runtime has no load operation yet (#298).",
     "world.checkpoint-v5.loaded": "The Rust runtime has no load operation yet (#298).",
     "world.reference.loaded": "The Rust runtime has no load operation yet (#298).",
-    "world.session.loaded": "The Rust runtime has no load operation yet (#298)."
+    "world.session.loaded": "The Rust runtime has no load operation yet (#298).",
+    "verify.reference-v6.default-policy": "The Rust runtime does not read a holo v6 yet (ADR-018, migration step 3)."
   },
   "notApplicable": {}
 }

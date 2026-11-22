@@ -91,6 +91,80 @@
       }
     },
     {
+      "id": "verify.reference-v6.default-policy",
+      "title": "A holo v6 gets the same verdict as the v5 reference, named by the blake3 κ of the file (ADR-018).",
+      "op": "verify",
+      "archive": "reference-v6",
+      "expect": {
+        "ok": true,
+        "result": {
+          "schema": "prism/verdict/1",
+          "holo": "blake3:882e9127273760c776a0a4d38f3228e3f8c14e7b1d0f51f7e75d4341ece1b384",
+          "level": "P0",
+          "policy": {
+            "name": "default",
+            "minimum": "P2"
+          },
+          "passed": false,
+          "reasons": {
+            "$contains": [
+              {
+                "check": "provenance.statement",
+                "withholds": "P1"
+              },
+              {
+                "check": "proof.statement",
+                "withholds": "P2"
+              },
+              {
+                "check": "replay.statement",
+                "withholds": "P3"
+              },
+              {
+                "check": "policy.level",
+                "code": "PP5601",
+                "withholds": null
+              }
+            ],
+            "$excludes": [
+              {
+                "check": "holo.integrity"
+              },
+              {
+                "check": "holo.documents"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "verify.reference-v6.seal-broken",
+      "title": "A holo v6 with one byte changed fails its BLAKE3 seal: a failed integrity check that withholds P1 (ADR-018).",
+      "op": "verify",
+      "archive": "reference-v6-seal-broken",
+      "input": {
+        "policy": {
+          "minimum": "P1"
+        }
+      },
+      "expect": {
+        "ok": true,
+        "result": {
+          "level": "P0",
+          "passed": false,
+          "reasons": {
+            "$contains": [
+              {
+                "check": "holo.integrity",
+                "withholds": "P1"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
       "id": "verify.reference.minimum-p0",
       "title": "A P0 policy accepts the reference holo.",
       "op": "verify",
