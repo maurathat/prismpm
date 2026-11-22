@@ -177,7 +177,7 @@ Usage:
                                                     pins, every command it names ships, it holds no network, secret or
                                                     executable, and Lean's kernel proves the skill gate's theorems here
 ${groupUsage()}
-Docker's singular spellings name the same groups: prism-code container ls, image ls, volume ls
+The singular spellings name the same groups: prism-code container ls, image ls, volume ls
   prism-code <plugin> [args]                        run prism-<plugin> from the PATH; a built-in verb always wins
   prism-code --version | --help
 
@@ -226,7 +226,7 @@ Options for both:     --store <dir>                the reference is a name in th
                       --plain-http                 reach a registry over HTTP; a loopback registry already is
                       --json                       the result as one canonical JSON object
                       references: registry/repo[:tag], registry/repo@sha256:<hex>, registry/repo@blake3:<fingerprint> (pull);
-                      credentials come from Docker's config, or GHCR_TOKEN or GITHUB_TOKEN for ghcr.io
+                      credentials come from the registry logins on this machine, or GHCR_TOKEN or GITHUB_TOKEN for ghcr.io
 Options for manifest: --target <browser|node>      merge prism.browser.toml or prism.node.toml over prism.toml
                       --json                       the merged manifest and the warnings as canonical JSON
 Options for dev:      --port <n>                   the studio's port, default 4100; a port in use is an error, not a move
@@ -643,7 +643,7 @@ function refusal(path, verdict) {
 
 /**
  * One run as a container (#348). stdout holds the guest's output and nothing
- * else, as `docker run` does; everything about the run goes to stderr. The exit
+ * else, as the container tool's `run` does; everything about the run goes to stderr. The exit
  * code is the container's. The record stays until `rm`, unless `--rm`.
  */
 async function commandRunOnce(path, input, options) {
@@ -817,7 +817,7 @@ async function commandPlugin(command, args) {
 async function main(argv) {
   // A deprecated verb or flag becomes its new term here, with one warning each (#347).
   const [word, ...rest] = resolveAliases(argv, (warning) => process.stderr.write(`${warning}\n`), (verb) => BUILTINS.has(verb));
-  // Docker's singular management commands name the plural groups: `image ls` is `images ls` (#347).
+  // The container tool's singular management commands name the plural groups: `image ls` is `images ls` (#347).
   const command = moduleOf(word);
   if (!command || command === '--help' || command === '-h' || command === 'help') {
     process.stdout.write(command ? USAGE + pluginHelp(listPlugins({ builtins: BUILTINS })) : USAGE);
@@ -931,7 +931,7 @@ main(argv).then(
     process.exitCode = error instanceof VerificationError && error.check === 'policy.invalid' ? 64 : exitCodeFor(error);
   },
 ).then(() => {
-  // A plugin may have something to say about a verb that failed, as Docker's error-hooks do.
+  // A plugin may have something to say about a verb that failed, as the container tool's error-hooks do.
   if (!ran || !process.exitCode) return;
   const messages = errorHookMessages({ command: ran, args: argv.slice(1), exitCode: process.exitCode, builtins: BUILTINS });
   if (messages.length > 0) process.stderr.write(`\nWhat's next:\n${messages.map((m) => `  ${m}\n`).join('')}`);

@@ -1,7 +1,7 @@
 /**
  * `prism.networks`: the `networks` module of the nine in #440
  * (docs/proposals/440-nine-modules.md). A network is a named, deny-by-default
- * grant of outbound hosts, not a virtual network: narrower than Docker's word,
+ * grant of outbound hosts, not a virtual network: narrower than the container tool's word,
  * and the owner chose the name knowing that.
  *
  * It is a view over a capability file (#279), which stays the canonical form. A
@@ -163,12 +163,12 @@ export function createNetworks({ store, policy = {} } = {}) {
     });
 
   return Object.freeze({
-    /** Add a grant to the capability file. It grants only `hosts`, and refuses any outside the policy. Docker's `create` makes a virtual network. */
+    /** Add a grant to the capability file. It grants only `hosts`, and refuses any outside the policy. The container tool's `create` makes a virtual network. */
     async create(name, options) {
       if (typeof name !== 'string') fail('capabilities.invalid', 'a network name is a string');
       const { hosts = [], deny, ...rest } = options ?? {};
       const unknown = Object.keys(rest);
-      // Docker's driver, internal or ipam would do nothing here, and ignoring one would look as if it had worked.
+      // The container tool's driver, internal or ipam would do nothing here, and ignoring one would look as if it had worked.
       if (unknown.length > 0) fail('networks.option', `prism.networks.create takes hosts and deny, not ${unknown.join(', ')}`);
       const sets = (await read())?.sets ?? { [DEFAULT_SET]: {} };
       const existing = Object.hasOwn(sets, name) ? sets[name] : {};
@@ -180,7 +180,7 @@ export function createNetworks({ store, policy = {} } = {}) {
       return describe(name, next.sets[name]);
     },
 
-    /** Every grant in the capability file, by name. Docker's `list` also shows its predefined networks; here there are none. */
+    /** Every grant in the capability file, by name. The container tool's `list` also shows its predefined networks; here there are none. */
     async list() {
       const file = await read();
       if (file === null) return Object.freeze([]);
@@ -188,7 +188,7 @@ export function createNetworks({ store, policy = {} } = {}) {
       return Object.freeze(names.map((name) => describe(name, file.sets[name])));
     },
 
-    /** One grant. Docker's `inspect` reports subnets and containers; here a grant has hosts and neither of those. */
+    /** One grant. The container tool's `inspect` reports subnets and containers; here a grant has hosts and neither of those. */
     async inspect(name) {
       const { set } = await found(name);
       return describe(name, set);
@@ -203,7 +203,7 @@ export function createNetworks({ store, policy = {} } = {}) {
       await write(parseCapabilities({ schema: CAPABILITIES_SCHEMA, sets: Object.keys(others).length === 0 ? sets : { ...file.sets, [name]: others } }));
     },
 
-    /** Refuse what is outside the policy or the image's world, then raise `networks.unavailable`. Docker's `connect` joins a running container to a network. */
+    /** Refuse what is outside the policy or the image's world, then raise `networks.unavailable`. The container tool's `connect` joins a running container to a network. */
     async connect(name, container) {
       const { set } = await found(name);
       assertWithinPolicy('connect', name, set);
@@ -211,7 +211,7 @@ export function createNetworks({ store, policy = {} } = {}) {
       unavailable('connect', name);
     },
 
-    /** Raise `networks.unavailable`: no connection can exist to undo. Docker's `disconnect` removes a container from a network. */
+    /** Raise `networks.unavailable`: no connection can exist to undo. The container tool's `disconnect` removes a container from a network. */
     async disconnect(name, _container) {
       await found(name);
       unavailable('disconnect', name);

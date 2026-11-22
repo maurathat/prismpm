@@ -1,5 +1,5 @@
 /**
- * An app as one content-addressed bundle, for `prism_push` and `prism_pull`, as `docker push` and `docker pull` move
+ * An app as one content-addressed bundle, pushed and pulled as a registry moves
  * an image. Every object is named by the UOR κ-label of its bytes (BLAKE3), and the bundle by the label of its
  * manifest: the same app is the same address on every machine, and no byte is trusted for where it came from.
  *

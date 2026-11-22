@@ -2,7 +2,7 @@
  * LexLean's front end as WebAssembly: the `lexlean` executable built for
  * `wasm32-wasip1` without its production data (LexLean SPEC §8.3 and §8.4,
  * `CL-25`, `CL-26`), run by Node's own `node:wasi`. It checks a model and
- * exports its semantic snapshot on this machine with no Docker, no toolchain
+ * exports its semantic snapshot on this machine with no container, no toolchain
  * and no server. It starts no process of its own and takes no lock, so it
  * runs `check` and `snapshot`, never `verify`: Lean is not in it.
  *

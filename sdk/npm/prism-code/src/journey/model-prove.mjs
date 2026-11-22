@@ -1,6 +1,6 @@
 /**
  * Prove any app's theorems in this process, with no Lean toolchain, no
- * Docker and no server: the kernel path.
+ * A container tool and no server: the kernel path.
  *
  * LexLean (WebAssembly, lexlean-wasm.mjs) gives the model's semantic snapshot.
  * The snapshot is lowered to Lean kernel declarations (vendor/kernel-path/lower.mjs),

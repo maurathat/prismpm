@@ -16,7 +16,7 @@ const theorems = [...proofs.matchAll(/^theorem\{\n {2}name: (\w+),/gm)].map((m) 
 const skillMarkdown = readFileSync(fileURLToPath(new URL('../skill/SKILL.md', import.meta.url)), 'utf8').replace(/\r\n/g, '\n');
 
 /** A record every condition admits. */
-const good = () => ({ markdownNamed: 'blake3:a', markdownRendered: 'blake3:a', modelNamed: 'blake3:m', modelPinned: 'blake3:m', commandsNamed: 3, commandsShipped: 3, toolsNamed: 6, toolsServed: 6, network: 0, secrets: 0, execution: 0, sendsWithoutOptIn: 0, proofNeedsDocker: 0, theoremsDeclared: 10, theoremsProved: 10 });
+const good = () => ({ markdownNamed: 'blake3:a', markdownRendered: 'blake3:a', modelNamed: 'blake3:m', modelPinned: 'blake3:m', commandsNamed: 3, commandsShipped: 3, toolsNamed: 6, toolsServed: 6, network: 0, secrets: 0, execution: 0, sendsWithoutOptIn: 0, proofNeedsContainer: 0, theoremsDeclared: 10, theoremsProved: 10 });
 
 /** One planted defect per theorem: the record that breaks only it. */
 const PLANTED = {
@@ -28,7 +28,7 @@ const PLANTED = {
   aSkillInstallsOnlyWithoutSecrets: { secrets: 1 },
   aSkillInstallsOnlyWithoutExecutionAuthority: { execution: 1 },
   aSkillInstallsOnlyWhenItSendsNothingUnasked: { sendsWithoutOptIn: 1 },
-  aSkillInstallsOnlyWhenItProvesWithoutDocker: { proofNeedsDocker: 1 },
+  aSkillInstallsOnlyWhenItProvesWithoutAContainer: { proofNeedsContainer: 1 },
   aSkillInstallsOnlyWhenItDeclaresATheorem: { theoremsDeclared: 0, theoremsProved: 0 },
   aSkillInstallsOnlyWhenEveryTheoremItDeclaresIsProved: { theoremsProved: 9 },
 };
@@ -54,7 +54,7 @@ test('installs is the model\'s own definition: the same five parts, joined the s
 test('prism-code serves no tool, so the shipped skill names none, and a skill that names one is refused by that theorem', async () => {
   assert.deepEqual([...namedTools(skillMarkdown)], []);
   const markdown = 'Call `prism_init`, then `prism_try`.';
-  const verdict = await judgeSkill({ name: 'prism', markdown, pins: { skills: { prism: { markdown: kappa(new TextEncoder().encode(markdown)) } }, gate: modelLabel() }, gate: { declared: 11, proved: 11, theorems }, verbs: new Set(), routing: { sendsWithoutOptIn: 0, proofNeedsDocker: 0 } });
+  const verdict = await judgeSkill({ name: 'prism', markdown, pins: { skills: { prism: { markdown: kappa(new TextEncoder().encode(markdown)) } }, gate: modelLabel() }, gate: { declared: 11, proved: 11, theorems }, verbs: new Set(), routing: { sendsWithoutOptIn: 0, proofNeedsContainer: 0 } });
   assert.equal(verdict.admitted, false);
   assert.deepEqual(verdict.failing, ['aSkillInstallsOnlyWhenEveryToolItTeachesIsServed']);
   assert.deepEqual(verdict.unshipped, ['prism_init', 'prism_try']);
@@ -85,8 +85,8 @@ test('the folder facts: an outside host, a credential, an executable file; a loo
   assert.equal(folderFacts('', ['run.sh', 'tool.exe']).execution, 2);
 });
 
-test('the routing facts are read from the routing itself: nothing is sent unasked, and no proof needs Docker', async () => {
-  assert.deepEqual(await routingFacts(), { sendsWithoutOptIn: 0, proofNeedsDocker: 0 });
+test('the routing facts are read from the routing itself: nothing is sent unasked, and no proof needs a container', async () => {
+  assert.deepEqual(await routingFacts(), { sendsWithoutOptIn: 0, proofNeedsContainer: 0 });
 });
 
 const proved = { declared: 10, proved: 10, theorems };

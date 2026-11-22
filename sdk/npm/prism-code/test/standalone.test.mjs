@@ -53,6 +53,22 @@ test('nothing shipped names the hosted verifier, a server tool, a cloud build or
   assert.deepEqual(found, []);
 });
 
+// Where the word may stay, and why: Docker Hub's host names, the registry logins a user already has, and three public
+// names of the client. Everywhere else in what ships, it does not appear at all.
+const REGISTRY_CODE = ['src/oci-auth.mjs', 'src/oci-registry.mjs', 'src/auth.mjs', 'src/node.mjs', 'src/index.mjs', 'src/images-namespace.mjs', 'src/push-pull.mjs', 'src/cli/auth.mjs'];
+
+test('the word docker appears nowhere in what ships, outside the registry code that needs it', () => {
+  const found = [];
+  for (const file of SHIPPED) {
+    if (REGISTRY_CODE.includes(file)) continue;
+    text(file).split('\n').forEach((line, index) => {
+      if (/docker/i.test(line)) found.push(`${file}:${index + 1}`);
+    });
+  }
+  assert.deepEqual(found, []);
+  for (const file of REGISTRY_CODE) assert.ok(SHIPPED.includes(file), `${file} is listed and no longer ships; take it off the list`);
+});
+
 test('no shipped code starts a container program, and the modules that did are gone', () => {
   const starts = [];
   for (const file of SHIPPED.filter((f) => f.endsWith('.mjs'))) {
@@ -64,9 +80,6 @@ test('no shipped code starts a container program, and the modules that did are g
   for (const gone of ['docker', 'host', 'hosted', 'github', 'remote-github', 'setup', 'setup-cli', 'setup-machine', 'open', 'handler', 'agents', 'axioms', 'journey/mcp', 'journey/github']) {
     assert.equal(existsSync(join(PACKAGE, 'src', `${gone}.mjs`)), false, `src/${gone}.mjs`);
   }
-  // What the skill teaches names no container program. Its generated reference, below, lists the CLI as cli.json
-  // describes it, where a verb is sometimes said to be spelled as Docker spells it; that is a name, not a step.
-  for (const file of SHIPPED.filter((f) => f.startsWith('skill/') && f.endsWith('.md'))) assert.doesNotMatch(text(file).split('\n## Reference\n')[0], /docker/i, file);
 });
 
 test('the package has no runtime dependency', () => {

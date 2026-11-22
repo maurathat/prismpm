@@ -44,7 +44,7 @@ export const IMAGE_STORE_RULES = Object.freeze(RULES);
 
 const HEX = /^[0-9a-f]+$/;
 const DIGEST = /^blake3:[0-9a-f]{64}$/;
-/** As `docker image ls` shortens an id, and the shortest prefix that may name one. */
+/** As the container tool's `image ls` shortens an id, and the shortest prefix that may name one. */
 const SHORT_ID = 4;
 
 const emptyIndex = () => ({ schema: IMAGE_STORE_SCHEMA, images: {}, tags: {} });
@@ -61,7 +61,7 @@ function checkIndex(index) {
   return { schema: IMAGE_STORE_SCHEMA, images: { ...index.images }, tags: { ...index.tags } };
 }
 
-/** A local name as `docker tag` takes it: `[registry/]repository[:tag]`, `latest` when no tag is given. */
+/** A local name as the container tool's `tag` takes it: `[registry/]repository[:tag]`, `latest` when no tag is given. */
 export function localName(text) {
   if (typeof text !== 'string' || text === '') fail('image.name', 'an image name must be non-empty text');
   if (text.startsWith('dir://')) fail('image.name', `${text} names an OCI layout; a local image is named [registry/]repository[:tag]`);
@@ -73,7 +73,7 @@ export function localName(text) {
 /**
  * The local name a pulled image is kept under, from its parsed reference: the name it
  * was pulled by, with its tag. One pinned to a digest, or a `dir://` layout by path, is
- * kept untagged, as `docker pull name@digest` keeps it.
+ * kept untagged, as the container tool's `pull name@digest` keeps it.
  */
 export function storedName(reference) {
   if (reference.digest !== null || reference.fingerprint !== null || reference.tag === null) return null;
@@ -220,7 +220,7 @@ export function createImageStore({ backend = memoryImageStore(), references = ()
 
   /**
    * Keep an image: its bytes under its digest, and `tags` pointing at it. A tag that
-   * named another image moves here, as `docker build -t` and `docker pull` move one.
+   * named another image moves here, as the container tool's `build -t` and the container tool's `pull` move one.
    */
   function add(image, { tags = [] } = {}) {
     return exclusive(async () => {
@@ -262,7 +262,7 @@ export function createImageStore({ backend = memoryImageStore(), references = ()
     return rows.sort((a, b) => (a.created > b.created ? -1 : a.created < b.created ? 1 : a.digest < b.digest ? -1 : 1));
   }
 
-  /** `docker tag SOURCE TARGET`: one more name for an image already kept. */
+  /** The container tool's `tag SOURCE TARGET`: one more name for an image already kept. */
   function tag(source, target) {
     return exclusive(async () => {
       const index = await load();
@@ -274,7 +274,7 @@ export function createImageStore({ backend = memoryImageStore(), references = ()
   }
 
   /**
-   * `docker rmi`. Named by one of several tags, the tag goes and the image stays.
+   * The container tool's `rmi`. Named by one of several tags, the tag goes and the image stays.
    * Otherwise the image goes with every tag on it, unless what holds it says no;
    * the table says which (see IMAGE_STORE_RULES).
    */
@@ -305,7 +305,7 @@ export function createImageStore({ backend = memoryImageStore(), references = ()
     });
   }
 
-  /** Garbage collection: `docker image prune [-a]`, as the table's prune rows say. */
+  /** Garbage collection: The container tool's `image prune [-a]`, as the table's prune rows say. */
   function prune({ all = false } = {}) {
     if (typeof all !== 'boolean') fail('PP1001', 'images.prune option all must be true or false');
     return exclusive(async () => {

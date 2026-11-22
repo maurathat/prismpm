@@ -308,7 +308,7 @@ export function errorFromVerdict(verdict, ranks) {
  *
  * `check` reports a verdict, not an error, so its own contract stays 0, 1, 2.
  * 1 to 3 keep the meanings the command line already gave them. 10 to 13 are
- * new. 64 to 78 are the BSD sysexits and 125 and above are Docker's and the
+ * new. 64 to 78 are the BSD sysexits and 125 and above are the container tool's and the
  * shell's, so no typed error takes those, apart from `lock.*` as usage (64).
  */
 export const EXIT_CODES = Object.freeze(

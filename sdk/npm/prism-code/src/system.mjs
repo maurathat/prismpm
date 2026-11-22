@@ -1,6 +1,6 @@
 /**
  * `prism.system`: the `system` module of the nine in #440 (issue #446). It tells
- * you about this installation and does its housekeeping, as Docker's `system`
+ * you about this installation and does its housekeeping, as the container tool's `system`
  * does: `info`, `version`, `events`, `df` and `prune`.
  *
  * It is not the production-system model. That model keeps its name, and its
@@ -20,13 +20,13 @@
  *   measures and `prune` collects (#349). Without it, or where it is unavailable
  *   (a browser), `df` and `info` report no images and `prune` removes none.
  *
- * Where Prism differs from Docker:
+ * Where Prism differs from a container tool:
  *
  * - `info` and `version` also report the toolchain and builder image the lock pins,
  *   which are what a build's verdict depends on.
  * - `prune` removes exited containers first, then untagged images that no
  *   remaining container references. An image a container references is never
- *   pruned, as `docker system prune` keeps it.
+ *   pruned, as the container tool's `system prune` keeps it.
  *
  * Experimental until the v0.6 freeze (STABILITY.md section 6).
  */
@@ -41,7 +41,7 @@ export const SYSTEM_DF_SCHEMA = 'prism/system-df/1';
 export const SYSTEM_PRUNE_SCHEMA = 'prism/system-prune/1';
 export const SYSTEM_EVENT_SCHEMA = 'prism/system-event/1';
 
-/** Docker's container actions, the ones a Prism container has. A container never pauses, and a guest has no process to `exec` into. */
+/** The container tool's container actions, the ones a Prism container has. A container never pauses, and a guest has no process to `exec` into. */
 export const EVENT_ACTIONS = Object.freeze(['create', 'start', 'die', 'destroy']);
 
 /** How many events a bus keeps for `events({ since })`. Older ones are dropped, oldest first. */
@@ -56,7 +56,7 @@ function allow(verb, options, names) {
   if (unknown.length > 0) fail('system.option', `system.${verb} has no option ${unknown.join(', ')}; it takes ${names.length === 0 ? 'none' : names.join(', ')}`);
 }
 
-/** A time as Docker's `since` and `until` take it: a Date, an ISO 8601 text or milliseconds since the epoch. */
+/** A time as the container tool's `since` and `until` take it: a Date, an ISO 8601 text or milliseconds since the epoch. */
 function instant(verb, name, value) {
   if (value === undefined) return undefined;
   const ms = value instanceof Date ? value.getTime() : typeof value === 'string' ? Date.parse(value) : typeof value === 'number' ? value : NaN;
@@ -102,7 +102,7 @@ export function createEventBus({ history = EVENT_HISTORY, now = () => Date.now()
         if (wake !== null) wake();
       },
     };
-    // An `until` already past ends once what was kept has been read, as `docker events --until` does.
+    // An `until` already past ends once what was kept has been read, as the container tool's `events --until` does.
     if (until !== undefined && until <= now()) closed = true;
     else streams.add(stream);
     signal?.addEventListener?.('abort', finish, { once: true });
@@ -194,7 +194,7 @@ export function createSystem({ containers, events = null, readLock = null, image
     return Promise.all(all.map((container) => container.inspect()));
   }
 
-  /** docker-py's `version`: this package, the holo format it reads, its runtime and, given a project, the toolchain its lock pins. */
+  /** The container SDK's `version`: this package, the holo format it reads, its runtime and, given a project, the toolchain its lock pins. */
   async function version(options = {}) {
     allow('version', options, ['path']);
     const lock = await lockAt(options.path);
@@ -208,7 +208,7 @@ export function createSystem({ containers, events = null, readLock = null, image
     };
   }
 
-  /** docker-py's `info`: counts of containers by state, what the lock pins, and what is not here yet. */
+  /** The container SDK's `info`: counts of containers by state, what the lock pins, and what is not here yet. */
   async function info(options = {}) {
     allow('info', options, ['path']);
     const lock = await lockAt(options.path);
@@ -226,7 +226,7 @@ export function createSystem({ containers, events = null, readLock = null, image
     };
   }
 
-  /** docker-py's `df`: what each container record and each stored image takes. An image a container references is active; the rest is reclaimable. */
+  /** The container SDK's `df`: what each container record and each stored image takes. An image a container references is active; the rest is reclaimable. */
   async function df(options = {}) {
     allow('df', options, []);
     const rows = (await records()).map((record) => ({ id: record.id, image: record.image.digest, status: record.state.status, size: sizeOf(record) }));
@@ -257,9 +257,9 @@ export function createSystem({ containers, events = null, readLock = null, image
   }
 
   /**
-   * docker-py's `prune`, for what Prism stores: exited containers, optionally only those
+   * The container SDK's `prune`, for what Prism stores: exited containers, optionally only those
    * that finished before `until`, then the images no remaining container references:
-   * untagged ones, or with `all` tagged ones too, as `docker system prune [-a]`.
+   * untagged ones, or with `all` tagged ones too, as the container tool's `system prune [-a]`.
    * Created and running containers are kept, and so are the images they reference.
    */
   async function prune(options = {}) {
@@ -272,7 +272,7 @@ export function createSystem({ containers, events = null, readLock = null, image
   }
 
   /**
-   * docker-py's `events`, with `decode` always on: an async iterable of container events.
+   * The container SDK's `events`, with `decode` always on: an async iterable of container events.
    * `since` replays what the bus kept from that time; `until` ends the stream there; a
    * `signal` or `close()` ends it early. Filters by `action` and `id`, as `--filter` does.
    */

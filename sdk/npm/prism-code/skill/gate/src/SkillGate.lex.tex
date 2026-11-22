@@ -20,7 +20,7 @@ structure{
     {name: secrets, type: Nat},
     {name: execution, type: Nat},
     {name: sendsWithoutOptIn, type: Nat},
-    {name: proofNeedsDocker, type: Nat},
+    {name: proofNeedsContainer, type: Nat},
     {name: theoremsDeclared, type: Nat},
     {name: theoremsProved, type: Nat}
   ]
@@ -51,7 +51,7 @@ definition{
   name: staysLocal,
   parameters: [s : Skill],
   result: Bool,
-  body: (((project s sendsWithoutOptIn) =? 0) && ((project s proofNeedsDocker) =? 0))
+  body: (((project s sendsWithoutOptIn) =? 0) && ((project s proofNeedsContainer) =? 0))
 }
 
 definition{

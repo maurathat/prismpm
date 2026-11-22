@@ -20,7 +20,7 @@ import { PrismCodeError } from '../errors.mjs';
 import { fromFile } from '../node.mjs';
 import { VERSION } from '../version.mjs';
 import { gapLedger } from '../gaps.mjs';
-import { NO_DOCKER_FREE_BUILD, frontendWhere, proverWhere } from './frontend.mjs';
+import { NO_SERVER_BUILD, frontendWhere, proverWhere } from './frontend.mjs';
 import { fromHosted, holoFromSnapshot, isWarning } from './build-core.mjs';
 import { lexleanReady, wasmCheck, wasmDeclare, wasmSnapshot } from './lexlean-wasm.mjs';
 import { collectIfUpgraded, withStoreHeld } from './store-gc.mjs';
@@ -241,7 +241,7 @@ async function proveRuleApp(dir, session, { log, where, snapshot, gaps, kernel, 
  */
 async function buildUnheld(dir, session, { log = () => {}, env = process.env, snapshot = null, gaps = gapLedger(), kernel = null, modelKernel = null, remote = null, wasm = null } = {}) {
   wasm ??= wasmProbe(await lexleanReady({ env, log }));
-  if (remote === 'github') return { ...failure(new PrismCodeError('build.publish-unavailable', `Publishing to GitHub writes the template's ID rows, scenarios and tests, and this prism-code does not yet write them from the model's semantic snapshot. ${NO_DOCKER_FREE_BUILD}`)), stage: 'build' };
+  if (remote === 'github') return { ...failure(new PrismCodeError('build.publish-unavailable', `Publishing to GitHub writes the template's ID rows, scenarios and tests, and this prism-code does not yet write them from the model's semantic snapshot. ${NO_SERVER_BUILD}`)), stage: 'build' };
   if (isRuleApp(session)) return buildRuleApp(dir, session, { log, env, snapshot, gaps, kernel, wasm });
   return buildModelApp(dir, session, { log, env, snapshot, gaps, kernel: modelKernel, wasm });
 }

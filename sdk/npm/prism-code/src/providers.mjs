@@ -1,6 +1,6 @@
 /**
  * Provider services (issue #294, docs/proposals/294-provider-services.md,
- * experimental), after Docker Compose's provider services.
+ * experimental), after Compose's provider services.
  *
  * A capability in `prism.toml` declares `provider = { type, options }`. Prism
  * finds `prism-provider-<type>` on the PATH the way #293 finds a plugin and runs

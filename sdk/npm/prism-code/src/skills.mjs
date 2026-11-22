@@ -13,7 +13,7 @@
  *   secrets                            strings shaped like a credential
  *   execution                          files in the skill folder that are not text the agent reads
  *   sendsWithoutOptIn                  1 when the front end, with nothing set and no LexLean here, would send a model
- *   proofNeedsDocker                   1 when the prover, with nothing set, is anything but Lean's kernel here
+ *   proofNeedsContainer                   1 when the prover, with nothing set, is anything but Lean's kernel here
  *   theoremsDeclared / theoremsProved  the gate's theorems, and how many Lean's kernel proved just now
  *
  * `installs` below is the model's own definition, written out; test/skills.test.mjs holds it to every theorem.
@@ -97,7 +97,7 @@ export function folderFacts(markdown, extraFiles = []) {
   };
 }
 
-/** Whether proving or checking would send a model, or need Docker, with nothing set: read from the routing itself. */
+/** Whether proving or checking would send a model, or need a container, with nothing set: read from the routing itself. */
 export async function routingFacts() {
   const { frontendWhere, proverWhere } = await import('./journey/frontend.mjs');
   let sends = 0;
@@ -106,7 +106,7 @@ export async function routingFacts() {
   } catch (error) {
     if (error.code !== 'build.frontend-unavailable') throw error;
   }
-  return { sendsWithoutOptIn: sends, proofNeedsDocker: proverWhere({ env: {} }) === 'kernel' ? 0 : 1 };
+  return { sendsWithoutOptIn: sends, proofNeedsContainer: proverWhere({ env: {} }) === 'kernel' ? 0 : 1 };
 }
 
 /** The model's `canonical`, `namesOnlyShipped`, `noAuthority`, `staysLocal`, `selfProved` and `installs`, written out. */
@@ -114,7 +114,7 @@ export function installs(s) {
   const canonical = s.markdownNamed === s.markdownRendered && s.modelNamed === s.modelPinned;
   const namesOnlyShipped = s.commandsShipped === s.commandsNamed && s.toolsServed === s.toolsNamed;
   const noAuthority = s.network === 0 && s.secrets === 0 && s.execution === 0;
-  const staysLocal = s.sendsWithoutOptIn === 0 && s.proofNeedsDocker === 0;
+  const staysLocal = s.sendsWithoutOptIn === 0 && s.proofNeedsContainer === 0;
   const selfProved = s.theoremsDeclared > 0 && s.theoremsProved === s.theoremsDeclared;
   return canonical && namesOnlyShipped && noAuthority && staysLocal && selfProved;
 }
@@ -130,7 +130,7 @@ export function failing(s) {
   if (s.secrets !== 0) out.push('aSkillInstallsOnlyWithoutSecrets');
   if (s.execution !== 0) out.push('aSkillInstallsOnlyWithoutExecutionAuthority');
   if (s.sendsWithoutOptIn !== 0) out.push('aSkillInstallsOnlyWhenItSendsNothingUnasked');
-  if (s.proofNeedsDocker !== 0) out.push('aSkillInstallsOnlyWhenItProvesWithoutDocker');
+  if (s.proofNeedsContainer !== 0) out.push('aSkillInstallsOnlyWhenItProvesWithoutAContainer');
   if (s.theoremsDeclared === 0) out.push('aSkillInstallsOnlyWhenItDeclaresATheorem');
   if (s.theoremsProved !== s.theoremsDeclared) out.push('aSkillInstallsOnlyWhenEveryTheoremItDeclaresIsProved');
   return out;
@@ -239,7 +239,7 @@ export async function verifyInstalled(dir, { env = process.env, log = () => {} }
     `  commands         ${f.commandsShipped} of ${f.commandsNamed} it names ship in this prism-code${verdict.unshipped.length ? ` (not: ${verdict.unshipped.join(', ')})` : ''}`,
     `  tools            ${f.toolsServed} of ${f.toolsNamed} it names are served; prism-code serves none`,
     `  authority        network ${f.network}, secrets ${f.secrets}, execution ${f.execution}`,
-    `  routing          sends unasked ${f.sendsWithoutOptIn}, proof needs Docker ${f.proofNeedsDocker}`,
+    `  routing          sends unasked ${f.sendsWithoutOptIn}, proof needs a container ${f.proofNeedsContainer}`,
     ...(marker?.receipt && !receiptHolds ? ['  receipt          names other bytes than are installed'] : []),
     ...verdict.failing.map((t) => `  fails            ${t}`),
   ];
