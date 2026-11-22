@@ -253,3 +253,21 @@ test('R6: a lockfile whose digest is not the project\'s is refused by check, by 
   assert.deepEqual([report.diagnostics[0].code, report.diagnostics[0].file], ['LLC0102', 'lexlean.lock']);
   assert.equal(report.summary.theoremsVerified, 0, 'nothing is proved from a model whose lock is not its own');
 });
+
+test('a proof names each theorem as Module.theorem, and a build hands on the vectors it replayed, as bytes', { timeout: 600000 }, async () => {
+  const { prove, build } = await import('../src/journey/engine.mjs');
+  const { readSession } = await import('../src/journey/project.mjs');
+  const root = scratch();
+  assert.equal(run(['init', root, '--template', 'decision-app', '--no-skill']).code, 0);
+  const env = { ...process.env, ...OFFLINE };
+  const session = readSession(root);
+  const proved = await prove(root, session, { env });
+  assert.equal(proved.ok, true, proved.message);
+  // The project's module_prefix is PrismParkingFeeTier; a qualified name leaves it out, so it does not change with the project's name.
+  assert.deepEqual(proved.theorems.map((t) => [t.theorem, t.qualified]), [['inv001Holds', 'ParkingFeeTierProofs.inv001Holds'], ['inv002Holds', 'ParkingFeeTierProofs.inv002Holds'], ['inv003Holds', 'ParkingFeeTierProofs.inv003Holds']]);
+  const built = await build(root, session, { env });
+  assert.equal(built.ok, true, built.message);
+  assert.equal(built.replayed.length, built.vectors.total);
+  assert.ok(built.replayed.every((v) => v.request instanceof Uint8Array && v.response instanceof Uint8Array));
+  assert.deepEqual([new TextDecoder().decode(built.replayed[0].request), new TextDecoder().decode(built.replayed[0].response)], ['0 car', 'free']);
+});
