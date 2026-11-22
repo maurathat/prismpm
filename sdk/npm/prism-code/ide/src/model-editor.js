@@ -475,7 +475,8 @@ try {
       pushSaid.textContent = `Pushed ${pushed.label} to ${pushed.where}${pushed.uploaded ? '' : ' (the registry already held these bytes)'}. Not signed here.`;
     } catch (error) {
       state.pushed = { error: String(error?.code ?? ''), message: String(error?.message ?? error) };
-      pushSaid.textContent = `Not pushed: ${state.pushed.message}`;
+      // The package's own words for this name a command a page does not have.
+      pushSaid.textContent = state.pushed.error === 'registry_auth_failed' ? 'Not pushed: the registry asks for a user name and a password or token. Type them beside the address and push again.' : `Not pushed: ${state.pushed.message}`;
     } finally { secret.value = ''; }
   });
   // Build: the package's own build, in the worker that holds LexLean and Lean's kernel. The holo is offered only
