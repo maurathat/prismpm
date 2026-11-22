@@ -117,7 +117,8 @@ test('a v6 holo signed with a key verifies, and its subjects carry both digests'
   assert.equal(formatOf(holo), 6);
   assert.deepEqual(Object.keys(statement.subject[0].digest).sort(), ['blake3', 'sha256']);
   const verdict = await experimental_verifyAttestations(holo, { key: publicKey, type: PROOF });
-  assert.equal(verdict.verified, true);
+  assert.equal(verdict.passed, true);
+  assert.equal(verdict.error, null);
   assert.ok(same(stripAttestations(holo), v6));
 });
 
