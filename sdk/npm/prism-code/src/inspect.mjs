@@ -360,7 +360,8 @@ export function formatInspection(inspection) {
   ]);
   const sections = table([
     ['INDEX', 'KIND', 'ROLE', 'OFFSET', 'LENGTH', 'SHA256', 'BLAKE3'],
-    ...i.sections.map((s) => [s.index, s.kind, s.role, s.offset, s.length, s.digest.sha256, s.digest.blake3]),
+    // An object of a holo v5 or later has no section kind, and carries the one digest its format names it by.
+    ...i.sections.map((s) => [s.index, s.kind ?? '-', s.role, s.offset, s.length, s.digest.sha256, s.digest.blake3 ?? '-']),
   ]);
   const contents = table([
     ['INDEX', 'ROLE', 'LENGTH', 'SHA256', 'LABEL'],
