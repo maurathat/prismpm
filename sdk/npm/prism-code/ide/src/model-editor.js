@@ -82,13 +82,11 @@ const json = async (url) => (await fresh(url)).json();
 // ?project=<address of a folder> opens the model published there: its project.json lists its files, which are
 // fetched from that folder. Without it, the model that came with the page is opened.
 // Under a host the model is the app's own: the folder model/ beside the holo the host opened. A holo does not carry
-// its sources yet, so they are read from where the app publishes them; the host's page was opened with that address
-// (#holo=), and \`app.from\` is where it will be handed over. What was edited before is in the app's holospace.
+// its sources yet, so they are read from where the app publishes them, which the host hands over as `app.from`: the
+// address its link named, and nothing more. Nothing is trusted for coming from there; what is read is compared with
+// the holo's own label (holo-match.mjs). What was edited before is in the app's holospace.
 const hostedModel = () => {
-  try {
-    const from = HOST.app.from ?? new URLSearchParams(window.parent.location.hash.slice(1)).get('holo');
-    return from ? new URL('model/', new URL(from, window.parent.location.href)).href : null;
-  } catch { return null; }
+  try { return typeof HOST.app.from === 'string' ? new URL('model/', HOST.app.from).href : null; } catch { return null; }
 };
 const asked = HOST ? hostedModel() : new URLSearchParams(location.search).get('project');
 const PROJECT = asked ? new URL(asked.replace(/\/?$/, '/'), location.href).href : null;
@@ -211,8 +209,11 @@ const PLACE = () => (space ? "This app's own holospace" : `Workspace "${WORKSPAC
 const READ_ONLY = 'This workspace is open for editing in another tab; this one is read-only until that tab closes. ';
 // Measured in Chromium with the library at ea96397: when the writing tab closes, this tab is told it may write, but
 // a save from the workbench already open here still does not reach the store. After a reload it does. So the page
-// asks for the reload instead of saying it can save.
-const RELOAD = 'The tab that was editing this workspace has closed. Reload this tab to edit it here. ';
+// asks for the reload instead of saying it can save. A later library (holospace-shell 0e2d04e) tells the workbench
+// to look at its open files again when the lock passes, and with it a save does reach the store, measured the same
+// way; such a provider has `announceReadonly`, and then no reload is asked for.
+const passesLock = () => typeof storedBench?.announceReadonly === 'function';
+const RELOAD ='The tab that was editing this workspace has closed. Reload this tab to edit it here. ';
 // Files of the model that a saved workspace no longer has: they were removed there on an earlier visit.
 const goneFromWorkspace = [];
 // The reader's changes from an earlier visit, kept in this browser under BLAKE3 labels for exactly this model.
@@ -260,7 +261,7 @@ const draftLine = document.getElementById('draft');
 const draftText = document.getElementById('draftText');
 state.draft = { base, off: drafts.off, restored: Object.keys(restored), dropped: kept.dropped, kept: Object.keys(restored) };
 // When the tab that was writing closes, the line says so.
-store?.onWritable?.((writable) => { if (state.workspace) { state.workspace.writable = writable && state.workspace.writable === false ? 'after a reload' : writable; sayDraft(state.draft?.kept ?? []); } });
+store?.onWritable?.((writable) => { if (state.workspace) { state.workspace.writable = writable && state.workspace.writable === false && !passesLock() ? 'after a reload' : writable; sayDraft(state.draft?.kept ?? []); } });
 function sayDraft(paths) {
   if (stored) {
     // In a workspace the files are saved by the workbench into the store; there is no draft apart from them.
