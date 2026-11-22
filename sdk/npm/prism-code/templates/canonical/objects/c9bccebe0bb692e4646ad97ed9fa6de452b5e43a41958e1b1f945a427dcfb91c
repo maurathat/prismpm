@@ -27,7 +27,7 @@ The application model in `app/`, the registers in `model/`, the scenarios in
 `features/suites/`, the generated `CONFORMANCE.md`, and any further documents
 belong to the instantiated repository. `CONFORMANCE.md` is project content: the
 template begins with the generation of its own register, and an instance
-regenerates its own bytes with `prism-code check --write`. Adding content re-arms
+regenerates its own bytes with `prism-code build`. Adding content re-arms
 the R1 to R6 gates; it does not require editing the universal policy.
 
 ## The register, `template/2`

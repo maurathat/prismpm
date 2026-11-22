@@ -7,7 +7,7 @@ template contract checker in `app/`. One command is its whole gate:
 | Command | Enforces | IDs |
 | --- | --- | --- |
 | `prism-code check` | LexLean checks the model; Lean's kernel proves both theorems within their declared axioms (R4); R1 to R3 and R5 over `model/`, `features/suites/` and `CONFORMANCE.md`; `template.lock` over the universal policy; LexLean's lock check (R6) | `TC-01`, `TC-02` |
-| `prism-code build` | `check`, then the holo, with all 9 acceptance vectors replayed: 5 that answer a verdict and 4 refused with `invalid request` | `TC-01`, `TC-02` |
+| `prism-code build` | `CONFORMANCE.md` from the register, then `check`, then the holo, with all 9 acceptance vectors replayed: 5 that answer a verdict and 4 refused with `invalid request` | `TC-01`, `TC-02` |
 
 The register holds `TC-01` and `TC-02`, so every check runs over real rows,
 scenarios and theorems, and `TC-02` arms R5 with a real refusal.

@@ -2,7 +2,8 @@
 #
 # Every ID this repository claims, in one place, so that nothing is referenced
 # without being defined. `CONFORMANCE.md` is generated from this file, and
-# `prism-code check` refuses one that is not that generation byte for byte (R1).
+# `prism-code build` writes it; `prism-code check` refuses one that is not that
+# generation byte for byte (R1).
 #
 # `level` is the honesty level (R2):
 #   some-true  a fact reproduced from an authority; not established here

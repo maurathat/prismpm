@@ -266,7 +266,8 @@ test('a proof names each theorem as Module.theorem, and a build hands on the vec
   const { prove, build } = await import('../src/journey/engine.mjs');
   const { readSession } = await import('../src/journey/project.mjs');
   const root = scratch();
-  assert.equal(run(['init', root, '--template', 'decision-app', '--no-skill']).code, 0);
+  // The decision starter, a fixture init no longer offers, whose names this test knows.
+  startApp(root, 'decision-app');
   const env = { ...process.env, ...OFFLINE };
   const session = readSession(root);
   const proved = await prove(root, session, { env });

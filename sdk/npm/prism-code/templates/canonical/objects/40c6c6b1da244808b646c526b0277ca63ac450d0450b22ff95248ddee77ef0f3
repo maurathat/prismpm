@@ -10,7 +10,7 @@ planted defects to concrete evidence.
 | --- | --- |
 | template | `prism-code check` verifies each universal policy file against its BLAKE3 label in `template.lock` |
 | model | `prism-code check` has LexLean check the model and Lean's kernel prove every theorem, each within its declared axioms |
-| register | `prism-code check` enforces R1 to R3 and R5 over `model/` and `features/suites/`; `prism-code check --write` regenerates `CONFORMANCE.md` |
+| register | `prism-code check` enforces R1 to R3 and R5 over `model/` and `features/suites/`; `prism-code build` regenerates `CONFORMANCE.md` |
 | acceptance | `prism-code build` writes the app and replays every acceptance vector; `prism-code verify` checks a built app again |
 | dependencies | LexLean's lock check admits only exact, locked imports (R6) |
 

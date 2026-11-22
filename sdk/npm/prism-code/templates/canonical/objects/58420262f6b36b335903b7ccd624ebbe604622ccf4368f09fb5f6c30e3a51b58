@@ -58,8 +58,7 @@ model and the rows of `model/ids.toml` with your own claims.
 | Command | What it does |
 | --- | --- |
 | `prism-code check` | Checks the model, has Lean's kernel prove every theorem, and enforces R1 to R6 over the registers, the scenarios and `template.lock`. |
-| `prism-code check --write` | Regenerates `CONFORMANCE.md` from `model/`. |
-| `prism-code build` | `check`, then writes the app under `app/.prism/build` and replays every acceptance vector. |
+| `prism-code build` | Regenerates `CONFORMANCE.md` from `model/`, runs `check`, then writes the app under `app/.prism/build` and replays every acceptance vector. |
 | `prism-code verify` | Checks a built app again: its archive, its world and its vectors. |
 
 ## For coding agents
@@ -81,7 +80,7 @@ these files came from is pinned in
 | `app/` | project | The Prism application: its LexLean model, the Foundation library it imports, and its project files. |
 | `model/` | project | The claim, authority and ledger registers: the single source of every claim (R1). |
 | `features/suites/` | project | One Gherkin scenario per registered ID (R3). |
-| `CONFORMANCE.md` | generated | Written by `prism-code check --write`, never by hand. |
+| `CONFORMANCE.md` | generated | Written by `prism-code build`, never by hand. |
 | `AGENTS.md`, `VERIFICATION.md`, `template-contract.json`, `template.lock` | universal policy | Bound by `template.lock`. Changes arrive only as a template release. |
 
 [TEMPLATE-CONTRACT.md](TEMPLATE-CONTRACT.md) defines the inherited policy, the
