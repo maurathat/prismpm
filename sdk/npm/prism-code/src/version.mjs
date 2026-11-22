@@ -4,4 +4,4 @@
  * `release-please-config.json`).
  * A constant, because `package.json` cannot be imported in a browser.
  */
-export const VERSION = '0.10.3'; // x-release-please-version
+export const VERSION = '0.10.4'; // x-release-please-version

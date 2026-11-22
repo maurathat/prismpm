@@ -1082,6 +1082,8 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `provider_failed` | `ProviderFailedError` | `CT-12` | The provider service ran and failed. |
 | `provider_not_found` | `ProviderNotFoundError` | `CT-12` | No provider service of that name is registered. |
 | `provider_reply_invalid` | `ProviderReplyError` | `CT-12` | The provider service answered with a reply of the wrong shape. |
+| `publish-model.identity` |  | `DK-46` | The holo names no model identity in its provenance, so a model published beside it could be held to nothing; publish-model writes nothing. |
+| `publish-model.model` |  | `DK-46` | The folder given to publish-model is not a LexLean project that can be published: it is absent, or its lexlean.toml names no entrypoint that is in it; publish-model writes nothing. |
 | `pull_verification_failed` | `PullVerificationError` | `CT-12` | A pulled image failed verification, so nothing was written. |
 | `reference_invalid` | `ReferenceInvalidError` | `CT-12` | The image reference is not valid. |
 | `referrers_unsupported` | `ReferrersUnsupportedError` | `CT-12` | The registry has no referrers API and the tag fallback is turned off. |
