@@ -22,7 +22,7 @@ Which Prism runtime passes which part of the runtime contract, from the results 
 | Typed errors (`errors`) | 8 | + | - | N/A |
 | Load a holo (`load`) | 23 | + | - | N/A |
 | Histories and replay (`replay`) | 5 | + | - | N/A |
-| Verify a holo (`verify`) | 31 | + | - | N/A |
+| Verify a holo (`verify`) | 31 | + | + | N/A |
 | The world contract (`world`) | 20 | + | - | N/A |
 
 ## Checks
@@ -170,7 +170,7 @@ Which Prism runtime passes which part of the runtime contract, from the results 
 | --- | --- | --- | --- | --- |
 | `verify.reference.default-policy` | The default policy fails the reference holo at P0, and names every missing statement. | + | + | N/A |
 | `verify.reference-v5.default-policy` | A holo v5 gets the same verdict as the v4 reference, named by the κ of the file (ADR-017). | + | + | N/A |
-| `verify.reference-v6.default-policy` | A holo v6 gets the same verdict as the v5 reference, named by the blake3 κ of the file (ADR-018). | + | - | N/A |
+| `verify.reference-v6.default-policy` | A holo v6 gets the same verdict as the v5 reference, named by the blake3 κ of the file (ADR-018). | + | + | N/A |
 | `verify.reference-v6.seal-broken` | A holo v6 with one byte changed fails its BLAKE3 seal: a failed integrity check that withholds P1 (ADR-018). | + | + | N/A |
 | `verify.reference.minimum-p0` | A P0 policy accepts the reference holo. | + | + | N/A |
 | `verify.level.not-raised-by-policy` | A policy that asks for P3 does not raise the level. | + | + | N/A |
@@ -305,7 +305,6 @@ Which Prism runtime passes which part of the runtime contract, from the results 
 | Rust | `replay.history.malformed` | The Rust runtime has no replay operation yet (#298). |
 | Rust | `replay.recorder.round-trip` | The Rust runtime has no replay operation yet (#298). |
 | Rust | `replay.statement.written` | The Rust runtime has no replay operation yet (#298). |
-| Rust | `verify.reference-v6.default-policy` | The Rust runtime does not read a holo v6 yet (ADR-018, migration step 3). |
 | Rust | `world.reference.loaded` | The Rust runtime has no load operation yet (#298). |
 | Rust | `world.load.refuses-wrong-exports` | The Rust runtime has no load operation yet (#298). |
 | Rust | `world.session.loaded` | The Rust runtime has no load operation yet (#298). |
