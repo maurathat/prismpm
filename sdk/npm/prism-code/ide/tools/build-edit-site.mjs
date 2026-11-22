@@ -11,8 +11,9 @@
 //   <out>/edit/holospace/            the Holospace library a built holo is opened and run with, each file the one
 //                                    tools/holospace-pins.json names by its BLAKE3 label
 //   <out>/edit/project/              the model the page opens when it is given no other, and project.json listing it
-//   <out>/edit/starters/<name>/      each starter as `prism-code start` makes it, with its project.json, so the
-//                                    page can open one that builds and runs: ?project=../starters/<name>/
+//   <out>/edit/template/             the one template every Prism app starts from, as `prism-code init` writes its
+//                                    app, with project.json and template.json (the template's BLAKE3 label), so
+//                                    the page can start an app that builds and runs: ?project=../template/
 //   <out>/edit/ide/                  the same loop in the VS Code workbench, when dist-model/ has been built
 //   <out>/edit/vendor/xterm/         xterm.js and its addons, the files npm ships, each the one terminal/pins.json names
 //   <out>/edit/terminal/tables.json  the proved tables the terminal asks, read from model/ide-terminal-* and model/ide-audit
@@ -32,7 +33,7 @@ import { ensureKernel, hasKernel, readKernelFile } from '../../src/journey/kerne
 import { keptFile } from '../../src/journey/kappa-store.mjs';
 import { MODEL_KERNEL_FILES, ensureModelKernel } from '../../src/journey/model-prove.mjs';
 import { EVALUATOR_GUEST } from '../../src/journey/model-guest.mjs';
-import { appDir, startApp } from '../../src/journey/project.mjs';
+import { APP_FOLDER, writeTemplate } from '../../src/journey/template.mjs';
 import { projectListing } from './edit-project.mjs';
 import { kappa } from '../../src/blake3.mjs';
 import { terminalTables, vendorFiles } from './terminal-site.mjs';
@@ -104,19 +105,17 @@ const listing = projectListing(project);
 for (const path of listing.files) cpSync(join(project, path), join(site, 'project', path));
 writeFileSync(join(site, 'project.json'), JSON.stringify(listing) + '\n');
 
-// The starters, each started here as `prism-code start` starts an app from it, so what the page opens is what a
-// person with the package would have. The model above need not declare an app; each of these does, and builds.
-const STARTERS = ['stateful-app', 'decision-app', 'rule-app'];
-const started = mkdtempSync(join(tmpdir(), 'prism-starters-'));
-for (const name of STARTERS) {
-  const root = join(started, name);
-  mkdirSync(root);
-  const dir = appDir(root);
-  startApp(dir, name);
-  const starter = projectListing(dir);
-  for (const path of starter.files) cpSync(join(dir, path), join(site, 'starters', name, path));
-  writeFileSync(join(site, 'starters', name, 'project.json'), JSON.stringify(starter) + '\n');
-}
+// The one template every Prism app starts from, written here by the function `prism-code init` calls, which admits
+// each of its files by its BLAKE3 label. What the page opens is its app, the LexLean project under app/, so a
+// person starting in the tab starts where a person with the package does. The model above need not declare an app;
+// the template's does, and builds.
+const started = mkdtempSync(join(tmpdir(), 'prism-template-'));
+const templateWritten = writeTemplate(started);
+const templateApp = join(started, APP_FOLDER);
+const template = projectListing(templateApp);
+for (const path of template.files) cpSync(join(templateApp, path), join(site, 'template', path));
+writeFileSync(join(site, 'template', 'project.json'), JSON.stringify(template) + '\n');
+writeFileSync(join(site, 'template', 'template.json'), JSON.stringify({ schema: 'prism-ide/template/1', label: templateWritten.label, folder: APP_FOLDER, files: template.files.length }) + '\n');
 rmSync(started, { recursive: true, force: true });
 
 // The workbench is built apart (npx vite build -c vite.model.config.js). Without that build the site has the plain page only.
