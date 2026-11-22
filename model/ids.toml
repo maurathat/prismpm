@@ -73,6 +73,12 @@ level = "build"
 statement = "Release artifacts are refused unless all release criteria and verifications hold."
 
 [[id]]
+id = "RP-13"
+suite = "repository"
+level = "build"
+statement = "The portable SDK passive-README classifier refuses unsupported Git changes and malformed documentation references, and its planted fixture inventory executes without skips."
+
+[[id]]
 id = "FT-01"
 suite = "facets"
 level = "build"
