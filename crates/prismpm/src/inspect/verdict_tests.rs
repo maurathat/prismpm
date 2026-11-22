@@ -868,3 +868,88 @@ fn the_no_verdict_diagnostic_is_registered_with_exit_two() {
     );
     assert_eq!(error.diagnostic().exit_code(), super::EXIT_NO_VERDICT);
 }
+
+/// The reference archive as a holo v6 (ADR-018), as `sdk/npm/prism-code`'s `upgradeToV6` wrote it.
+const CALCULATOR_V6_BY_JAVASCRIPT: &[u8] =
+    include_bytes!("../../../../sdk/npm/conformance/corpus/Calculator.v6.holo");
+
+#[test]
+fn rust_upgrades_a_v5_to_the_v6_javascript_writes_byte_for_byte() {
+    let upgraded = crate::holo::archive::upgrade_application_v6(CALCULATOR_V5).unwrap();
+    assert_eq!(upgraded, CALCULATOR_V6_BY_JAVASCRIPT);
+    assert_eq!(
+        crate::holo::archive::upgrade_application_v6(&upgraded).unwrap(),
+        upgraded,
+        "a v6 is left as it is"
+    );
+    let parsed = parse_application(&upgraded).unwrap();
+    let v5 = parse_application(CALCULATOR_V5).unwrap();
+    assert_eq!(parsed.blobs.len(), 4);
+    for (label, content) in &parsed.blobs {
+        assert_eq!(label, &format!("blake3:{}", blake3::hash(content).to_hex()));
+        assert!(v5.blobs.values().any(|old| old == content), "every content object keeps its bytes");
+    }
+    assert_eq!(
+        parsed.identities.archive_kappa,
+        format!("blake3:{}", blake3::hash(&upgraded).to_hex())
+    );
+}
+
+#[test]
+fn a_signed_or_legacy_holo_is_not_upgraded_to_v6() {
+    assert_eq!(
+        crate::holo::archive::upgrade_application_v6(SIGNED_BY_JAVASCRIPT).unwrap_err().code.as_str(),
+        "PP3016"
+    );
+    assert_eq!(
+        crate::holo::archive::upgrade_application_v6(CALCULATOR).unwrap_err().code.as_str(),
+        "PP3001"
+    );
+}
+
+#[test]
+fn a_v6_gets_the_verdict_of_its_v5_named_by_its_blake3_kappa() {
+    let five = verify(CALCULATOR_V5, &Policy::default()).unwrap().value();
+    let six = verify(CALCULATOR_V6_BY_JAVASCRIPT, &Policy::default()).unwrap().value();
+    assert_eq!(six["level"], five["level"]);
+    assert_eq!(six["passed"], five["passed"]);
+    let checks = |verdict: &Value| {
+        verdict["reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|reason| reason["check"].clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(checks(&six), checks(&five));
+    assert_eq!(
+        six["holo"],
+        json!(format!("blake3:{}", blake3::hash(CALCULATOR_V6_BY_JAVASCRIPT).to_hex()))
+    );
+
+    let mut broken = CALCULATOR_V6_BY_JAVASCRIPT.to_vec();
+    let at = broken.len() - 64;
+    broken[at] ^= 1;
+    let verdict = verify(&broken, &p0()).unwrap().value();
+    assert_eq!(verdict["passed"], json!(false));
+    assert!(verdict["reasons"][0]["message"].as_str().unwrap().contains("BLAKE3"));
+}
+
+#[test]
+fn the_inspection_of_a_v6_lists_both_digests_and_its_blake3_labels() {
+    let inspection = crate::inspect::inspect(CALCULATOR_V6_BY_JAVASCRIPT).unwrap();
+    assert_eq!(inspection["physical_version"], json!(6));
+    assert_eq!(
+        inspection["digest"],
+        json!({
+            "sha256": format!("{:x}", Sha256::digest(CALCULATOR_V6_BY_JAVASCRIPT)),
+            "blake3": blake3::hash(CALCULATOR_V6_BY_JAVASCRIPT).to_hex().to_string(),
+        })
+    );
+    for section in inspection["sections"].as_array().unwrap() {
+        assert_eq!(
+            section["label"],
+            json!(format!("blake3:{}", section["digest"]["blake3"].as_str().unwrap()))
+        );
+    }
+}

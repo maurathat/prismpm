@@ -184,13 +184,13 @@ fn subject_of(
             })
     };
     // A holo v5 names its content objects by κ (`sha256:<hex>`), so a subject's
-    // sha256 is the object's κ and nothing else is needed (ADR-017). Only a
-    // legacy v4 holo, whose labels are BLAKE3, carries both (ADR-015).
+    // sha256 is the object's κ and nothing else is needed (ADR-017). A legacy v4
+    // holo and a holo v6, whose labels are BLAKE3, carry both (ADR-015, ADR-018 §4).
     let legacy = blobs.keys().any(|label| label.starts_with("blake3:"));
     if legacy {
         if digest.len() != 2 || !digest.contains_key("blake3") || !digest.contains_key("sha256") {
             return Err(bundle_error(format!(
-                "{where_} of a v4 holo must carry exactly blake3 and sha256 (ADR-015)"
+                "{where_} of a v4 or v6 holo must carry exactly blake3 and sha256 (ADR-015, ADR-018)"
             )));
         }
         let (blake3, sha256) = (hex("blake3")?, hex("sha256")?);

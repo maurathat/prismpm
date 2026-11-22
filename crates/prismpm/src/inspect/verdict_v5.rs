@@ -1,5 +1,6 @@
-//! The verdict's reading of a holo v5 (ADR-017): a raw UORC archive whose
-//! ordered objects are [`ROLES_V5`]. It records the same internal checks as the
+//! The verdict's reading of a holo v5 (ADR-017) or v6 (ADR-018): a raw UORC
+//! archive whose ordered objects are [`ROLES_V5`]. A v6 is sealed by BLAKE3 and
+//! names every object `blake3:`; otherwise it is read as a v5. It records the same internal checks as the
 //! v4 reader, under the same ids, so a v5 holo and a v4 holo of the same
 //! application reach the same level for the same reasons.
 //!
@@ -17,14 +18,14 @@ use super::{
     REVISION_2026_11_18, SOURCE_MANIFEST_VERSION,
 };
 use crate::holo::archive::{
-    declared_contract, encode_json, layers_v5, v5_entry, ManifestV5, ObjectV5, CONTENT_OBJECTS,
-    MANIFEST_SCHEMA_V5, PROVENANCE_SCHEMA_V5, ROLES_V5, ROLE_ATTESTATIONS,
+    declared_contract, encode_json, layers_v5, schemas_of, v5_entry, ManifestV5, ObjectV5,
+    CONTENT_OBJECTS, ROLES_V5, ROLE_ATTESTATIONS,
 };
 use crate::holo::v5;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-fn row(index: usize, role: &str, bytes: &[u8]) -> Row {
+fn row(format: v5::Format, index: usize, role: &str, bytes: &[u8]) -> Row {
     let content = CONTENT_OBJECTS.contains(&index);
     let kind = match index {
         0 => KIND_APP_MANIFEST,
@@ -36,7 +37,7 @@ fn row(index: usize, role: &str, bytes: &[u8]) -> Row {
         index,
         kind,
         bytes: bytes.to_vec(),
-        label: content.then(|| v5::kappa(bytes)),
+        label: content.then(|| v5::label(format, bytes)),
         content: if content { bytes.to_vec() } else { Vec::new() },
         label_matches: content,
         name: (kind == KIND_EXTENSION).then(|| role.to_owned()),
@@ -54,11 +55,14 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         };
         NoVerdict::new(check, error.message)
     })?;
+    let format = v5::format_of(bytes).unwrap_or(v5::Format::V5);
+    let (manifest_schema, provenance_schema) = schemas_of(format);
+    let seal_name = format.seal_name();
     let roles_of = |index: usize| ROLES_V5.get(index).copied().unwrap_or(ROLE_ATTESTATIONS);
     let rows = objects
         .iter()
         .enumerate()
-        .map(|(index, bytes)| row(index, roles_of(index), bytes))
+        .map(|(index, bytes)| row(format, index, roles_of(index), bytes))
         .collect::<Vec<_>>();
     let layout_known = rows.len() == ROLES_V5.len() || rows.len() == ROLES_V5.len() + 1;
     let at = |index: usize| layout_known.then(|| &rows[index]);
@@ -71,16 +75,16 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         "archive.footer",
         sealed,
         if sealed {
-            format!("the seal is the UORC-SHA256-CHAIN-v1 of the archive, {seal}")
+            format!("the seal is the {seal_name} of the archive, {seal}")
         } else {
-            format!("the seal {seal} is not the UORC-SHA256-CHAIN-v1 of the archive: the archive was altered")
+            format!("the seal {seal} is not the {seal_name} of the archive: the archive was altered")
         },
     );
 
     // manifest.wire and blob.labels: the manifest object names every object.
     let kappa = |index: usize| {
         at(index)
-            .map(|row| v5::kappa(&row.bytes))
+            .map(|row| v5::label(format, &row.bytes))
             .unwrap_or_default()
     };
     let manifest = at(0)
@@ -89,14 +93,14 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
             serde_json::from_slice::<ManifestV5>(&row.bytes)
                 .map_err(|error| {
                     format!(
-                        "the holo manifest does not have the {MANIFEST_SCHEMA_V5} shape: {error}"
+                        "the holo manifest does not have the {manifest_schema} shape: {error}"
                     )
                 })
                 .map(|manifest| (row, manifest))
         })
         .and_then(|(row, manifest)| {
             let mut problems = Vec::new();
-            if manifest.schema != MANIFEST_SCHEMA_V5 {
+            if manifest.schema != manifest_schema {
                 problems.push(format!("the manifest names schema {}", manifest.schema));
             }
             if manifest.name.is_empty() {
@@ -105,11 +109,11 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
             if manifest
                 .basis
                 .as_deref()
-                .is_some_and(|basis| !v5::is_kappa(basis))
+                .is_some_and(|basis| !v5::is_label(format, basis))
             {
                 problems.push("the manifest basis is not a κ-label".to_owned());
             }
-            if !v5::is_kappa(&manifest.requires) {
+            if !v5::is_label(format, &manifest.requires) {
                 problems.push("the manifest requires no κ-label".to_owned());
             }
             // The shape of the layers here; whether their κ name the objects is blob.labels.
@@ -125,7 +129,7 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
                 || !manifest
                     .layers
                     .iter()
-                    .all(|layer| v5::is_kappa(&layer.kappa))
+                    .all(|layer| v5::is_label(format, &layer.kappa))
             {
                 problems.push(
                     "the manifest layers are not the wasm and view layers of a holo".to_owned(),
@@ -144,7 +148,7 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         "manifest.wire",
         manifest.is_ok(),
         match &manifest {
-            Ok(_) => format!("the holo manifest is canonical {MANIFEST_SCHEMA_V5}"),
+            Ok(_) => format!("the holo manifest is canonical {manifest_schema}"),
             Err(problem) => problem.clone(),
         },
     );
@@ -200,7 +204,7 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
 
     // provenance.schema: the model provenance object.
     let provenance = document_object("the model provenance", at(2)).and_then(|value| {
-        if value.get("schema").and_then(Value::as_str) != Some(PROVENANCE_SCHEMA_V5) {
+        if value.get("schema").and_then(Value::as_str) != Some(provenance_schema) {
             return Err(format!(
                 "the model provenance names schema {}, which no known format revision packs into a holo",
                 value.get("schema").cloned().unwrap_or(Value::Null)
@@ -211,14 +215,14 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
             return Err("the model provenance is not canonical JSON".to_owned());
         }
         serde_json::from_value::<ModelProvenanceV1>(value).map_err(|error| {
-            format!("the model provenance does not have the {PROVENANCE_SCHEMA_V5} shape: {error}")
+            format!("the model provenance does not have the {provenance_schema} shape: {error}")
         })
     });
     add(
         "provenance.schema",
         provenance.is_ok(),
         match &provenance {
-            Ok(_) => format!("the model provenance matches {PROVENANCE_SCHEMA_V5}"),
+            Ok(_) => format!("the model provenance matches {provenance_schema}"),
             Err(problem) => problem.clone(),
         },
     );
@@ -356,10 +360,11 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         "format.revision",
         differences.is_empty(),
         if differences.is_empty() {
-            format!("holo v5, format revision {revision}")
+            format!("holo v{}, format revision {revision}", format.number())
         } else {
             format!(
-                "the archive matches no format revision this reader knows (holo v5): {}",
+                "the archive matches no format revision this reader knows (holo v{}): {}",
+                format.number(),
                 differences.join("; ")
             )
         },
@@ -379,7 +384,7 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
     };
 
     Ok(Analysis {
-        fingerprint: v5::kappa(bytes),
+        fingerprint: v5::label(format, bytes),
         footer_matches: sealed,
         layout_known,
         newest_differences: differences,

@@ -2548,6 +2548,13 @@ pub(super) fn inspection_v5(bytes: &[u8]) -> Result<Value, PrismError> {
         )
     })?;
     let (objects, _) = uorc::layout(bytes, uorc::APPLICATION_BUDGET)?;
+    // A holo v6 names its objects by blake3, with sha256 beside it (ADR-018 §4); a v5 by sha256 alone.
+    let format = uorc::format_of(bytes).unwrap_or(uorc::Format::V5);
+    let digest_of = |content: &[u8]| match format {
+        uorc::Format::V5 => json!({ "sha256": sha256_hex(content) }),
+        uorc::Format::V6 => json!({ "sha256": sha256_hex(content), "blake3": blake3::hash(content).to_hex().to_string() }),
+    };
+    let kappa_of = |content: &[u8]| uorc::label(format, content);
     let base = bytes.as_ptr() as usize;
     let role_of = |index: usize| {
         crate::holo::archive::ROLES_V5
@@ -2566,8 +2573,8 @@ pub(super) fn inspection_v5(bytes: &[u8]) -> Result<Value, PrismError> {
                 "role": role_of(index),
                 "offset": object.as_ptr() as usize - base,
                 "length": object.len(),
-                "digest": { "sha256": sha256_hex(object) },
-                "label": uorc::kappa(object),
+                "digest": digest_of(object),
+                "label": kappa_of(object),
             })
         })
         .collect::<Vec<_>>();
@@ -2603,7 +2610,7 @@ pub(super) fn inspection_v5(bytes: &[u8]) -> Result<Value, PrismError> {
         .get("application")
         .cloned()
         .unwrap_or(Value::Null);
-    let label = |index: usize| object(index).map(uorc::kappa);
+    let label = |index: usize| object(index).map(kappa_of);
     let member = |value: &Value, key: &str| super::member(value, key);
     let name = match member(&application, "name") {
         Value::Null => member(&manifest, "name"),
@@ -2625,7 +2632,7 @@ pub(super) fn inspection_v5(bytes: &[u8]) -> Result<Value, PrismError> {
         offset: 0,
         length: content.len() as u64,
         bytes: content.to_vec(),
-        label: Some(uorc::kappa(content)),
+        label: Some(kappa_of(content)),
         content: Some(content.to_vec()),
         name: None,
         role: "capabilities",
@@ -2646,7 +2653,10 @@ pub(super) fn inspection_v5(bytes: &[u8]) -> Result<Value, PrismError> {
                 "subjects": statement
                     .subjects
                     .iter()
-                    .map(|subject| json!({ "name": subject.name, "digest": { "sha256": subject.sha256 } }))
+                    .map(|subject| match &subject.blake3 {
+                        Some(blake3) => json!({ "name": subject.name, "digest": { "sha256": subject.sha256, "blake3": blake3 } }),
+                        None => json!({ "name": subject.name, "digest": { "sha256": subject.sha256 } }),
+                    })
                     .collect::<Vec<Value>>(),
             })
         })
@@ -2655,10 +2665,10 @@ pub(super) fn inspection_v5(bytes: &[u8]) -> Result<Value, PrismError> {
         "schema": super::INSPECTION_SCHEMA,
         "name": name,
         "revision": passed("format.revision").then_some(analysis.revision),
-        "physical_version": 5,
+        "physical_version": format.number(),
         "flags": 0,
         "size": bytes.len(),
-        "digest": { "sha256": sha256_hex(bytes) },
+        "digest": digest_of(bytes),
         "footer": hex(&bytes[bytes.len() - uorc::SEAL..]),
         "sections": sections,
         "manifest": if manifest.is_null() {
@@ -2691,7 +2701,7 @@ pub(super) fn inspection_v5(bytes: &[u8]) -> Result<Value, PrismError> {
                     "response": member(&application, "response_maximum"),
                     "guest_allocation": member(&application, "guest_allocation_maximum"),
                 },
-                "digest": { "sha256": sha256_hex(model) },
+                "digest": digest_of(model),
             }),
             _ => Value::Null,
         },
