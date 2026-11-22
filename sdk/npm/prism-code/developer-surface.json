@@ -508,11 +508,6 @@
     },
     {
       "kind": "flag",
-      "place": "--template",
-      "name": "template"
-    },
-    {
-      "kind": "flag",
       "place": "--timestamps",
       "name": "timestamps"
     },

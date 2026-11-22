@@ -69,10 +69,11 @@ test('a Docker user does the ten tasks with the prism-code CLI, as Docker spells
       const done = await cli(spell(step.prism).slice(1), { env });
       assert.equal(done.code, 0, `${step.prism}\n${done.stderr}`);
     }
-    // The build runs in this process, in a starter project. It fetches nothing here, so on a machine that has not
-    // run prism-code before, the build is refused by name and the step is not held to its output.
+    // The build runs in this process, in a project init starts from the canonical template. It fetches nothing here,
+    // so on a machine that has not run prism-code before, the build is refused by name and the step is not held to
+    // its output.
     const at = join(root, 'cli-project');
-    assert.equal((await cli(['init', at, '--template', 'rule-app'], { env })).code, 0);
+    assert.equal((await cli(['init', at], { env })).code, 0);
     const buildEnv = { ...process.env, PRISM_CODE_TIER: 'offline', PRISM_LEXLEAN_FETCH: '0' };
     delete buildEnv.PRISM_CODE_DRY_RUN;
     for (const step of transcript.cli) {
