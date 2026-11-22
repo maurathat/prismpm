@@ -29,6 +29,9 @@ import GATE_PINS from './gate-pins.json';
 // Which editor command ids map to which word of the proved command table. Any other id is the word "other".
 import COMMAND_WORDS from './command-words.json';
 import { pathInside } from './scope.js';
+import { gateFacts } from './gate-facts.js';
+// The Holospace library whose kernel answers for a call: each file is taken only as the bytes this names.
+import HOLOSPACE_PINS from '../tools/holospace-pins.json';
 import { openIdentity, loadGrants, saveGrants, clearGrants, corruptGrants, RESOURCES, DEFAULT_GRANTS } from './identity.js';
 import { kappa } from '../public/gate/prism-code/src/blake3.mjs';
 const TABLE_SIDS = new Set(METHOD_SIDS);
@@ -89,15 +92,21 @@ async function loadJudge(recordFile = 'app.rule-app.json') {
 const yn = (b) => (b ? 'yes' : 'no');
 // What the user has granted this worker. Everything else is refused or asked.
 // Filled before any extension runs: from the Prism id's signed, sealed record for this extension, else the defaults.
-const GRANTS = { show: true, read: true, write: false, network: false, secrets: false, exec: params.get('grant') === 'exec' };
+// ?grant=network,exec grants more for a trial; ?undeclared=network leaves a resource out of what the extension
+// declares, and ?trusted=no marks it untrusted: the planted requests a test asks with.
+const ASKED = (name) => new Set((params.get(name) ?? '').split(',').filter(Boolean));
+const GRANTS = { show: true, read: true, write: false, network: false, secrets: false, exec: false };
+for (const resource of ASKED('grant')) if (resource in GRANTS) GRANTS[resource] = true;
 const DENIED = {};
+const DECLARED = new Set(['show', 'read', 'write', 'network', 'secrets', 'exec'].filter((resource) => !ASKED('undeclared').has(resource)));
+const TRUSTED = params.get('trusted') !== 'no';
 const useIdentity = fullWorkbench && params.get('id') !== 'off';
 const grantsFor = realExt ?? 'spike.probe';
 // One worker per extension under test: the editor's affinity setting puts it in a worker of its own, apart from the probe.
 // The gate then knows which worker a call came from, so one extension cannot use another's storage or grants.
 const separate = fullWorkbench && !!realExt && params.get('sep') !== 'off';
 state.separate = separate;
-const PROBE_GRANTS = { show: true, read: true, exec: params.get('grant') === 'exec' };
+const PROBE_GRANTS = { show: true, read: true, exec: ASKED('grant').has('exec') };
 const KNOWN_IDS = ['spike.probe'];
 let realId = null;
 const HOSTS = new WeakMap();
@@ -133,9 +142,11 @@ function requestFor(sid, method, args, host) {
       if (cls !== 'show' && cls !== 'exec') return { refuse: 'command table not admitted' };
     }
   }
-  // Where the call points, as the proved model names it: outside, workspace or storage.
-  // A call with no file target counts as workspace. The judge, not this code, decides what storage may do.
+  // Where the call points: outside, workspace or storage, by the scope rules. A call with no file target counts as
+  // the workspace. The gate, not this code, decides what each place may do.
   let target = 'workspace';
+  let uri = null;
+  let other = false;
   // The stored grants belong to the extension under test. Any other worker gets the defaults.
   const own = !separate || (realId !== null && host.extensions.has(realId));
   const granted = (own ? GRANTS : PROBE_GRANTS)[cls] === true;
@@ -143,7 +154,7 @@ function requestFor(sid, method, args, host) {
   if (sid === 'MainThreadFileSystem') {
     let where = 'unreadable';
     try {
-      const uri = URI.revive(args[0]);
+      uri = URI.revive(args[0]);
       // The editor gives every extension storage folders of its own.
       // With one shared worker this cannot tell one extension's folder from another's.
       // Some extensions reach the same folders through the file: scheme, so both schemes count.
@@ -154,16 +165,45 @@ function requestFor(sid, method, args, host) {
       if (storage && separate) {
         // Storage is the caller's own only if it is not another known extension's folder.
         const segments = uri.path.toLowerCase().split('/');
-        const other = KNOWN_IDS.find((id) => segments.includes(id) && !host.extensions.has(id));
-        if (other) { target = 'outside'; where = 'outside: storage of ' + other; }
+        const otherId = KNOWN_IDS.find((id) => segments.includes(id) && !host.extensions.has(id));
+        other = otherId !== undefined;
+        if (other) { target = 'outside'; where = 'outside: storage of ' + otherId; }
       }
-    } catch { target = 'outside'; }
+    } catch { target = 'outside'; uri = { scheme: undefined, path: undefined }; }
     state.filePaths[`${cls} ${where}`] = (state.filePaths[`${cls} ${where}`] ?? 0) + 1;
   }
-  return { resource: cls, declared: 'yes', denied: yn(refused), trusted: 'yes', target, granted: yn(granted) };
+  // The same facts in the form Holospace's gate takes. The place the scope rules gave goes with them: an answer is
+  // used only when the gate reads the path as the same place.
+  const sent = gateFacts({ resource: cls, uri: uri === null ? null : { scheme: uri.scheme, path: uri.path }, other, declared: DECLARED, granted, denied: refused, trusted: TRUSTED });
+  if (sent.place !== target) return { refuse: `the scope rules say ${target}, the facts sent say ${sent.place}` };
+  return { place: target, facts: sent.facts };
 }
 
-const judge = useGate ? loadJudge() : null;
+// The gate: Holospace's kernel, through the library this page pins. Each of the library's files is fetched and taken
+// only as the bytes its BLAKE3 label names; a file that is not, or a library that does not open, answers "deny" to
+// everything. The answer is the kernel's word: allow, deny or ask. "ask" lets nothing through here, since this
+// page puts no question to the user in the middle of a call; the stored grants are the user's answers.
+async function loadGate() {
+  const started = performance.now();
+  const base = new URL('/holospace/', location.origin).href;
+  const closed = (why, facts = {}) => ({ ask: async () => ({ answer: 'deny', place: null, line: null }), admitted: false, facts: { ...facts, why }, loadMs: Math.round(performance.now() - started) });
+  const got = {};
+  for (const pin of HOLOSPACE_PINS.files) {
+    let bytes;
+    try { const response = await fetch(base + pin.path); if (!response.ok) return closed(`${pin.path} answered ${response.status}`); bytes = new Uint8Array(await response.arrayBuffer()); } catch (error) { return closed(`${pin.path}: ${error?.message ?? error}`); }
+    got[pin.path] = kappa(bytes);
+    if (got[pin.path] !== pin.kappa || bytes.length !== pin.bytes) return closed(`${pin.path} is not the pinned bytes`, { kappas: got });
+  }
+  try {
+    const library = await import(/* @vite-ignore */ base + HOLOSPACE_PINS.entry);
+    const h = await library.openHolospace();
+    if (typeof h.extensionGate !== 'function') return closed('the library has no extension gate', { kappas: got });
+    return { ask: (facts) => h.extensionGate(facts), admitted: true, facts: { kappas: got, commit: HOLOSPACE_PINS.commit }, loadMs: Math.round(performance.now() - started) };
+  } catch (error) {
+    return closed(`the library did not open: ${error?.code ?? error?.message ?? error}`, { kappas: got });
+  }
+}
+const judge = useGate ? loadGate() : null;
 const commandJudge = useGate ? loadJudge('commands.rule-app.json').then(async (j) => {
   for (const word of ['other', ...Object.keys(COMMAND_WORDS)]) COMMAND_CLASS[word] = await j.ask({ command: word });
   state.commandJudge = { admitted: j.admitted, loadMs: j.loadMs, classes: { ...COMMAND_CLASS }, kappas: j.facts.kappas };
@@ -203,7 +243,16 @@ function gated(sid, instance, host) {
         }
         if (request !== 'pass') {
           const t = performance.now();
-          const answer = await (await judge).ask(request);
+          let answer;
+          try {
+            const said = await (await judge).ask(request.facts);
+            // The gate and the scope rules must read the path as the same place, or nothing is let through.
+            answer = said.place !== null && said.place !== request.place ? `deny (the gate reads the path as ${said.place}, the scope rules as ${request.place})` : said.answer;
+            (state.gateLines ??= []).length < 200 && state.gateLines.push(`${said.line} -> ${said.answer}`);
+          } catch (error) {
+            // A fact the gate does not admit is refused by it, not guessed.
+            answer = `deny (${error?.code ?? error?.message ?? error})`;
+          }
           state.judgeMs.push(+(performance.now() - t).toFixed(3));
           if (answer !== 'allow') {
             state.denied.push({ call: key, answer, host: host.index });
