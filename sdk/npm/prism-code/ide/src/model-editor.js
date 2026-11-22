@@ -292,8 +292,9 @@ try {
   }
   // LexLean's colours reach the editor as semantic tokens, so they are on whatever the theme would choose.
   // ?theme=<a theme's name> opens the page in that theme; without it, the workbench's own choice stands.
-  const theme = new URLSearchParams(location.search).get('theme');
-  await initUserConfiguration(JSON.stringify({ 'editor.semanticHighlighting.enabled': true, ...(theme ? { 'workbench.colorTheme': theme } : {}) }));
+  // Dark+ unless the address names another theme: ?theme=<a theme's name, as the command palette lists it>.
+  const theme = new URLSearchParams(location.search).get('theme') || 'Default Dark+';
+  await initUserConfiguration(JSON.stringify({ 'editor.semanticHighlighting.enabled': true, 'workbench.colorTheme': theme }));
 
   await initialize({
     ...getExtensionsOverride({ enableWorkerExtensionHost: true }), ...getFilesOverride(), ...getConfigurationOverride(),
