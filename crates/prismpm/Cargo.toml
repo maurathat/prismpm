@@ -19,6 +19,7 @@ include = [
     "language/**",
     "model/**",
     "schemas/**",
+    "sdk/ci/**",
     "sdk/asyncapi-runtime/package.json",
     "sdk/asyncapi-runtime/package-lock.json",
     "sdk/asyncapi-runtime/launcher.mjs",
