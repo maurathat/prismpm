@@ -33,7 +33,8 @@ class Refused(Exception):
 
 
 def git(root: Path, *args: str) -> bytes:
-    command = ["git", "-C", str(root), "-c", "core.quotepath=false", *args]
+    command = ["git", "--no-replace-objects", "-C", str(root),
+               "-c", "core.quotepath=false", "-c", "diff.ignoreSubmodules=none", *args]
     process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if process.returncode:
         raise Refused("git command failed: " + " ".join(args[:4]))
@@ -115,7 +116,12 @@ def markdown_prose(source: str) -> str:
             outside.append("\n")
     if active is not None:
         raise Refused("unterminated Markdown fence")
-    return "".join(outside)
+    prose = "".join(outside)
+    prose = re.sub(r"<!--.*?-->", lambda m: "\n" * m.group(0).count("\n"),
+                   prose, flags=re.S)
+    if "<!--" in prose or "-->" in prose:
+        raise Refused("unclosed or unsupported HTML comment")
+    return prose
 
 
 def check_readme_links(root: Path, head: str, readme: str) -> tuple[int, int]:
@@ -129,8 +135,14 @@ def check_readme_links(root: Path, head: str, readme: str) -> tuple[int, int]:
         count = headings.get(base_slug, 0)
         headings[base_slug] = count + 1
         anchors.add(f"{base_slug}-{count}" if count else base_slug)
+    markdown_links = list(LINK.finditer(readme))
+    html_links = list(HTML_LOCAL.finditer(readme))
+    if readme.count("](") != len(markdown_links):
+        raise Refused("unsupported Markdown link syntax")
+    if len(re.findall(r"\\b(?:src|href)\\s*=", readme, re.I)) != len(html_links):
+        raise Refused("unsupported HTML link attribute")
     checked = 0
-    for match in list(LINK.finditer(readme)) + list(HTML_LOCAL.finditer(readme)):
+    for match in markdown_links + html_links:
         target = (match.group(1) or match.group(2)) if len(match.groups()) == 2 else match.group(1)
         if not target or target.startswith(("http:", "https:", "mailto:", "tel:", "data:", "//")):
             continue
@@ -150,6 +162,8 @@ def check_readme_links(root: Path, head: str, readme: str) -> tuple[int, int]:
                 raise Refused("local path escapes repository: " + target)
             if mode(root, head, normalized) != "100644":
                 raise Refused("missing or non-regular link target: " + target)
+            if parts.fragment and normalized != "README.md":
+                raise Refused("unsupported cross-document fragment: " + target)
             if normalized == "README.md" and parts.fragment and parts.fragment not in anchors:
                 raise Refused("unresolved README anchor: " + target)
         checked += 1
@@ -168,7 +182,7 @@ def qualify(root: Path, base: str, head: str, expected_banner_blob: str = EXPECT
         raise Refused("pull-request head must descend from one exact trusted base")
     merge_base = base
     raw = git(root, "diff", "--name-status", "-z", "--no-ext-diff", "--no-textconv",
-              "--no-renames", merge_base, head)
+              "--no-renames", "--ignore-submodules=none", merge_base, head)
     fields = [p.decode("utf-8", errors="strict") for p in raw.split(b"\0") if p]
     if not fields or len(fields) % 2:
         raise Refused("empty or unparseable changed-path list")
