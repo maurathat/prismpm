@@ -23,7 +23,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'nod
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { PrismCodeError, PrismError } from './errors.mjs';
 import { lexleanProjectDir } from './tiers.mjs';
-import { checkContract, checkRefusals, checkTheorems, contractRoot, lexiconEntries, writeConformance } from './contract.mjs';
+import { checkContract, checkRefusals, checkTheorems, contractRoot, isContract2, lexiconEntries, writeConformance } from './contract.mjs';
 import { readSession, sourceDigest, sourceFiles, writeSession } from './journey/project.mjs';
 
 export const REPORT_SCHEMA = 'prism/report/1';
@@ -115,8 +115,9 @@ async function gate(project, session, { env, log, engine, write = false }) {
   // The template contract's ratchet (contract.mjs), when this is a template workspace: the project's own folder, its
   // root, or the folder above the model. Its violations are reported with the model's, and fail the gate with exit 1.
   const root = contractRoot(project.root, project.dir, dirname(project.dir));
-  // `check --write` (template/2): CONFORMANCE.md is written from the register before R1 judges it.
-  if (write && root) {
+  // `build` (template/2): CONFORMANCE.md is the register's generation, so build writes it before R1 judges it, as it
+  // writes the app; `check` writes nothing and only compares.
+  if (write && root && isContract2(root)) {
     try {
       writeConformance(root);
     } catch (error) {
@@ -152,11 +153,11 @@ async function gate(project, session, { env, log, engine, write = false }) {
 }
 
 /** `check`: the model checks and every theorem is proved. Writes nothing in the project. */
-export async function modelCheck(path, { project: explicit = null, write = false, env = process.env, log = () => {}, engine = null } = {}) {
+export async function modelCheck(path, { project: explicit = null, env = process.env, log = () => {}, engine = null } = {}) {
   const started = Date.now();
   const project = await openProject(path, explicit);
   if (project.refused) return answer('check', started, EXIT.REFUSED, {}, project.diagnostics);
-  const gated = await gate(project, readSession(project.dir), { env, log, engine, write });
+  const gated = await gate(project, readSession(project.dir), { env, log, engine });
   return answer('check', started, gated.code ?? EXIT.OK, gated.summary, gated.diagnostics);
 }
 
@@ -175,7 +176,7 @@ export async function modelBuild(path, { project: explicit = null, out = null, e
   const project = await openProject(path, explicit);
   if (project.refused) return answer('build', started, EXIT.REFUSED, {}, project.diagnostics);
   const session = readSession(project.dir);
-  const gated = await gate(project, session, { env, log, engine });
+  const gated = await gate(project, session, { env, log, engine, write: true });
   if (gated.code !== null) return answer('build', started, gated.code, gated.summary, gated.diagnostics);
   const { build } = engine ?? (await import('./journey/engine.mjs'));
   const built = await build(project.dir, session, { env, log });

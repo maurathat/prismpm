@@ -8,7 +8,7 @@ Every Prism app starts from the canonical template, which keeps `uor/template-co
 
 | Rule | What it asks |
 | --- | --- |
-| R1 | One authoritative model. Behavior is authored in the LexLean modules; `CONFORMANCE.md` is generated from the register by `prism-code check --write`, never edited by hand. |
+| R1 | One authoritative model. Behavior is authored in the LexLean modules; `CONFORMANCE.md` is generated from the register by `prism-code build`, never edited by hand. |
 | R2 | Claim tiers stay apart: *imported* from a named authority, *built* by proof, *open* as a measurement. |
 | R3 | Register and specify first: an identifier and its scenario exist before the behavior does, and a *built* identifier names the theorems that prove it. |
 | R4 | No stubs: no `sorry`, no undeclared axiom, no placeholder, no flag hiding unfinished work. |
@@ -29,7 +29,7 @@ Read the files a workspace already has for their exact shape, and follow it. Do 
 
 | Code | Rule | What is wrong |
 | --- | --- | --- |
-| `contract.conformance` | R1 | `CONFORMANCE.md` is not what the register generates. Run `prism-code check --write`; never edit it by hand. |
+| `contract.conformance` | R1 | `CONFORMANCE.md` is not what the register generates. Run `prism-code build`, which writes it; never edit it by hand. |
 | `contract.level` | R2 | A level is not `some-true`, `build` or `open`, or a scenario is tagged another level than its ID has. |
 | `contract.authority` | R2 | A `some-true` claim cites an authority the workspace does not name, or an authority is realized by an ID that is not there. |
 | `contract.duplicate` | R2 | One ID has two rows, in one register or across them. |
@@ -52,4 +52,4 @@ R4 and R6 are the model check's: no stub, no undeclared axiom, locked imports.
 1. Register the identifier, then write its scenario, then change the model; name the theorem that proves it in the row.
 2. Register each refusal with the exact response the app gives, and state an acceptance vector the app answers with it.
 3. Keep each claim in the register of its tier. Never move a *built* claim to *open* to pass a gate.
-4. Run `npx prism-code check --write` after a register edit, and `npx prism-code check --json` after every edit to the model or a register.
+4. Run `npx prism-code check --json` after every edit to the model or a register, and `npx prism-code build` to write the app and `CONFORMANCE.md`.

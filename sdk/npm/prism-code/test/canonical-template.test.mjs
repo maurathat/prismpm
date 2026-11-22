@@ -106,6 +106,15 @@ test('contract 2 refuses each planted defect of R1, R2, R3, R5 and the universal
   }
 });
 
+test('a universal policy file a checkout rewrote to CRLF is refused, and the refusal says it is the line endings', () => {
+  const dir = written();
+  writeFileSync(join(dir, 'AGENTS.md'), readFileSync(join(dir, 'AGENTS.md'), 'utf8').replace(/\n/g, '\r\n'));
+  const drift = checkContract(dir).diagnostics.filter((d) => d.code === 'contract.policy-drift');
+  assert.equal(drift.length, 1);
+  assert.match(drift[0].message, /AGENTS\.md has CRLF line endings, and template\.lock binds its LF bytes/);
+  assert.equal(readFileSync(join(dir, '.gitattributes'), 'utf8').trim().split('\n').at(-1), '* -text', 'the template keeps every file as committed');
+});
+
 test('R3: a named theorem the model does not state, or the kernel did not prove, is refused', () => {
   const dir = written();
   const proved = (status = 'proved') => new Map([['Contract.conformant_decides', { theorem: 'conformant_decides', status }], ['Contract.accepts_exactly_a_request', { theorem: 'accepts_exactly_a_request', status: 'proved' }]]);

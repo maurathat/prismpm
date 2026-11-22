@@ -50,7 +50,7 @@ choose. It writes:
 | `prism.toml` | the app's name; nothing granted |
 
 `check` holds the workspace to the template contract: `CONFORMANCE.md` is the
-generation of `model/ids.toml` (`check --write` writes it), every ID has a
+generation of `model/ids.toml` (`build` writes it), every ID has a
 scenario, every theorem an ID names is stated and proved by Lean's kernel, every
 refusal it names answers an acceptance vector, and every universal policy file
 still has its label.
