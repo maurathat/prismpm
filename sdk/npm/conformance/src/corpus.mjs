@@ -22,6 +22,7 @@ import { blake3 } from './vendor/blake3.mjs';
 const here = (relative) => fileURLToPath(new URL(relative, import.meta.url));
 export const REFERENCE_PATH = here('../corpus/Calculator.holo');
 export const REFERENCE_V5_PATH = here('../corpus/Calculator.v5.holo');
+export const REFERENCE_V6_PATH = here('../corpus/Calculator.v6.holo');
 export const LOCK_PATH = here('../corpus/archives.lock.json');
 
 const KIND_EXTENSION = 14;
@@ -333,6 +334,15 @@ export const ARCHIVES = Object.freeze({
   // The reference application as a holo v5, a UORC archive named by κ (ADR-017). Committed, not derived:
   // its bytes come from compose_application, and a v4 recipe cannot write them.
   'reference-v5': () => new Uint8Array(readFileSync(REFERENCE_V5_PATH)),
+  // The same application as a holo v6, sealed and named by BLAKE3 (ADR-018). Committed, not derived: prism-code's
+  // upgradeToV6 wrote it from reference-v5, keeping every content object and relabelling every κ blake3:.
+  'reference-v6': () => new Uint8Array(readFileSync(REFERENCE_V6_PATH)),
+  // One byte of its model object flipped: the BLAKE3 seal no longer matches.
+  'reference-v6-seal-broken': () => {
+    const bytes = new Uint8Array(readFileSync(REFERENCE_V6_PATH));
+    bytes[bytes.length - 64] ^= 1;
+    return bytes;
+  },
 
   // Not a holo at all, or a structure no reader may accept.
   empty: () => new Uint8Array(0),

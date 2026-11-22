@@ -20,9 +20,9 @@ Which Prism runtime passes which part of the runtime contract, from the results 
 | Dual digests (`digests`) | 18 | + | + | N/A |
 | Dispatch through the guest (`dispatch`) | 7 | + | - | N/A |
 | Typed errors (`errors`) | 8 | + | - | N/A |
-| Load a holo (`load`) | 22 | + | - | N/A |
+| Load a holo (`load`) | 23 | + | - | N/A |
 | Histories and replay (`replay`) | 5 | + | - | N/A |
-| Verify a holo (`verify`) | 29 | + | + | N/A |
+| Verify a holo (`verify`) | 31 | + | - | N/A |
 | The world contract (`world`) | 20 | + | - | N/A |
 
 ## Checks
@@ -132,6 +132,7 @@ Which Prism runtime passes which part of the runtime contract, from the results 
 | --- | --- | --- | --- | --- |
 | `load.reference.opens` | The reference holo opens, with its name, limits, vector count and identities verified. | + | - | N/A |
 | `load.reference-v5.opens` | The reference holo v5, a UORC archive, opens with the same name, limits and vectors as the v4 reference. | + | - | N/A |
+| `load.reference-v6.opens` | The reference holo v6, sealed and named by BLAKE3, opens with the same name, limits and vectors as the v5 reference. | + | - | N/A |
 | `load.refuse.empty` | An empty file is refused. | + | - | N/A |
 | `load.refuse.too-short` | A file shorter than a header and a footer is refused. | + | - | N/A |
 | `load.refuse.bad-magic` | A file that does not start with HOLO is refused. | + | - | N/A |
@@ -169,6 +170,8 @@ Which Prism runtime passes which part of the runtime contract, from the results 
 | --- | --- | --- | --- | --- |
 | `verify.reference.default-policy` | The default policy fails the reference holo at P0, and names every missing statement. | + | + | N/A |
 | `verify.reference-v5.default-policy` | A holo v5 gets the same verdict as the v4 reference, named by the κ of the file (ADR-017). | + | + | N/A |
+| `verify.reference-v6.default-policy` | A holo v6 gets the same verdict as the v5 reference, named by the blake3 κ of the file (ADR-018). | + | - | N/A |
+| `verify.reference-v6.seal-broken` | A holo v6 with one byte changed fails its BLAKE3 seal: a failed integrity check that withholds P1 (ADR-018). | + | + | N/A |
 | `verify.reference.minimum-p0` | A P0 policy accepts the reference holo. | + | + | N/A |
 | `verify.level.not-raised-by-policy` | A policy that asks for P3 does not raise the level. | + | + | N/A |
 | `verify.level.unsigned-claim-not-believed` | An unsigned statement that claims P3 never raises the level: the holo is P0, or it gets no verdict. | + | + | N/A |
@@ -276,6 +279,7 @@ Which Prism runtime passes which part of the runtime contract, from the results 
 | Rust | `errors.capability.denied-resource` | The Rust runtime has no capabilities operation yet (#298). |
 | Rust | `load.reference.opens` | The Rust runtime has no load operation yet (#298). |
 | Rust | `load.reference-v5.opens` | The Rust runtime has no load operation yet (#298). |
+| Rust | `load.reference-v6.opens` | The Rust runtime has no load operation yet (#298). |
 | Rust | `load.refuse.empty` | The Rust runtime has no load operation yet (#298). |
 | Rust | `load.refuse.too-short` | The Rust runtime has no load operation yet (#298). |
 | Rust | `load.refuse.bad-magic` | The Rust runtime has no load operation yet (#298). |
@@ -301,6 +305,7 @@ Which Prism runtime passes which part of the runtime contract, from the results 
 | Rust | `replay.history.malformed` | The Rust runtime has no replay operation yet (#298). |
 | Rust | `replay.recorder.round-trip` | The Rust runtime has no replay operation yet (#298). |
 | Rust | `replay.statement.written` | The Rust runtime has no replay operation yet (#298). |
+| Rust | `verify.reference-v6.default-policy` | The Rust runtime does not read a holo v6 yet (ADR-018, migration step 3). |
 | Rust | `world.reference.loaded` | The Rust runtime has no load operation yet (#298). |
 | Rust | `world.load.refuses-wrong-exports` | The Rust runtime has no load operation yet (#298). |
 | Rust | `world.session.loaded` | The Rust runtime has no load operation yet (#298). |

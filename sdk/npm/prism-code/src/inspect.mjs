@@ -39,7 +39,7 @@ export const INSPECTION_SCHEMA = 'prismpm/holo-inspection/1';
  */
 export const FORMAT_REVISIONS = Object.freeze({
   '2026-10-23': Object.freeze({
-    holoVersions: Object.freeze([4, 5]),
+    holoVersions: Object.freeze([4, 5, 6]),
     physicalVersion: 4,
     flags: 0,
     sectionOrder: Object.freeze([15, 8, 14, 14, 16, 16, 16, 16]),
@@ -57,7 +57,7 @@ export const FORMAT_REVISIONS = Object.freeze({
     ]),
   }),
   '2026-11-18': Object.freeze({
-    holoVersions: Object.freeze([5]),
+    holoVersions: Object.freeze([5, 6]),
     physicalVersion: 4,
     flags: 0,
     sectionOrder: Object.freeze([15, 8, 14, 14, 16, 16, 16, 16]),
@@ -199,8 +199,8 @@ export async function inspect(source) {
   if (typeof Blob !== 'undefined' && source instanceof Blob) source = new Uint8Array(await source.arrayBuffer());
   const bytes = asBytes(source);
   const parsed = parseArchive(bytes);
-  // A holo v5 (ADR-017) has one inspection, @prism-code/verify's, so the two packages cannot describe it differently.
-  if (parsed.format === 5) return inspectWithVerify(bytes);
+  // A holo v5 or v6 (ADR-017, ADR-018) has one inspection, @prism-code/verify's, so the two packages cannot describe it differently.
+  if (parsed.format >= 5) return inspectWithVerify(bytes);
   const resolved = resolveArchive(parsed);
   const { modelDocument, provenance, directory } = resolved;
   const application = modelDocument.application ?? {};

@@ -313,7 +313,7 @@ function inspectionView(inspection, parsed) {
     attestations: statements ?? [],
     verification: {
       digest: verification.footer,
-      claimedDigest: parsed.format === 5 ? parsed.kappa : `blake3:${inspection.footer}`,
+      claimedDigest: parsed.format >= 5 ? parsed.kappa : `blake3:${inspection.footer}`,
       layers: verification.labels,
       crossReferences: verification.cross_references,
       attestations: statements !== null,

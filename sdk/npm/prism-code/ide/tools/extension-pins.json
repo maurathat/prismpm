@@ -1,0 +1,182 @@
+{
+ "schema": "prism-ide/extension-pins/1",
+ "registry": "https://open-vsx.org",
+ "note": "Each extension is installed only as the package whose bytes derive to its BLAKE3 label (kappa). sha256 is the hash Open VSX publishes, kept as a checked field. These are the 25 packages reviewed in BATCH.md on 2026-11-20; a pin is added with tools/install-extension.mjs --label and reviewed before it is committed.",
+ "extensions": [
+  {
+   "id": "DavidAnson.vscode-markdownlint",
+   "version": "0.62.1",
+   "kappa": "blake3:ae022beba3836849e810a33e92d4a2afbc869bbccfc76f6fbc32272f418a5c93",
+   "sha256": "b6baf90037c903aa21b9c525972910561a903b82e12fe8d67220740ec15b1aa0",
+   "bytes": 352061
+  },
+  {
+   "id": "GitHub.vscode-github-actions",
+   "version": "0.32.3",
+   "kappa": "blake3:9297a8ce9742fa2c10f99cfa9686a4cb7da3f0d322bf02859f3c28bcbab706b3",
+   "sha256": "058462162cb29d4d22341d912c15dcfa2194774b1e92fc30fcba1a6ca3c91abd",
+   "bytes": 2620843
+  },
+  {
+   "id": "GitHub.vscode-pull-request-github",
+   "version": "0.174.0",
+   "kappa": "blake3:2a970cb7ffa673259939fa49ea694acd431912d25326cada660ba28662c18cd2",
+   "sha256": "d777b9c7d59bc1e34a93366633ac254a4299110df3fa77eb4e5fa3ba2d49ed5f",
+   "bytes": 1642713
+  },
+  {
+   "id": "PKief.material-icon-theme",
+   "version": "5.40.0",
+   "kappa": "blake3:09683844383e0971a3b522cec3ad1a185fb3c65cc377ad87658cddb235f6396a",
+   "sha256": "55b565f200881abfd807baf9be52fce45fd52fef013ba71b0f8394984ce1ae06",
+   "bytes": 893199
+  },
+  {
+   "id": "Vue.volar",
+   "version": "3.3.14",
+   "kappa": "blake3:aa621613e802a9b64e6238086a716dd8a5b0bded32c9df9a30f34cc9dac69e0b",
+   "sha256": "7aa5abe7c5e5a86dcb5b027dcd651fdf965d4d38cc4159e1221cdaafffa32bc2",
+   "bytes": 1028929
+  },
+  {
+   "id": "amazonwebservices.amazon-q-vscode",
+   "version": "2.11.0",
+   "kappa": "blake3:fb9bd00548c56e7ff9b905130387f613a1bde36a7df95bd4636bbd3fc4ee8409",
+   "sha256": "68610149ac2e62b0aecc14da49fd395b2e53fe63e3fd1e2875ea052447bdee09",
+   "bytes": 20302607
+  },
+  {
+   "id": "amazonwebservices.aws-toolkit-vscode",
+   "version": "4.20.0",
+   "kappa": "blake3:dfc63cb462d7eef93fc5b673c20fe10474b4d7d0ab7dd3835882fd1a1f127372",
+   "sha256": "3d0ae6cdda5e90487cc95cb7318839da9cf9d650e25ca7d76b38373f6b1b93ad",
+   "bytes": 19344221
+  },
+  {
+   "id": "cweijan.vscode-office",
+   "version": "4.2.3",
+   "kappa": "blake3:308a27afea3bf51fd5fbbeff5f7b0fb56f440634ae4ec2165ee1646e7aa29c32",
+   "sha256": "154133ad9adae65a049f5b45456e0645abd6830ddb2d95c3167d94f0fecc4b08",
+   "bytes": 13919945
+  },
+  {
+   "id": "eamodio.gitlens",
+   "version": "2026.11.200409",
+   "kappa": "blake3:c1bdc01c6b0a0beedc8290e1bdfb212edae7d383b9d872d19164bb06abe03081",
+   "sha256": "ae41cd7c61be3668ab28db2a47bf16a6b3db6c3a1fb036453976ab44eaa9d76c",
+   "bytes": 5099332
+  },
+  {
+   "id": "esbenp.prettier-vscode",
+   "version": "12.4.0",
+   "kappa": "blake3:cfbb859a225bbbe79329ad6442729ff6e035ff9b0fb54406d7165417dd724524",
+   "sha256": "fb730ea4306d09cdc0a3aaa9e9baae28058cc97a4fbfce8b056b377a0639a9fe",
+   "bytes": 3643663
+  },
+  {
+   "id": "jeanp413.open-remote-ssh",
+   "version": "0.6.2",
+   "kappa": "blake3:c15b522a0b850fd5077d36dbe7bf5a68376afe41d7c325ddcd88e267358d9b15",
+   "sha256": "0ef955eb76d553663be16e27a1814fa4eca5f9760cbc7c95874e485c7f336248",
+   "bytes": 241974
+  },
+  {
+   "id": "mechatroner.rainbow-csv",
+   "version": "3.24.1",
+   "kappa": "blake3:04a43da0d50959cf1ac4361104a7327a7c5a8134749fc0d8e3b451a9b9ca56f0",
+   "sha256": "0ecb7da3fb2a54517cd41fce8e858d6276ea8523bed6fbfd64d5ed281bd7514a",
+   "bytes": 880552
+  },
+  {
+   "id": "ms-python.python",
+   "version": "2026.4.0",
+   "kappa": "blake3:242467841c1fbf86013c698c2060d7b8e208dd00e4d4ba86b4c73686e611210a",
+   "sha256": "232aeafb01f069824fdd92d3e628c1c442bbcfa1d3cc945ff97076340bb2b4a6",
+   "bytes": 6826731
+  },
+  {
+   "id": "ms-toolsai.jupyter",
+   "version": "2025.9.1",
+   "kappa": "blake3:9ab7a28bf1adaa60b200ab4704a07e32e033b6efedef929db43fb098e0589e5e",
+   "sha256": "110660656944c4ab0ff687db488c2e8c59c67ec121dcf09bcaa54b6edd9ce71f",
+   "bytes": 12619012
+  },
+  {
+   "id": "ms-toolsai.jupyter-renderers",
+   "version": "1.3.0",
+   "kappa": "blake3:ecb4599c23ed596e52d48f161b8f2884f7ed2a73df05b0cd887973e1143b98bd",
+   "sha256": "d09f6c517a8090a932bb4e2c31bcb2de34ddb2a71133477f6c47f28f36eb76ae",
+   "bytes": 7679650
+  },
+  {
+   "id": "ms-toolsai.vscode-jupyter-cell-tags",
+   "version": "0.1.9",
+   "kappa": "blake3:da61a5ffd5b181e46662b497d85019bdca2c40522436558ee6428f8e0b966aeb",
+   "sha256": "7cd43af55cf562a001dc475e92d9f3fd4b7173011adca0c02da22fbf891c274b",
+   "bytes": 180458
+  },
+  {
+   "id": "ms-toolsai.vscode-jupyter-slideshow",
+   "version": "0.1.6",
+   "kappa": "blake3:e3816ffb7172a0c35f888895cebafe323a1c98954041e0908c138d280c37f99a",
+   "sha256": "5b8dee0d569b7e0990bb4847c34748cdc0102078779351ed415d9d71cfa3e945",
+   "bytes": 174914
+  },
+  {
+   "id": "ms-vscode.vscode-js-profile-table",
+   "version": "1.0.11",
+   "kappa": "blake3:c46d8f8deb0fce2405baf6b6d1c5b8f35d9b91c96dd47f0ac71ea85e5acdf2ce",
+   "sha256": "a962a1e6a3baf74c9354b7f47fa96e6d6f0423a63bff55d7f976b6134a748ae9",
+   "bytes": 329373
+  },
+  {
+   "id": "quarto.quarto",
+   "version": "1.139.0",
+   "kappa": "blake3:2ed7ed45436fead6387dd08fd9bafb2be2cd17001b9ebd73b73d564c31a102e3",
+   "sha256": "f81a865c511a1c674d020d727b30b0cf499365fe0908ee1edbeb579f116cf22b",
+   "bytes": 11807954
+  },
+  {
+   "id": "redhat.vscode-yaml",
+   "version": "2.1.2026112008",
+   "kappa": "blake3:fea1895451d46a7cbee2a42fe84a40248dd64ccb72bba6dbf3c64af62044ba9b",
+   "sha256": "12dfc52196604b16a060c7e57c8188b1b9975fd5f2a2426e99d0bee8ab6733e4",
+   "bytes": 1106344
+  },
+  {
+   "id": "shd101wyy.markdown-preview-enhanced",
+   "version": "0.8.40",
+   "kappa": "blake3:bdd9c4b69cb7a07bebd1afece2871528633d032857e14a69e26cbdc800b7ab90",
+   "sha256": "1d7973cd154b9b90b5361f7e2d611ad9c7da931756b5301188ca084050f43409",
+   "bytes": 23619315
+  },
+  {
+   "id": "usernamehw.errorlens",
+   "version": "3.30.0",
+   "kappa": "blake3:3707a9eb39d55a40b4b0d74315116618ab12c2dba07280a4165bbf140fd14ef8",
+   "sha256": "b236000f50998b992289b2d354dcbd4fc99b64c75850eebcbb986f7a210c34f4",
+   "bytes": 63266
+  },
+  {
+   "id": "vscode-icons-team.vscode-icons",
+   "version": "13.0.0",
+   "kappa": "blake3:2193791358fec9c57816945935e51519fc6770158f0637de3f7161ace39f8bc4",
+   "sha256": "89aa767f87f09dc966efe2e70bed20321d5cb5b2f43fd413598fb6913a9f99c5",
+   "bytes": 2505900
+  },
+  {
+   "id": "vscodevim.vim",
+   "version": "1.32.4",
+   "kappa": "blake3:aeb2ed78fd426bb5568e9bcf9fa94869d2b037e4811595b9faadf032a9483eac",
+   "sha256": "0faab122afd25bc94f5ef9cf9678e64cbd554d6dc88fe87ffe11bba623814168",
+   "bytes": 772717
+  },
+  {
+   "id": "zhuangtongfa.material-theme",
+   "version": "3.20.7",
+   "kappa": "blake3:e47523819778f9e2c0a5f2f1b4b73db52231ba73d929487108c2baaeaaed0a20",
+   "sha256": "7d672be680049324c68b333065b370ecc001d0df0d233eba2b80fb301cdfbf05",
+   "bytes": 344249
+  }
+ ]
+}

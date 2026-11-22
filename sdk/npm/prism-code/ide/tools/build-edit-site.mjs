@@ -6,6 +6,8 @@
 //   <out>/edit/pin.json              the pin of the LexLean executable, as src/journey/lexlean-wasm.mjs states it
 //   <out>/edit/lexlean.wasm.gz       that executable
 //   <out>/edit/kernel/               Lean's kernel, its loader and its library, with the manifest that names them
+//   <out>/edit/model-kernel/         the kernel a model's own theorems are put to, its loader and its base library,
+//                                    and pins.json naming each by its BLAKE3 label (src/journey/model-prove.mjs)
 //   <out>/edit/project/              the model the page opens when it is given no other, and project.json listing it
 //   <out>/edit/ide/                  the same loop in the VS Code workbench, when dist-model/ has been built
 //   <out>/edit/vendor/xterm/         xterm.js and its addons, the files npm ships, each the one terminal/pins.json names
@@ -22,6 +24,9 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LEXLEAN_WASM, ensureLexleanWasm, lexleanWasmFile } from '../../src/journey/lexlean-wasm.mjs';
 import { ensureKernel, hasKernel, readKernelFile } from '../../src/journey/kernel-store.mjs';
+import { pinnedFile } from '../../src/journey/kappa-store.mjs';
+import { MODEL_KERNEL_FILES, ensureModelKernel } from '../../src/journey/model-prove.mjs';
+import { EVALUATOR_GUEST } from '../../src/journey/model-guest.mjs';
 import { projectListing } from './edit-project.mjs';
 import { kappa } from '../../src/blake3.mjs';
 import { terminalTables, vendorFiles } from './terminal-site.mjs';
@@ -38,6 +43,9 @@ mkdirSync(site, { recursive: true });
 cpSync(join(ide, 'edit'), site, { recursive: true, filter: (p) => !/README\.md$/.test(p) });
 // Only code: the page imports modules, never the studio's pages or anything else under src.
 cpSync(join(pkg, 'src'), join(site, 'prism-code'), { recursive: true, filter: (p) => statSync(p).isDirectory() || /\.(mjs|js)$/.test(p) });
+// And the one file a build in the page needs that is not code: the evaluator guest a holo is made from. The worker
+// admits it by the label model-guest.mjs pins.
+cpSync(join(pkg, 'src', 'journey', EVALUATOR_GUEST.file), join(site, 'prism-code', 'journey', EVALUATOR_GUEST.file));
 
 writeFileSync(join(site, 'pin.json'), JSON.stringify({ commit: LEXLEAN_WASM.commit, kappa: LEXLEAN_WASM.kappa, encoding: LEXLEAN_WASM.encoding }) + '\n');
 cpSync(lexleanWasmFile() ?? await ensureLexleanWasm(), join(site, 'lexlean.wasm.gz'));
@@ -48,6 +56,17 @@ const manifest = readFileSync(join(pkg, 'src', 'journey', 'kernel', 'manifest.js
 writeFileSync(join(site, 'kernel', 'manifest.json'), manifest);
 const named = JSON.parse(manifest);
 for (const part of [named.glue, named.wasm, named.library]) writeFileSync(join(site, 'kernel', part.file), readKernelFile(part.file));
+
+// The kernel for a model's own theorems: the three files prism-code pins, as it keeps them, each already admitted
+// by its label. The page's worker admits them again by the label in pins.json before it opens the kernel.
+await ensureModelKernel();
+mkdirSync(join(site, 'model-kernel'));
+const modelPin = (name) => ({ kappa: MODEL_KERNEL_FILES[name].kappa, url: name, encoding: MODEL_KERNEL_FILES[name].encoding });
+for (const name of Object.keys(MODEL_KERNEL_FILES)) {
+  const kept = process.env.PRISM_MODEL_KERNEL_DIR ? join(process.env.PRISM_MODEL_KERNEL_DIR, name) : pinnedFile(MODEL_KERNEL_FILES[name].kappa);
+  cpSync(kept, join(site, 'model-kernel', name));
+}
+writeFileSync(join(site, 'model-kernel', 'pins.json'), JSON.stringify({ loader: modelPin('lean-kernel.mjs'), kernel: modelPin('lean-kernel.wasm.gz'), library: modelPin('base.ndjson.gz') }) + '\n');
 
 // The terminal: xterm.js, refused here when an installed file is not the pinned one, and its tables.
 mkdirSync(join(site, 'vendor', 'xterm'), { recursive: true });

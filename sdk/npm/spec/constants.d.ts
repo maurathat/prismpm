@@ -130,6 +130,15 @@ export declare const HOLO_V5: Readonly<{
   KAPPA_PREFIX: 'sha256:';
 }>;
 
+export declare const HOLO_V6: Readonly<{
+  MAGIC_HEX: '554f52430202';
+  MANIFEST_SCHEMA: 'prism/holo/6';
+  PROVENANCE_SCHEMA: 'prismpm/model-provenance/3';
+  ROLES: readonly ['manifest', 'source-manifest', 'provenance', 'capabilities', 'guest', 'view', 'model'];
+  ROLE_ATTESTATIONS: 'attestations';
+  KAPPA_PREFIX: 'blake3:';
+}>;
+
 export declare const PROVENANCE: Readonly<{
   PREDICATE_TYPE: 'https://slsa.dev/provenance/v1';
   BUILD_TYPE: 'https://uor.foundation/prism/holo-build/v1';
