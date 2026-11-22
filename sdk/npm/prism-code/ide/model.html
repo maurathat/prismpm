@@ -9,6 +9,7 @@
   body { display: flex; flex-direction: column; font: 13px/1.4 system-ui, sans-serif; background: #1e1e1e; color: #ddd; }
   #top { display: flex; align-items: center; border-bottom: 1px solid #333; }
   #strip { padding: .35rem .75rem; flex: 1; }
+  #starters { white-space: nowrap; } #starters a { color: #9cc4ff; margin-left: .35rem; }
   #download, #build { font: inherit; color: #ddd; background: none; border: 1px solid #555; border-radius: 3px; padding: .1rem .5rem; margin-right: .5rem; cursor: pointer; white-space: nowrap; }
   #took { padding: .35rem .75rem; border-bottom: 1px solid #333; overflow-wrap: anywhere; }
   #run { padding: .35rem .75rem; border-bottom: 1px solid #333; max-height: 32vh; overflow: auto; }
@@ -26,7 +27,7 @@
 </style>
 </head>
 <body>
-<div id="top"><div id="strip" role="status">Starting…</div><button id="build" type="button" title="Check, prove and build this model into a holo, here in this tab">Build</button><button id="download" type="button" title="The model as it stands in the editor, as one tar archive">Download model</button></div>
+<div id="top"><div id="strip" role="status">Starting…</div><span id="starters">Starters: <a href="?project=../starters/stateful-app/" title="An app that keeps state, with theorems of its own">stateful</a> <a href="?project=../starters/decision-app/" title="An app that decides, with theorems of its own">decision</a> <a href="?project=../starters/rule-app/" title="A rule table">rules</a></span><button id="build" type="button" title="Check, prove and build this model into a holo, here in this tab">Build</button><button id="download" type="button" title="The model as it stands in the editor, as one tar archive">Download model</button></div>
 <div id="took" role="status" hidden></div>
 <div id="run" hidden>
   <div id="runVerdict" role="status"></div>
