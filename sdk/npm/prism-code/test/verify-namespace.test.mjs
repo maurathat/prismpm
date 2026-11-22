@@ -240,8 +240,9 @@ test('at load the module needs no Node and reaches only what docs/proposals/440-
   assert.deepEqual(graph.get('verify-namespace.mjs').lazy.sort(), ['./attest.mjs', './check.mjs', './verify-closure.mjs'], 'the Node-only half loads on first use');
 });
 
+// outgoing.mjs holds what attest.mjs and verify-closure.mjs check of a holo before it leaves; it loads nothing of Node.
 test('on first use it adds only check.mjs, attest.mjs and verify-closure.mjs, whose own imports stay within the same set', () => {
-  const allowed = new Set([...closure(here('../src/verify-namespace.mjs')).keys(), 'check.mjs', 'attest.mjs', 'verify-closure.mjs']);
+  const allowed = new Set([...closure(here('../src/verify-namespace.mjs')).keys(), 'check.mjs', 'attest.mjs', 'verify-closure.mjs', 'outgoing.mjs']);
   for (const entry of ['../src/check.mjs', '../src/attest.mjs', '../src/verify-closure.mjs']) {
     for (const [name, { eager }] of closure(here(entry))) {
       assert.ok(allowed.has(name), `${entry} reaches ${name}`);
