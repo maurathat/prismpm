@@ -1,0 +1,7 @@
+receipt 37dea54084473617445956aaf1e3425327dfeb2ae857d65c8eb1c9c61e11deef pass
+obligation model-audits
+revision 28d6df2873156d9b237d4b3cdf1849e1a8493e22
+sandbox prism/1 ghcr.io/uor-foundation/prismpm-sdk-candidate@sha256:6fe8aba8e5094c549a3c7f7ba26e1ff43c60ab7098403fdb35a7aff1dac56cad 1000:1000 0022 tmp/prismpm-home tmp daemon
+peer runner
+workflow UOR-Foundation/prismpm/.github/workflows/prism-delegation.yml@refs/pull/810/merge
+run 45064848382-1
