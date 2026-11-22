@@ -27,7 +27,7 @@ Tested, in WSL Ubuntu 26.04 with Rust 1.97.1 and Node 22.22.2, on the branch
 - `prism-conformance gate`: every format rule covered.
 - Not run here: `check-golden` and `golden-write` select Debian 12 or Ubuntu
   24.04 only. The new stdlib module and the emitter digest
-  (`6c94bd762103b3be534c68a39bb9d9f3bdc990ddfef3f4fede1857c6fdc189f6`) change
+  (`265ad9e6febddc2f19c388c91972063a5dd46cb7975287915da05eefc2585956`) change
   `tests/golden/stdlib`; `golden-refresh.yml` regenerates it.
 
 Planted defects, each applied to the working tree, tested and restored:

@@ -1,9 +1,11 @@
-// A rule app's page keeps what it fetched and proved in the browser's origin-private file system, by κ-label,
-// and reuses a proof only as the Node store does: under the same key, kernel, library and proof bytes.
+// A rule app's page keeps what it fetched and proved in the browser's origin-private file system, under BLAKE3
+// labels with the SHA-256 κ-label as a checked field, and reuses a proof only as the Node store does: under the
+// same key, kernel, library and proof bytes.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { findProof, keepProof, opfsStore } from '../src/journey/kappa-opfs.mjs';
+import { findProof, isBlake3, keepProof, opfsStore } from '../src/journey/kappa-opfs.mjs';
+import { kappa as blake3Label } from '../src/blake3.mjs';
 import { PROOF_SCHEMA, derivationKey, reuseAdmits } from '../src/journey/kappa-rules.mjs';
 import * as nodeStore from '../src/journey/kappa-store.mjs';
 
@@ -46,8 +48,45 @@ test('bytes come back only when they re-derive to their label', async () => {
   const label = await store.put(enc.encode('kernel bytes'));
   assert.deepEqual(await store.get(label), enc.encode('kernel bytes'));
   assert.equal(await store.get(k('a')), null);
-  // Planted defect S1: bytes altered on disk under their old name are not returned.
-  root.dirs.get('bytes').dirs.get(label.slice(7, 9)).files.set(label.slice(9), enc.encode('other bytes'));
+  // The bytes are kept under their BLAKE3 label, and come back by it too.
+  const at = await store.address(label);
+  assert.equal(at, blake3Label(enc.encode('kernel bytes')));
+  assert.deepEqual(await store.get(at), enc.encode('kernel bytes'));
+  assert.deepEqual([...root.dirs.keys()].sort(), ['blake3', 'sha256']);
+  // Planted defect S1: bytes altered on disk under their old name are not returned, by either label.
+  const kept = root.dirs.get('blake3').dirs.get(at.slice(7, 9)).files;
+  kept.set(at.slice(9), enc.encode('other bytes'));
+  assert.equal(await store.get(label), null);
+  assert.equal(await store.get(at), null);
+});
+
+test('a SHA-256 label is a checked field, not a key', async () => {
+  const root = memoryRoot();
+  const store = await opfsStore({ root });
+  const label = await store.put(enc.encode('kernel bytes'));
+  const other = await store.put(enc.encode('other bytes'));
+  // Planted defect S3: the κ-label is made to lead to other bytes, which are whole under their own BLAKE3 label.
+  // They are not what the κ-label names, so they are not returned.
+  const alias = root.dirs.get('sha256').dirs.get(label.slice(7, 9)).files;
+  alias.set(label.slice(9), enc.encode(await store.address(other)));
+  assert.equal(await store.get(label), null);
+  assert.deepEqual(await store.get(other), enc.encode('other bytes'));
+  // A pointer that is not a BLAKE3 label leads nowhere.
+  alias.set(label.slice(9), enc.encode(label));
+  assert.equal(await store.address(label), null);
+  assert.equal(await store.get(label), null);
+});
+
+test('a store laid out before BLAKE3 is removed, and nothing in it is read', async () => {
+  const root = memoryRoot();
+  const removed = [];
+  root.removeEntry = async (name) => { removed.push(name); root.dirs.delete(name); };
+  const old = enc.encode('kept by SHA-256');
+  const label = await (await opfsStore({ root: memoryRoot() })).put(old);
+  const dir = await (await root.getDirectoryHandle('bytes', { create: true })).getDirectoryHandle(label.slice(7, 9), { create: true });
+  dir.files.set(label.slice(9), old);
+  const store = await opfsStore({ root });
+  assert.deepEqual(removed, ['bytes']);
   assert.equal(await store.get(label), null);
 });
 
@@ -69,13 +108,15 @@ test('a proof is reused in the browser exactly when it is reused on Node', async
   assert.equal(reuseAdmits(found.facts), true);
   assert.equal(found.text, 'proof lines\n');
   assert.deepEqual(found.proof.axioms, ['propext']);
+  // The key leads to the BLAKE3 label of the result.
+  assert.ok(isBlake3(await store.bound(key)));
   // Another kernel, another library, or another statement's key finds nothing it may use.
   assert.equal(reuseAdmits((await findProof(store, { key, kernel: k('4'), library })).facts), false);
   assert.equal(reuseAdmits((await findProof(store, { key, kernel, library: k('5') })).facts), false);
   assert.equal(reuseAdmits((await findProof(store, { key: derivationKey(PROOF_SCHEMA, [kernel, library, k('6')]), kernel, library })).facts), false);
   // Planted defect S2: proof bytes altered under their old name are no longer reused.
-  const bundle = found.proof.bundle;
-  root.dirs.get('bytes').dirs.get(bundle.slice(7, 9)).files.set(bundle.slice(9), enc.encode('other proof\n'));
+  const bundle = await store.address(found.proof.bundle);
+  root.dirs.get('blake3').dirs.get(bundle.slice(7, 9)).files.set(bundle.slice(9), enc.encode('other proof\n'));
   assert.equal(reuseAdmits((await findProof(store, { key, kernel, library })).facts), false);
   // One rule in two places: Node's store decides with these very functions.
   assert.equal(nodeStore.reuseAdmits, reuseAdmits);

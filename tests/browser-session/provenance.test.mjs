@@ -18,9 +18,9 @@ test('session provenance admits only the registered complete family, never a cal
   const profile=provenanceProfile('session');
   assert.deepEqual(profile.outputRows.filter(row=>row.kind==='lean').map(row=>
     row.path.slice('modules/PrismPM/'.length,-'.lean'.length).replaceAll('/','.')),modules);
-  assert.equal(profile.outputRows.length,50);
+  assert.equal(profile.outputRows.length,60);
   assert.deepEqual(provenanceProfile('presentation').outputRows,presentationOutputRows);
-  assert.equal(presentationOutputRows.length,30);
+  assert.equal(presentationOutputRows.length,36);
   assert.throws(()=>{profile.outputRows.pop();},TypeError);
   assert.throws(()=>{profile.outputRows[0].path='omitted';},TypeError);
 });

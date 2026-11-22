@@ -919,6 +919,8 @@ pub fn run_at(root: &Path, id: &str) {
                 ("sdk/npm/prism-code/test/model-holo.test.mjs", 10),
                 ("sdk/npm/prism-code/test/model-bundle.test.mjs", 4),
                 ("sdk/npm/prism-code/test/model-site.test.mjs", 2),
+                ("sdk/npm/prism-code/test/build-core.test.mjs", 7),
+                ("sdk/npm/prism-code/test/prove-core.test.mjs", 6),
             ],
             "600000",
         ),
@@ -3176,7 +3178,7 @@ fn verify_template(root: &Path, id: &str) {
                 &[
                     ("action/entrypoint.test.mjs", 19),
                     ("action/publish-pages.test.mjs", 14),
-                    ("scripts/ci-capacity.test.mjs", 12),
+                    ("scripts/ci-capacity.test.mjs", 13),
                 ],
                 "120000",
             );
