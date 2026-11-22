@@ -16,7 +16,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "prism-code": "^0.11.0"
+    "prism-code": ">=0.10.5"
   },
   "scripts": {
     "test": "node --test \"test/*.test.mjs\""
