@@ -1020,14 +1020,14 @@ pub fn compose_application_as(
     let bytes = v5::write_objects_as(
         format,
         &[
-        manifest.as_slice(),
-        &input.source_manifest,
-        &prism_extension,
-        &capability_request,
-        &input.guest_wasm,
-        &input.view_bundle,
-        &input.model_document,
-    ],
+            manifest.as_slice(),
+            &input.source_manifest,
+            &prism_extension,
+            &capability_request,
+            &input.guest_wasm,
+            &input.view_bundle,
+            &input.model_document,
+        ],
     );
     let identities = HoloIdentities {
         guest_content_kappa: guest_kappa,

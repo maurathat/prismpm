@@ -2552,7 +2552,9 @@ pub(super) fn inspection_v5(bytes: &[u8]) -> Result<Value, PrismError> {
     let format = uorc::format_of(bytes).unwrap_or(uorc::Format::V5);
     let digest_of = |content: &[u8]| match format {
         uorc::Format::V5 => json!({ "sha256": sha256_hex(content) }),
-        uorc::Format::V6 => json!({ "sha256": sha256_hex(content), "blake3": blake3::hash(content).to_hex().to_string() }),
+        uorc::Format::V6 => {
+            json!({ "sha256": sha256_hex(content), "blake3": blake3::hash(content).to_hex().to_string() })
+        }
     };
     let kappa_of = |content: &[u8]| uorc::label(format, content);
     let base = bytes.as_ptr() as usize;

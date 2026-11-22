@@ -77,7 +77,9 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         if sealed {
             format!("the seal is the {seal_name} of the archive, {seal}")
         } else {
-            format!("the seal {seal} is not the {seal_name} of the archive: the archive was altered")
+            format!(
+                "the seal {seal} is not the {seal_name} of the archive: the archive was altered"
+            )
         },
     );
 
@@ -92,9 +94,7 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         .and_then(|row| {
             serde_json::from_slice::<ManifestV5>(&row.bytes)
                 .map_err(|error| {
-                    format!(
-                        "the holo manifest does not have the {manifest_schema} shape: {error}"
-                    )
+                    format!("the holo manifest does not have the {manifest_schema} shape: {error}")
                 })
                 .map(|manifest| (row, manifest))
         })

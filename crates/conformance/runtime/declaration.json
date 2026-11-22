@@ -81,8 +81,7 @@
     "world.checkpoint.loaded": "The Rust runtime has no load operation yet (#298).",
     "world.checkpoint-v5.loaded": "The Rust runtime has no load operation yet (#298).",
     "world.reference.loaded": "The Rust runtime has no load operation yet (#298).",
-    "world.session.loaded": "The Rust runtime has no load operation yet (#298).",
-    "verify.reference-v6.default-policy": "The Rust runtime does not read a holo v6 yet (ADR-018, migration step 3)."
+    "world.session.loaded": "The Rust runtime has no load operation yet (#298)."
   },
   "notApplicable": {}
 }
