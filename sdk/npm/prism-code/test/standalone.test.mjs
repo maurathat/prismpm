@@ -236,3 +236,20 @@ test('a standalone app goes from init to a verified build in this process, fetch
 test('a rule app does the same: its guarantees are proved, and its vectors pass through the rule judge', { timeout: 600000 }, (t) => journey(t, { template: 'rule-app', model: '.' }));
 
 test('a workspace whose model is in app/ is found from its root and does the same', { timeout: 600000 }, (t) => journey(t, { template: 'stateful-app', model: 'app' }));
+
+test('R6: a lockfile whose digest is not the project\'s is refused by check, by LexLean\'s own code', { timeout: 600000 }, () => {
+  const root = scratch();
+  assert.equal(run(['init', root, '--no-skill']).code, 0);
+  const lock = join(root, 'lexlean.lock');
+  const text = readFileSync(lock, 'utf8');
+  const at = text.indexOf('project_config_sha256 = "') + 'project_config_sha256 = "'.length;
+  assert.ok(at > 30, 'the lock records the digest of the project file');
+  // One hex digit of the recorded digest is changed: the lock no longer names the bytes on disk.
+  writeFileSync(lock, `${text.slice(0, at)}${text[at] === '0' ? '1' : '0'}${text.slice(at + 1)}`);
+  const refused = run(['check', '--json'], { cwd: root, env: OFFLINE });
+  assert.equal(refused.code, 2, refused.out);
+  const report = JSON.parse(refused.out);
+  assert.equal(report.ok, false);
+  assert.deepEqual([report.diagnostics[0].code, report.diagnostics[0].file], ['LLC0102', 'lexlean.lock']);
+  assert.equal(report.summary.theoremsVerified, 0, 'nothing is proved from a model whose lock is not its own');
+});
