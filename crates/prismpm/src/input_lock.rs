@@ -24,6 +24,7 @@ pub(crate) const WASM_BINDGEN_VERSION: &str = "0.2.122";
 /// The stateless guest contract. The digests of every pinned world, @1, the
 /// session world @2 and the checkpoint world @3, are the inspector's world
 /// table (`inspect::world_of`); a test recomputes them from the WIT files.
+#[cfg(test)]
 const CORE_WASM_CONTRACT: &str = "hologram:guest/core-wasm@1";
 
 const SPEC_DOMAIN: &[u8] = b"prismpm/spec-inputs/1\n";
