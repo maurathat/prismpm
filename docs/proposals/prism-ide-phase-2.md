@@ -1,6 +1,6 @@
 # Prism IDE, phase 2: open any Prism app to audit it and edit it, in any browser
 
-Status: proposed, and partly built. Since this was written, `main` has gained the audit page, the edit pages, the model in the VS Code workbench, LexLean colouring, a published model and the check that a model is the one its app runs, all live at https://uor-foundation.github.io/prismpm/ (`audit/`, `edit/`, `edit/ide/`). The table below was read before that work; the rows the terminal phase depends on are corrected, the rest are as written. Phase 2f is built: the terminal is in the plain edit page and in the workbench's terminal panel. Phase 2d is built but for one part awaiting review (below). Phase 2e's part in this repository is merged; the template's part is in review and waits on a release (below). Phase 2c's table is measured, and its gate is met in part (below).
+Status: proposed, and partly built. Since this was written, `main` has gained the audit page, the edit pages, the model in the VS Code workbench, LexLean colouring, a published model and the check that a model is the one its app runs, all live at https://uor-foundation.github.io/prismpm/ (`audit/`, `edit/`, `edit/ide/`). The table below was read before that work; the rows the terminal phase depends on are corrected, the rest are as written. Phase 2f is built: the terminal is in the plain edit page and in the workbench's terminal panel. Phase 2d is built but for installing an extension by content label (below). Phase 2e is merged in both repositories and the frame is live; no app has been built from the template since (below). Phase 2c's table is measured, and its gate is met in part (below).
 
 ## Why
 
@@ -90,7 +90,7 @@ Built (2026-11-21), with what is not:
 
 - Offline, by content. The site lists every file by its BLAKE3 label (`offline.json`), and a service worker serves each only as the bytes its label names. Live.
 - The kappa-registry client, read only, and a model opened by its label (`edit/ide/?registry=…&namespace=…&model=blake3:…`). Live. The gate was met against kappa-registry itself, built from its `main` and run on a development machine: a model pushed under its `blake3:` label was fetched, verified and opened by the page, served from that machine. The published page could not reach it: a browser does not let an https page read from `http://127.0.0.1`. No https registry was tried. `ide/edit/README.md` has the table.
-- `kappa-opfs` under BLAKE3 labels, with the SHA-256 label as a checked field: written, in review, not merged. Its keys are still derived with SHA-256, because the reuse rules are shared with Node and a holo's own label is SHA-256. prism-code's BLAKE3 is plain JavaScript and measured 46 MB/s on a development machine; what that costs a returning visit in a browser is not measured.
+- `kappa-opfs` under BLAKE3 labels, with the SHA-256 label as a checked field: merged (#781). Its keys are still derived with SHA-256, because the reuse rules are shared with Node and a holo's own label is SHA-256. A page now re-derives BLAKE3 for every byte it reads, so prism-code's BLAKE3 was rewritten in the same change: 313 MB/s in Node on a development machine against 29, with the same digests on 5742 inputs. A returning visit to the starter rule app's page took about 800 ms with the SHA-256 store, about 3000 ms with this store and the old BLAKE3, and about 1150 ms with the new one, in a browser pane that was not on screen. In a tab on screen it is not measured.
 - Not built: installing an extension from Open VSX by content label. The terminal's kept output is in its own store, not `kappa-opfs`.
 
 ### Phase 2e: the entry point
@@ -101,7 +101,7 @@ Gates: an app built from the template shows the control and opens its own audit 
 
 Budgets: the frame grows by under 2 KiB. An app's page pays nothing until the control is used.
 
-Not built (2026-11-21). What was found on reading `UOR-Foundation/template` at `3fa228d`:
+What was found on reading `UOR-Foundation/template` at `3fa228d`, before it was built:
 
 - No build publishes a holo app's model. The template's Pages workflow copies the holo and renders `spec.html`; it writes no `model/`, no `model/project.json` and no `app.holo.json`. prism-code writes a model beside a rule app's page only.
 - The prism-code the template vendors for its page is 0.2.0, which has neither `model-files.mjs` nor the holo app record.
@@ -113,7 +113,8 @@ So this phase needs three changes in order: prism-code writes the model and the 
 Since then (2026-11-21):
 
 - The first change is merged (#784): `prism-code publish-model <app.holo> --project <dir> --out <dir>` writes `model/`, `model/project.json` and `app.holo.json`, taking the model's identity from the holo's own provenance.
-- The other two are a draft in the template (UOR-Foundation/template#108): the page's build says where the model opens, and the frame shows the control, in the frame itself as was chosen. Tried on the template's fixture page: the control opens the audit view of that app. It was first written with the publishing inside the template, which that repository's own gate refuses: nothing but LexLean may be added there, and what is not LexLean may only shrink. So the publishing moved here, and the template's part waits on a prism-code release that has this command.
+- The other two are merged in the template (UOR-Foundation/template#108, 2026-11-22): its Pages workflow publishes the model with prism-code 0.10.4, taken by its exact version and run only if its tarball has the SHA-512 npm publishes; the page's build says where the model opens; and the frame shows the control, in the frame itself as was chosen. It was first written with the publishing inside the template, which that repository's own gate refuses: nothing but LexLean may be added there, and what is not LexLean may only shrink. So the publishing moved here, and the frame's part was made to add no line.
+- The gates, as they stand. The frame with the control is the one every app now loads (published from the template at `cb45b67`). On a live app built before this, which publishes no model, the control is there and hidden, the app verifies as before, and the audit view opens for its address: "an app that does not publish its sources shows no control" is met. "An app built from the template shows the control and opens its own audit view" is met on the template's fixture page, with the released package and the workflow's steps run by hand. **No app has yet been built from the template since**, and the template's own Pages job is skipped in that repository, so the workflow step has not run.
 - Found on the way: Prism IDE's LexLean accepts only Lean 4.32.2, and the template's app is on 4.32.1. The audit view works for such an app; the editor opens its files and cannot check them.
 
 ### Phase 2f: the terminal
