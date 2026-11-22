@@ -3,7 +3,7 @@
 // A rule table's guarantees are judged by prove-worker.mjs. This is for a model that states theorems of its own,
 // such as the decision and stateful starters. It is the package's prover and nothing of its own: prove-core.mjs opens
 // the model kernel from its three files, each admitted by its BLAKE3 label (toolchain.mjs), and `kernelProver` puts
-// the model to it, the same functions `prism_build` runs. A theorem is proved only when this kernel accepted a proof
+// the model to it, the same functions the package's own build runs. A theorem is proved only when this kernel accepted a proof
 // of it in this run, within the axioms it declares.
 //
 // It is started only when a page meets a model that is not a rule table: the kernel's base library is 20 MB, and a
@@ -11,7 +11,7 @@
 // what one edit declared cannot stand in for the next.
 //
 // It also builds: `{ build: true }` runs the package's whole build (build-core.mjs, `buildFromFiles`), the functions
-// `prism_build` runs: LexLean checks the model, this kernel judges its theorems, and the holo is made with nothing
+// `prism-code build` runs: LexLean checks the model, this kernel judges its theorems, and the holo is made with nothing
 // compiled, from the evaluator guest this package pins. A holo is given only when every theorem was proved, the
 // holo reads back verified and every acceptance vector passes through it.
 //
