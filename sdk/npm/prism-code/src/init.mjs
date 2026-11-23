@@ -13,6 +13,7 @@ import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fail } from './errors.mjs';
 import { parseManifest, MANIFEST_FILE } from './manifest.mjs';
+import { VERSION } from './version.mjs';
 
 const TEMPLATES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'templates');
 
@@ -112,14 +113,21 @@ export const NOT_AN_APP = [
   'npx prism-code@latest init <dir> (or --template decision-app, stateful-app).',
 ].join('\n');
 
-/** The gates a new project's author runs next, cheapest first, as `init` prints them. */
+/**
+ * The gates a new project's author runs next, cheapest first, as `init` prints them. Each names the version that
+ * wrote the project: a bare `npx prism-code` in a folder that installs nothing runs whichever version npx last
+ * kept, which may be an older one whose verbs differ.
+ */
 export function nextSteps(directory) {
+  const run = `npx prism-code@${VERSION}`;
+  const step = (verb, what) => `  ${`${run} ${verb}`.padEnd(run.length + 18)}${what}`;
   return [
     'Next, every step in this process:',
     `  cd ${directory}`,
-    '  npx prism-code check --json      the model checks and every theorem is proved',
-    '  npx prism-code build --json      check, then write the app',
-    '  npx prism-code verify --json     judge what was built and replay every acceptance vector',
+    step('check --json', 'the model checks and every theorem is proved'),
+    step('build --json', 'check, then write the app'),
+    step('verify --json', 'judge what was built and replay every acceptance vector'),
+    step('run', 'build when the model changed, then serve the app; --input <text> for one request'),
     '',
   ].join('\n');
 }

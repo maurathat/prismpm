@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -98,12 +98,15 @@ test('the published model is what a check reads: nothing of the machine it was w
   for (const needed of ['lexlean.toml', 'lexlean.lock', 'lake-manifest.json', 'src/App.lex.tex']) assert.ok(model.files.has(needed), needed);
   assert.equal(model.entry, 'src/App.lex.tex');
   assert.deepEqual([...model.files.keys()], [...model.files.keys()].sort());
-  // A folder the caller names is left out too, and a project that names no entrypoint is refused.
+  // A folder the caller names is left out too. A project whose lexlean.toml names no entrypoint that is there opens the
+  // module that states the application; one with no module at all is refused.
   mkdirSync(join(dir, 'tools'));
   writeFileSync(join(dir, 'tools', 'gen.py'), 'x');
   assert.ok(modelFiles(dir).files.has('tools/gen.py'));
   assert.ok(!modelFiles(dir, { skip: ['tools'] }).files.has('tools/gen.py'));
   writeFileSync(join(dir, 'lexlean.toml'), 'name = "x"');
+  assert.equal(modelFiles(dir).entry, 'src/App.lex.tex');
+  rmSync(join(dir, 'src'), { recursive: true });
   assert.throws(() => modelFiles(dir), /names no entrypoint/);
 });
 

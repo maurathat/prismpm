@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -287,6 +287,35 @@ test('R6: a lockfile whose digest is not the project\'s is refused by check, by 
   assert.deepEqual([report.diagnostics[0].code, report.diagnostics[0].file], ['LLC0102', 'lexlean.lock']);
   assert.equal(report.summary.theoremsVerified, 0, 'nothing is proved from a model whose lock is not its own');
 });
+
+// init is the one entry point, so an app of either kind must go from it to a running holo under its own module names:
+// the template's entrypoint, src/Contract.lex.tex, is then gone, and the lock that pins lexlean.toml stays as it is.
+for (const [starter, theorem, input] of [['decision-app', 'ParkingFeeTierProofs.inv001Holds', '0 car'], ['stateful-app', 'DinnerSeatsProofs.startInBounds', 'x']]) {
+  test(`init, then a ${starter} model under its own module names: check, build, verify and run`, { timeout: 600000 }, () => {
+    const root = scratch();
+    assert.equal(run(['init', root], { cwd: root }).code, 0);
+    const src = join(root, 'app', 'src');
+    rmSync(join(src, 'Contract.lex.tex'));
+    const from = new URL(`./fixtures/starters/${starter}/src/`, import.meta.url);
+    for (const file of readdirSync(from)) writeFileSync(join(src, file), readFileSync(new URL(file, from)));
+    // The registers name the app's own guarantee in place of the template's two.
+    const ids = readFileSync(join(root, 'model', 'ids.toml'), 'utf8');
+    writeFileSync(join(root, 'model', 'ids.toml'), `${ids.slice(0, ids.indexOf('[[id]]'))}[[id]]\nid = "AP-01"\nlevel = "build"\nsuite = "app"\nstatement = "The first guarantee holds"\ntheorems = ["${theorem}"]\n`);
+    rmSync(join(root, 'features', 'suites', 'contract.feature'));
+    writeFileSync(join(root, 'features', 'suites', 'app.feature'), 'Feature: app\n\n  @AP-01 @build\n  Scenario: The first guarantee holds\n    Given the model in app/src\n    When prism-code check has the kernel prove it\n    Then it holds\n');
+    const build = run(['build', '--json'], { cwd: root, env: OFFLINE });
+    assert.equal(build.code, 0, build.out + build.err);
+    const built = JSON.parse(build.out).summary;
+    assert.ok(built.theoremsDeclared > 0 && built.theoremsVerified === built.theoremsDeclared && built.vectorsPassed === built.vectorsTotal && built.vectorsTotal > 0);
+    assert.doesNotMatch(built.artifact, /template-contract/, 'the holo is named for the app, not the template');
+    const verify = run(['verify', '--json'], { cwd: root, env: OFFLINE });
+    assert.equal(verify.code, 0, verify.out);
+    const ran = run(['run', '--input', input, '--rm'], { cwd: root, env: OFFLINE });
+    assert.equal(ran.code, 0, ran.err);
+    assert.doesNotMatch(ran.err, /run refused|no verdict/, ran.err);
+    assert.ok(ran.out.length > 0, 'the app answered');
+  });
+}
 
 test('a theorem the kernel does not prove is reported where the model states it, with what to try', { timeout: 600000 }, () => {
   const root = scratch();
