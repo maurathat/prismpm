@@ -111,19 +111,78 @@ const site = { 'edit/index.html': '<p>edit</p>', 'edit/edit.mjs': 'export const 
   assert.ok(!w.cache.has(key), 'the altered entry is removed');
 }
 
-// A new deployment: the next page load takes the new listing, serves the new file, and drops what nothing names.
+/** Let what the worker started without waiting for (its look for a newer listing) finish. */
+const settled = () => new Promise((resolve) => setTimeout(resolve, 25));
+
+// A page this browser holds opens without waiting on the site: the listing is asked for while the page loads, not
+// before. So a site that never answers for its listing holds no page up.
+{
+  const w = start(site);
+  for (const path of ['edit/', 'edit/edit.mjs']) await w.get(path, { navigate: path.endsWith('/') });
+  await settled();
+  w.asked.length = 0;
+  const page = await w.get('edit/', { navigate: true });
+  assert.equal(await text(page), '<p>edit</p>');
+  assert.equal(page.headers.get('x-prism-kappa'), 'kept');
+  assert.deepEqual(w.asked.filter((address) => !address.includes('offline.json')), [], 'the page itself asks the network for nothing');
+}
+
+// A new deployment: the page load after it is still the build this browser holds, whole. The newer listing is found
+// while that page loads and taken up at the next page load, which serves the new file and drops what nothing names.
+// A page is one build, never two.
 {
   const w = start(site);
   await w.get('edit/', { navigate: true });
   await w.get('edit/edit.mjs');
+  await settled();
   const old = ROOT + '__kappa__/' + kappa(enc.encode(site['edit/edit.mjs'])).slice(7);
   assert.ok(w.cache.has(old));
   const next = start({ ...site, 'edit/edit.mjs': 'export const a = 3;' });
   w.site = next.site;
   w.listing = { ...next.listing, commit: 'c2' };
   assert.equal(await text(await w.get('edit/', { navigate: true })), '<p>edit</p>');
-  assert.equal(await text(await w.get('edit/edit.mjs')), 'export const a = 3;');
+  assert.equal(await text(await w.get('edit/edit.mjs')), 'export const a = 1;', 'the page that was loading keeps the build it began with');
+  await settled();
+  assert.equal(await text(await w.get('edit/', { navigate: true })), '<p>edit</p>');
+  assert.equal(await text(await w.get('edit/edit.mjs')), 'export const a = 3;', 'the next page load has the new build');
   assert.ok(!w.cache.has(old), 'a file no listing names is dropped');
+}
+
+// The newer listing waits through a stop of the worker: a worker started afresh takes it up at the next page load.
+{
+  const w = start(site);
+  await w.get('edit/', { navigate: true });
+  await settled();
+  const next = start({ ...site, 'edit/edit.mjs': 'export const a = 5;' });
+  w.site = next.site;
+  w.listing = { ...next.listing, commit: 'c5' };
+  await w.get('edit/', { navigate: true });
+  await settled();
+  const again = start(site);
+  again.cache = w.cache;
+  for (const [key, value] of w.cache) again.cache.set(key, value);
+  again.site = next.site;
+  again.listing = w.listing;
+  again.online = false;
+  assert.equal((await again.get('edit/', { navigate: true })).status, 200);
+  again.online = true;
+  assert.equal(await text(await again.get('edit/edit.mjs')), 'export const a = 5;');
+}
+
+// The site published again while a page of the earlier build is open, and a file of that build was never fetched:
+// its path now holds the new build's bytes. The site keeps the earlier build's under kappa/ by label, and the file
+// is taken from there, so the open page is still one build.
+{
+  const w = start(site);
+  await w.get('edit/', { navigate: true });
+  await settled();
+  const earlier = site['edit/edit.mjs'];
+  const next = start({ ...site, 'edit/edit.mjs': 'export const a = 6;' });
+  w.site = { ...next.site, ['kappa/' + kappa(enc.encode(earlier)).slice(7)]: earlier };
+  w.listing = { ...next.listing, commit: 'c6' };
+  const response = await w.get('edit/edit.mjs');
+  assert.equal(await text(response), earlier, 'the file of the build in use, by its label');
+  assert.equal(response.headers.get('x-prism-kappa'), 'fetched');
 }
 
 // A new deployment between page loads: a file asked for under the old listing is not refused for being new. The

@@ -18,11 +18,12 @@ const requestOf = (table, text) => text.trim().split(/\s+/).map((word, i) => (ta
 /**
  * check, snapshot, prove and audit.
  *   check(files), snapshotOf(files)   the LexLean worker's two questions
+ *   modelLabel(files)                 the model's BLAKE3 label (model-tar.mjs's), named when it checks; optional
  *   prove(words, guarantees)          the kernel worker's
  *   judge                             makeJudge's, for the audit table
  *   rules                             { ruleTable, tableWords, judgeTable, OPS } of src/journey/rule-table.mjs
  */
-export function createPrograms({ check, snapshotOf, prove, judge, rules }) {
+export function createPrograms({ check, snapshotOf, prove, judge, rules, modelLabel = null }) {
   const { ruleTable, tableWords, judgeTable, OPS } = rules;
   // A model's guarantees as the kernel judged them, for `prove` and `audit`.
   async function judged(files) {
@@ -42,7 +43,7 @@ export function createPrograms({ check, snapshotOf, prove, judge, rules }) {
       if (reply.error) return { text: 'LexLean did not answer: ' + reply.error, keep: false };
       const r = reply.result;
       const lines = r.diagnostics.map((d) => (d.primary ? `${d.primary.path.replace(/^\//, '')}:${d.primary.line_start}:${d.primary.column_start} ` : '') + `${d.code}: ${d.message}`);
-      lines.push(r.success ? `The model checks. Its identity is sha256:${String(r.semantic_id ?? '').replace(/^sha256:/, '')}.` : `${r.diagnostics.length} problem${r.diagnostics.length === 1 ? '' : 's'}.`);
+      lines.push(r.success ? `The model checks.${modelLabel ? ` Its label is ${modelLabel(files)}.` : ''}` : `${r.diagnostics.length} problem${r.diagnostics.length === 1 ? '' : 's'}.`);
       return { text: lines.join('\n') };
     },
     async snapshot(files) {
@@ -101,7 +102,7 @@ export function createPins({ pin, manifest, kappa, held }) {
  *   change        { write(path, text), remove(path) }: how the page changes a file of the model; without it the
  *                 commands that change a file say the page holds the model read-only
  */
-export function createCommandLine({ tables, luts = {}, rules, kappa, reuseAdmits, project, check, snapshotOf, prove, held, pin, manifest, sink, echo, clear, kept = createKept(), change = null, askLines = null }) {
+export function createCommandLine({ tables, luts = {}, rules, kappa, reuseAdmits, project, check, snapshotOf, prove, held, pin, manifest, sink, echo, clear, kept = createKept(), change = null, askLines = null, modelLabel = null }) {
   // The words the command line answers are exactly the words the proved table lists, or it does not start.
   const listed = tables.commands.fields[0].values.filter((word) => word !== 'other');
   if ([...listed].sort().join(' ') !== [...WORDS].sort().join(' ')) throw new Error('the command line and the proved command table list different commands');
@@ -115,7 +116,7 @@ export function createCommandLine({ tables, luts = {}, rules, kappa, reuseAdmits
     made[name] = lut;
   }
   const judge = makeJudge(tables, rules.judgeTable, made);
-  const programs = createPrograms({ check, snapshotOf, prove, judge, rules });
+  const programs = createPrograms({ check, snapshotOf, prove, judge, rules, modelLabel });
   const { labelOf, bytesOf } = createPins({ pin, manifest, kappa, held });
   const writer = createWriter({ judge, sink });
   const session = createSession({ judge, writer, files: () => new Map(Object.entries(project())), bytesOf, labelOf, programs, kappa, reuseAdmits, kept, clear, change });

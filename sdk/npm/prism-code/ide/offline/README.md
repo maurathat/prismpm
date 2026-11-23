@@ -18,7 +18,7 @@ So a page that has been opened once opens again with the network off, and one ch
 
 ## A new deployment
 
-On each page load the worker asks for the newest listing, for at most 2.5 s, under an address no cache has seen. When it differs from the one held, stored files that no listing names are dropped. A file that fails its check is tried a second time past any cache in between, and then against the newest listing, before it is refused: a file is not refused for being newer than the listing the worker happened to hold.
+A page this browser holds opens without waiting on the site. The worker serves from the listing it holds and, while the page loads, asks for the newest one under an address no cache has seen. A newer listing is taken up at the next page load, never in the middle of one, so a page is one build and not two; stored files that no listing names are then dropped. Only a browser that holds no listing waits for the site, for at most 2.5 s. A file of the build in use that the site no longer has at its path is asked for by its label, under `kappa/`, where the site keeps earlier builds. A file that fails its check is tried a second time past any cache in between, and then against the newest listing, before it is refused: a file is not refused for being newer than the listing the worker happened to hold.
 
 ## Tested
 
