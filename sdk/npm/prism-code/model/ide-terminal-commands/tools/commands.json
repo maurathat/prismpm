@@ -35,7 +35,9 @@
   "check": "lexlean check: LexLean's front end, as WebAssembly",
   "snapshot": "lexlean snapshot: the same executable",
   "prove": "Lean's kernel on the model's guarantees",
-  "audit": "the audit view's statuses, from the kernel and the vectors"
+  "audit": "the audit view's statuses, from the kernel and the vectors",
+  "build": "prism-code build: check, prove and make the holo, in this tab",
+  "verify": "prism-code verify: judge the holo that was built and replay its examples"
  },
  "creates": [
   "append",

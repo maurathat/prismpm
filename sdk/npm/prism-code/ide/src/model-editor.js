@@ -352,6 +352,8 @@ let theoremProver = null;
 // What a running build says as each of its steps begins.
 let onBuildStage = null;
 let liveNow = null;
+let buildNow = null; // the terminal's build: the page's own, so what it builds is what is shown and can be pushed
+let verifyNow = null;
 let liveJudge = null;
 let liveShow = null;
 const theorems = () => {
@@ -379,6 +381,8 @@ async function commandLine(io) {
     tables: published.tables, luts: published.luts, rules, kappa, reuseAdmits, project: () => projectNow(),
     check: (project) => lexlean.ask({ files: project }), snapshotOf: (project) => lexlean.ask({ files: project, snapshot: true }),
     prove: (words, guarantees) => kernel.ask({ words, guarantees }),
+    build: (project) => { if (!buildNow) throw new Error('the page is not ready to build yet'); return buildNow(project); },
+    verify: () => { if (!verifyNow) throw new Error('the page is not ready to verify yet'); return verifyNow(); },
     held: async () => ({ lexlean: await settled.lexlean, kernel: await settled.kernel }),
     pin, manifest, kept: createKeptIn(await openStore({ kappa })), change: { write: changing('write'), remove: changing('remove') },
     // A paste of several lines is one block; the effects table says to ask before it is entered.
@@ -692,6 +696,17 @@ try {
     if (liveBox.checked) liveNow?.();
   });
   window.prismModel.build = async ({ live = false } = {}) => finishBuild(await buildAsk(whole()), { live });
+  // The terminal's two words. `build` is this page's build of the files the terminal holds, so the holo it makes is
+  // the one shown, run and pushed. `verify` has Holospace's library judge that holo again, as it is judged before it
+  // runs: its seal, its members, its examples replayed.
+  buildNow = async (project) => finishBuild(await buildAsk(project), { live: liveBox.checked });
+  verifyNow = async () => {
+    const bytes = window.prismModel.holo?.();
+    if (!bytes) return { why: 'Nothing is built to verify. Type build first.' };
+    const [h, { kappa }] = await Promise.all([library(), import(/* @vite-ignore */ EDIT + 'prism-code/blake3.mjs')]);
+    const opened = await h.open(bytes.slice());
+    return { label: kappa(bytes), bytes: bytes.length, verdict: opened.verdict, error: opened.error ?? null, replay: opened.replay ?? null };
+  };
   /** The build of a model, asked of the worker. Its answer carries the label of the model it was made from. */
   async function buildAsk(project) {
     let model = null;

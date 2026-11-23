@@ -11,6 +11,7 @@ import { createKeptIn, indexOf, materialize, openStore } from '../edit/terminal/
 import { columns, createLineEditor } from '../edit/terminal/line-editor.mjs';
 import { createKept, createWriter, makeJudge, visible } from '../edit/terminal/session.mjs';
 import { build, createSession, diffLines, lex, resolveTarget, USAGE, WORDS } from '../edit/terminal/shell.mjs';
+import { createPrograms } from '../edit/terminal/programs.mjs';
 import { terminalTables, vendorFiles } from './terminal-site.mjs';
 
 const { tables, luts } = await terminalTables();
@@ -261,7 +262,7 @@ await test('each finite table as a lookup table answers every request as its rul
       if (f < 0) break;
     }
   }
-  assert.equal(requests, 840 + 280 + 108 + 108);
+  assert.equal(requests, 888 + 296 + 108 + 108);
   // A table with a number in it has no finite list of requests, and is judged rule by rule.
   assert.equal(materialize(tables.flow, judgeTable, kappa), null);
   assert.equal(judge('flow', { pending: 100000, paused: 'no' }), 'hold');
@@ -754,6 +755,61 @@ await test('Ctrl+S holds what is being written and Ctrl+Q lets it go', async () 
   finish();
   await new Promise((r) => setTimeout(r, 5));
   assert.deepEqual(calls, ['hold', 'release']);
+});
+
+/** A session whose build and verify are counted stand-ins, over the real tables. */
+function building({ bytes = 'pinned', kept = createKept() } = {}) {
+  const model = new Map([['/lexlean.toml', 'spec = "x"\n'], ['/src/App.lex.tex', 'model\n']]);
+  const shown = [];
+  const started = { build: 0, verify: 0 };
+  const writer = createWriter({ judge, sink: (part, done) => { shown.push(dec.decode(part)); done(); } });
+  const programs = { build: async () => { started.build++; return { text: 'Built app.holo' }; }, verify: async () => { started.verify++; return { text: 'Verified' }; } };
+  const session = createSession({ judge, writer, files: () => model, bytesOf: async () => bytes, labelOf: () => 'blake3:' + '1'.repeat(64), programs, kappa, reuseAdmits, kept, clear: () => {}, change: null });
+  return { session, started, kept, text: () => shown.join('') };
+}
+
+await test('build and verify run each time they are typed: a kept output never stands for either', async () => {
+  const t = building();
+  for (const line of ['build', 'build', 'verify', 'verify', 'build && verify']) assert.equal(await t.session.run(line), 'run', line);
+  assert.deepEqual(t.started, { build: 3, verify: 3 });
+  // Neither is handed the store, so nothing of theirs is kept to be shown again.
+  const uses = t.session.log.filter((e) => e.resource && (e.command === 'build' || e.command === 'verify'));
+  assert.deepEqual([...new Set(uses.map((u) => u.resource))].sort(), ['readmodel', 'screen']);
+  for (const use of uses) assert.equal(use.answer, 'allow');
+  for (const resource of ['readstore', 'writestore', 'writemodel', 'network', 'clipboard', 'process']) for (const command of ['build', 'verify']) assert.equal(judge('reach', { command, resource }), 'deny', `${command} ${resource}`);
+});
+
+await test('build and verify are refused when their executable is not the pinned one, or a path leaves the model', async () => {
+  for (const bytes of ['mismatch', 'absent']) {
+    const t = building({ bytes });
+    for (const line of ['build', 'verify']) assert.equal(await t.session.run(line), 'refuse', `${line} with ${bytes}`);
+    assert.deepEqual(t.started, { build: 0, verify: 0 });
+  }
+  const t = building();
+  assert.equal(await t.session.run('build ../other'), 'refuse');
+  assert.equal(t.started.build, 0);
+});
+
+await test('build says what was proved and what was tested, and verify what was judged; neither claims more', async () => {
+  const rules = { ruleTable: () => { throw new Error('unused'); }, tableWords: () => ({}), judgeTable, OPS: [] };
+  const holo = { name: 'Seats', bytes: 43584, label: 'blake3:' + 'a'.repeat(64) };
+  const good = createPrograms({ rules, build: async () => ({ ok: true, ms: 500, holo, theorems: { proved: 2, total: 2 }, vectors: { passed: 9, total: 9 } }),
+    verify: async () => ({ label: holo.label, bytes: holo.bytes, verdict: 'verified', replay: { passed: 9, total: 9 } }) });
+  const built = await good.build({});
+  assert.match(built.text, /^Built Seats\.holo: 43584 bytes, blake3:a{64}, in 500 ms\.\nProved: Lean's kernel accepted 2 of 2 theorems\.\nTested: 9 of 9 examples/);
+  assert.notEqual(built.keep, false);
+  const verified = await good.verify({});
+  assert.match(verified.text, /^Verified: blake3:a{64}, 43584 bytes, judged in this tab\. 9 of 9 of its examples replayed\. Its theorems were not proved again by this\.$/);
+  // A build that stops gives no holo and is not said to be built; its status is a failure.
+  const stopped = createPrograms({ rules, build: async () => ({ ok: false, stage: 'prove', message: '1 of 2 theorems are not proved.' }), verify: async () => ({ why: 'Nothing is built to verify. Type build first.' }) });
+  assert.deepEqual(await stopped.build({}), { text: 'Not built (stopped at prove): 1 of 2 theorems are not proved.', keep: false });
+  assert.deepEqual(await stopped.verify({}), { text: 'Nothing is built to verify. Type build first.', keep: false });
+  // A holo judged anything but verified is not called verified.
+  const bad = createPrograms({ rules, verify: async () => ({ label: holo.label, bytes: 1, verdict: 'refused', error: 'seal' }) });
+  assert.match((await bad.verify({})).text, /^Not verified: blake3:a{64} was judged "refused" \(seal\)\./);
+  // A page with no build of its own says so, and builds nothing.
+  assert.equal((await bad.build({})).keep, false);
+  assert.match((await bad.build({})).text, /cannot build/);
 });
 
 console.log(`${passed} tests passed` + (failed ? `, ${failed} FAILED` : ''));
