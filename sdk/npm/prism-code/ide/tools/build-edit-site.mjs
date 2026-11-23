@@ -114,6 +114,7 @@ writeFileSync(join(site, 'project.json'), JSON.stringify(listing) + '\n');
 // app.holo.json, model/). Nothing is fetched for it and nothing here stands in for either command. The page starts
 // a new app from its model, and a holospace can open the app by its holo's label. The model above need not declare
 // an app; the template's does, and builds.
+const TEMPLATE_NAME = 'app';
 const started = mkdtempSync(join(tmpdir(), 'prism-template-'));
 const cli = join(pkg, 'bin', 'prism-code.mjs');
 const ran = (...args) => {
@@ -121,7 +122,10 @@ const ran = (...args) => {
   if (done.status !== 0) throw new Error(`prism-code ${args.join(' ')} stopped with ${done.status}: ${(done.stdout + done.stderr).trim().slice(-600)}`);
   return done.stdout;
 };
-ran('init');
+// The app is given its name here. Left to itself, init names an app after the folder it is run in, and a built
+// holo carries prism.toml, so in a temporary folder the published app's label would change with every deployment.
+// 'app' is the name `prism-code init app` gives, so this is the holo a person gets from that command.
+ran('init', '--name', TEMPLATE_NAME);
 const built = JSON.parse(ran('build', '--json'));
 if (built.ok !== true || typeof built.summary?.site !== 'string') throw new Error('prism-code build did not write the app: ' + JSON.stringify(built.diagnostics ?? built).slice(0, 400));
 if (built.summary.theoremsVerified !== built.summary.theoremsDeclared || built.summary.vectorsPassed !== built.summary.vectorsTotal) throw new Error('the template was built with a theorem unproved or an example failing');
