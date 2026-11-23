@@ -44,6 +44,14 @@ const ERROR = 8; // MarkerSeverity.Error
 const strip = document.getElementById('strip');
 const state = (window.prismModel = { ready: false, checks: 0, last: null, proof: null, error: null, markers: 0 });
 const say = (text, kind) => { strip.textContent = text; strip.dataset.state = kind ?? ''; };
+// What stands of the model's guarantees after the last edit, one row each, whichever kind of model it is: a
+// theorem by its name, a rule table's guarantee by its place. Null until Lean's kernel has answered in this tab.
+window.prismModel.guarantees = () => {
+  const proof = state.proof;
+  if (!proof || proof.error) return null;
+  if (proof.table) return (proof.statuses ?? []).map((status, index) => ({ name: `guarantee ${index + 1}`, status }));
+  return (proof.theorems ?? []).map((theorem) => ({ name: theorem.theorem, status: theorem.status }));
+};
 
 // Inside an app's holospace. Holospace's page loads this IDE by its one label into a frame of its own page, on the
 // same origin, and hands it that app's things and nothing else, on the page that holds the frame:
@@ -592,9 +600,12 @@ try {
     // did, or why it did nothing; this page's own account of the build is not what decides.
     if (HOST) {
       let said;
-      try { said = await HOST.replace(built.holo.bytes); } catch (error) { said = { replaced: false, reason: String(error?.code ?? error?.message ?? error) }; }
+      // The holospace may refuse, for a reason it names: a proof it cannot check, a build over its limits. It is
+      // waited for a minute and no longer, so a holospace that does not answer shows as that and not as a hang.
+      const answer = new Promise((resolve) => setTimeout(() => resolve({ replaced: false, reason: 'replace.unanswered' }), 60000));
+      try { said = await Promise.race([HOST.replace(built.holo.bytes), answer]); } catch (error) { said = { replaced: false, reason: String(error?.code ?? error?.message ?? error) }; }
       state.replaced = { replaced: said?.replaced === true, kept: said?.kept ?? null, reason: said?.reason ?? null, address: said?.address ?? null, judged: said?.judged ?? null };
-      const WHY = { 'proof.unjudged': "its holospace cannot yet check the proof itself, and does not take this page's word for it", 'replace.unbuilt': 'its holospace judged the build and cannot replace a running app yet' };
+      const WHY = { 'replace.unanswered': 'its holospace did not answer within a minute', 'proof.unjudged': "its holospace cannot yet check the proof itself, and does not take this page's word for it", 'replace.unbuilt': 'its holospace judged the build and cannot replace a running app yet' };
       took.append(said?.replaced === true
         ? ` The running app was replaced${said.kept === 'restarted' ? `, and restarted: ${said.reason ?? 'no reason given'}` : ', and kept its state'}.`
         : ` The running app was not replaced: ${WHY[said?.reason] ?? said?.reason ?? 'no reason given'}.`);
