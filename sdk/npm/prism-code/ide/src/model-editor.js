@@ -33,6 +33,10 @@ import getExplorerOverride from '@codingame/monaco-vscode-explorer-service-overr
 import getKeybindingsOverride from '@codingame/monaco-vscode-keybindings-service-override';
 import getQuickAccessOverride from '@codingame/monaco-vscode-quickaccess-service-override';
 import '@codingame/monaco-vscode-theme-defaults-default-extension';
+import { registerExtension, ExtensionHostKind } from '@codingame/monaco-vscode-api/extensions';
+// The workbench's own theme, from the Hologram brand kit (tools/build-theme.mjs, tools/brand-pins.json).
+import hologramThemeUrl from './theme/hologram-dark.json?url';
+import './theme/focus.css';
 import extHostWorkerUrl from '@codingame/monaco-vscode-api/workers/extensionHost.worker?worker&url';
 import editorWorkerUrl from '@codingame/monaco-vscode-api/workers/editor.worker?worker&url';
 import { LEXLEAN, registerLexLean, tokenTypes } from './lexlean-language.js';
@@ -43,6 +47,7 @@ import { ITerminalService } from '@codingame/monaco-vscode-terminal-service-over
 // two, enough to take a burst of keys as one edit; and only one check is ever waiting, the newest, so typing faster
 // than LexLean answers never builds a queue behind what is on screen.
 const PAUSE_MS = 40;
+const HOLOGRAM_THEME = 'Hologram Dark';
 const ERROR = 8; // MarkerSeverity.Error
 const strip = document.getElementById('strip');
 const state = (window.prismModel = { ready: false, checks: 0, last: null, proof: null, error: null, markers: 0 });
@@ -416,9 +421,14 @@ try {
     registerFileSystemOverlay(1, provider);
   }
   // LexLean's colours reach the editor as semantic tokens, so they are on whatever the theme would choose.
-  // ?theme=<a theme's name> opens the page in that theme; without it, the workbench's own choice stands.
-  // Dark+ unless the address names another theme: ?theme=<a theme's name, as the command palette lists it>.
-  const theme = new URLSearchParams(location.search).get('theme') || 'Default Dark+';
+  // The Hologram theme, generated from the brand kit's tokens, is given to the workbench as a theme of its own, the
+  // way an extension gives one, and is the one it opens in. ?theme=<a theme's name, as the command palette lists it>
+  // opens the page in another, Default Dark+ for one.
+  const hologram = registerExtension({ name: 'hologram-theme', publisher: 'prism', version: '1.0.0', engines: { vscode: '*' },
+    contributes: { themes: [{ id: HOLOGRAM_THEME, label: HOLOGRAM_THEME, uiTheme: 'vs-dark', path: './hologram-dark.json' }] } }, ExtensionHostKind.LocalProcess, { system: true });
+  hologram.registerFileUrl('./hologram-dark.json', hologramThemeUrl);
+  const theme = new URLSearchParams(location.search).get('theme') || HOLOGRAM_THEME;
+  // The editor's font and its size are VS Code's own, untouched: code reads as it does there.
   // No minimap: it is one more thing drawn on every keystroke, and the files here are short.
   await initUserConfiguration(JSON.stringify({ 'editor.semanticHighlighting.enabled': true, 'workbench.colorTheme': theme, 'editor.minimap.enabled': false }));
 
