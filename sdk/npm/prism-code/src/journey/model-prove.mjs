@@ -32,16 +32,11 @@ import { COVERED } from '../vendor/kernel-path/plan.mjs';
 // What is judged, and how, is prove-core.mjs's, which reads no disk: a browser worker runs the same functions.
 import { ModelKernelMissing, STANDARD_AXIOMS, openKernel, proveDeclared, proveSnapshot } from './prove-core.mjs';
 
+import { MODEL_KERNEL_COMMIT, MODEL_KERNEL_FILES, MODEL_KERNEL_REPOSITORY } from './model-kernel-pins.mjs';
 export { ModelKernelMissing, STANDARD_AXIOMS };
 
-export const MODEL_KERNEL_REPOSITORY = 'UOR-Foundation/PrismPM';
-export const MODEL_KERNEL_COMMIT = '67ba3a17656fae808cfa9e6b7419591e35c977c6';
-/** The files, by name: where each lives in the repository, and the BLAKE3 κ-label of its decoded bytes. */
-export const MODEL_KERNEL_FILES = Object.freeze({
-  'lean-kernel.mjs': { path: 'sdk/npm/lean-prover/kernel-path/kernel/lean-kernel.mjs', kappa: 'blake3:ec13d669b62c9a0223a937e04c3df18235fa67878ca53ba926f75904fe9c4610', encoding: 'identity', bytes: 62389 },
-  'lean-kernel.wasm.gz': { path: 'sdk/npm/lean-prover/kernel-path/kernel/lean-kernel.wasm.gz', kappa: 'blake3:2f254140590074724ca1a8033080e0ae0834a018e06481ad7ccf7de9b80f175a', encoding: 'gzip', bytes: 2235146 },
-  'base.ndjson.gz': { path: 'sdk/npm/lean-prover/kernel-path/library/base.ndjson.gz', kappa: 'blake3:f5502e3d8e4fd563f8bd352b427883149abd5dca0e6c47002fe686a5ddeae995', encoding: 'gzip', bytes: 20413230 },
-});
+// The kernel's files by address are stated where a page can load them too (model-kernel-pins.mjs).
+export { MODEL_KERNEL_REPOSITORY, MODEL_KERNEL_COMMIT, MODEL_KERNEL_FILES };
 /** LexLean's proof kinds the proof finder covers, by the name it knows them by. */
 export const COVERED_PROOFS = COVERED;
 

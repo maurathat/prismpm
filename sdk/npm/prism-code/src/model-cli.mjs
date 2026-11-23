@@ -100,7 +100,7 @@ async function openProject(path, explicit) {
       dir = resolve(root, lexleanProjectDir(root, manifest?.model?.source ?? null, explicit ?? null));
     } catch (error) {
       if (!(error instanceof PrismError)) throw error;
-      diagnostics.push(diagnostic({ code: error.code, message: error.message, remediation: 'Run prism-code init <dir> to scaffold a project, or name the model with --project <dir>.' }));
+      diagnostics.push(diagnostic({ code: error.code, message: error.message, remediation: 'Run npx prism-code@latest init <dir> to scaffold a project, or name the model with --project <dir>.' }));
       refused = true;
     }
   }

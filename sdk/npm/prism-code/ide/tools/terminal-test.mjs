@@ -803,6 +803,10 @@ await test('build says what was proved and what was tested, and verify what was 
   // A build that stops gives no holo and is not said to be built; its status is a failure.
   const stopped = createPrograms({ rules, build: async () => ({ ok: false, stage: 'prove', message: '1 of 2 theorems are not proved.' }), verify: async () => ({ why: 'Nothing is built to verify. Type build first.' }) });
   assert.deepEqual(await stopped.build({}), { text: 'Not built (stopped at prove): 1 of 2 theorems are not proved.', keep: false });
+  // A theorem that is not proved is named with where it is stated and what to do about it, as the package gave them.
+  const hinted = createPrograms({ rules, build: async () => ({ ok: false, stage: 'prove', message: '1 of 2 theorems are not proved.',
+    unproved: [{ theorem: 'never_two', status: 'not proved: no certificate found', file: '/src/App.lex.tex', line: 41, remedy: 'Repair the definition or the theorem in the model.' }, { theorem: 'unplaced', status: 'not settled', file: null, line: null, remedy: null }] }) });
+  assert.deepEqual(await hinted.build({}), { keep: false, text: 'Not built (stopped at prove): 1 of 2 theorems are not proved.\nsrc/App.lex.tex:41 never_two: not proved: no certificate found\n  Repair the definition or the theorem in the model.\nunplaced: not settled' });
   assert.deepEqual(await stopped.verify({}), { text: 'Nothing is built to verify. Type build first.', keep: false });
   // A holo judged anything but verified is not called verified.
   const bad = createPrograms({ rules, verify: async () => ({ label: holo.label, bytes: 1, verdict: 'refused', error: 'seal' }) });
