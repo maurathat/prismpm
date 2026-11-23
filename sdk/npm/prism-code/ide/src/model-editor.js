@@ -529,6 +529,29 @@ async function commandLine(io) {
   });
 }
 
+// The page's own layout around the workbench (model.html): the side pane with the app, and one-line notes.
+{
+  const side = document.getElementById('sideToggle');
+  let hidden = false;
+  try { hidden = localStorage.getItem('prism-ide-side') === 'hidden'; } catch { /* no storage: shown */ }
+  const show = (on) => {
+    hidden = !on;
+    document.body.classList.toggle('sideHidden', hidden);
+    side.setAttribute('aria-pressed', String(on));
+    try { localStorage.setItem('prism-ide-side', hidden ? 'hidden' : 'shown'); } catch { /* not remembered */ }
+  };
+  show(!hidden);
+  side.addEventListener('click', () => show(hidden));
+  document.getElementById('sideClose').addEventListener('click', () => show(false));
+  // A note opens to its whole text on a click, and folds back on the next; a click on its own button is the button's.
+  for (const note of document.querySelectorAll('#notes > *')) note.addEventListener('click', (event) => { if (!event.target.closest('button, a')) note.classList.toggle('open'); });
+  // VS Code lays its workbench out when the window is resized; the pane changes its room without that, so it is told.
+  const bench = document.getElementById('workbench');
+  let last = 0;
+  new ResizeObserver(() => { const w = bench.clientWidth * 10000 + bench.clientHeight; if (w !== last) { last = w; window.dispatchEvent(new Event('resize')); } }).observe(bench);
+  window.prismModel.layout = () => ({ workbench: [bench.clientWidth, bench.clientHeight], side: !hidden });
+}
+
 window.MonacoEnvironment = {
   getWorkerUrl: (_moduleId, label) => (label === 'extensionHostWorkerMain' ? extHostWorkerUrl : editorWorkerUrl),
   getWorkerOptions: () => ({ type: 'module' }),
