@@ -913,7 +913,7 @@ pub fn run_at(root: &Path, id: &str) {
         "DK-51" => node_suite::verify_exact(
             root,
             id,
-            &[("sdk/npm/prism-code/test/canonical-template.test.mjs", 10)],
+            &[("sdk/npm/prism-code/test/canonical-template.test.mjs", 11)],
             "600000",
         ),
         "DK-50" => node_suite::verify_exact(

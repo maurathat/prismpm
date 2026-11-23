@@ -32,6 +32,7 @@
  *       contract.theorem-unproved  (checkTheorems) a named theorem Lean's kernel did not prove within its axioms
  *   R5  contract.rejects-scenario  a row with `failure` whose scenario is not tagged @rejects
  *       contract.negative       a row with `failure` whose `negative` is not a registered build row
+ *   R6  contract.artifact       (template/1 and template/2) an authority's committed artifact whose bytes are not its checksum
  *       contract.refusal-unreplayed (checkRefusals) a row with `failure` no replayed vector is refused with
  *       contract.policy-drift   a universal policy file whose bytes are not the BLAKE3 label template.lock binds
  *       contract.spec           a register spec that is neither template/1 nor template/2
@@ -40,8 +41,9 @@
  * the kernel's verdicts and the replayed vectors. Each returns `{ diagnostics }`, checkContract also
  * `{ applies, summary }`.
  */
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { createHash } from 'node:crypto';
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { PrismCodeError } from './errors.mjs';
 import { kappa } from './blake3.mjs';
 
@@ -169,6 +171,47 @@ export function scenarios(root) {
   return out;
 }
 
+/**
+ * The checksum of an authority's committed artifact, as model/authorities.toml defines it: SHA-256 as 64 lowercase
+ * hex digits, of a file's bytes, or of a directory's manifest, one `<sha256 of file>  <path>` line per regular file,
+ * `path` relative to the directory with `/` separators, in byte order of the paths, each line ending in a newline.
+ * The same bytes as the template's contract-1 checker gave. Returns `{ checksum }` or `{ error }`.
+ */
+export function artifactChecksum(root, id, artifact) {
+  const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
+  if (artifact === '' || isAbsolute(artifact) || artifact.split(/[\\/]/).some((part) => part === '..' || part === '.' || part === '')) {
+    return { error: `${id}: artifact ${JSON.stringify(artifact)} is not a relative path inside the repository (R6).` };
+  }
+  const path = join(root, ...artifact.split('/'));
+  let info;
+  try {
+    info = lstatSync(path);
+  } catch {
+    return { error: `${id}: artifact ${artifact} is not committed: the row names a path that holds no file (R6).` };
+  }
+  if (info.isFile()) return { checksum: sha(readFileSync(path)) };
+  if (!info.isDirectory()) return { error: `${id}: artifact ${artifact} is not a regular file or directory (R6).` };
+  const names = [];
+  const walk = (dir, rel) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const name = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        const nested = walk(join(dir, entry.name), name);
+        if (nested) return nested;
+      } else if (entry.isFile()) names.push(name);
+      // A link can point outside the repository, and then the checksum would cover bytes it does not contain.
+      else return `${id}: ${artifact}/${name} is not a regular file or directory; an artifact holds files only (R6).`;
+    }
+    return null;
+  };
+  const refused = walk(path, '');
+  if (refused) return { error: refused };
+  if (names.length === 0) return { error: `${id}: artifact ${artifact} holds no files, so there is nothing to checksum (R6).` };
+  names.sort((a, b) => Buffer.compare(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8')));
+  const manifest = names.map((name) => `${sha(readFileSync(join(path, ...name.split('/'))))}  ${name}\n`).join('');
+  return { checksum: sha(Buffer.from(manifest, 'utf8')) };
+}
+
 /** The template workspace a project belongs to: `dir` or the folder above it, whichever holds `model/ids.toml`. */
 export function contractRoot(...candidates) {
   for (const dir of candidates) if (dir && existsSync(join(dir, 'model', 'ids.toml'))) return dir;
@@ -211,6 +254,15 @@ export function checkContract(root) {
   for (const authority of cited) {
     for (const id of Array.isArray(authority.realized_by) ? authority.realized_by : []) {
       if (!registered.has(id)) push(new PrismCodeError('contract.authority', `The authority ${authority.id} is realized by ${id}, which model/ids.toml does not register.`), { file: 'model/authorities.toml', id, remediation: 'Register the ID, or take it off the authority (R2).' });
+    }
+    // R6: a template register's committed artifact is the bytes its checksum records, recomputed here.
+    if (spec.startsWith('template/') && authority.artifact !== undefined) {
+      const at = { file: 'model/authorities.toml', id: authority.id };
+      const recorded = String(authority.checksum ?? '');
+      const actual = artifactChecksum(root, authority.id, String(authority.artifact));
+      if (actual.error) push(new PrismCodeError('contract.artifact', actual.error), { ...at, remediation: 'Commit the artifact the row names, as regular files, or take `artifact` off the row (R6).' });
+      else if (!/^[0-9a-f]{64}$/.test(recorded)) push(new PrismCodeError('contract.artifact', `The authority ${authority.id} names the artifact ${authority.artifact} and records ${JSON.stringify(recorded)}, which is not a SHA-256 of 64 lowercase hex digits.`), { ...at, remediation: `Record the checksum: ${actual.checksum} (R6).` });
+      else if (actual.checksum !== recorded) push(new PrismCodeError('contract.artifact', `The authority ${authority.id} records the checksum ${recorded} for ${authority.artifact}, and its committed bytes give ${actual.checksum}.`), { ...at, remediation: 'Restore the committed artifact, or record the checksum of the artifact meant (R6).' });
     }
   }
 
