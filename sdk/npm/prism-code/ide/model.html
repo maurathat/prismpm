@@ -17,7 +17,7 @@
   #liveLabel { white-space: nowrap; margin-right: .5rem; color: var(--hg-foreground); }
   #starters { white-space: nowrap; } #starters a { color: var(--hg-link); margin-left: .35rem; }
   #openFolder { margin-left: .5rem; }
-  #download, #build, #openFolder { font: inherit; color: var(--hg-foreground); background: none; border: 1px solid var(--hg-muted-foreground-subtle); border-radius: 3px; padding: .1rem .5rem; margin-right: .5rem; cursor: pointer; white-space: nowrap; }
+  #download, #build, #openFolder, #sideToggle { font: inherit; color: var(--hg-foreground); background: none; border: 1px solid var(--hg-muted-foreground-subtle); border-radius: 3px; padding: .1rem .5rem; margin-right: .5rem; cursor: pointer; white-space: nowrap; }
   #took { padding: .35rem .75rem; border-bottom: 1px solid var(--hg-border-solid); overflow-wrap: anywhere; }
   #pushForm { padding: .35rem .75rem; border-bottom: 1px solid var(--hg-border-solid); display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
   #pushForm[hidden] { display: none; }
@@ -37,19 +37,39 @@
   #draft { padding: .35rem .75rem; border-bottom: 1px solid var(--hg-border-solid); color: var(--hg-muted-foreground); }
   #draft button { font: inherit; color: inherit; background: none; border: 1px solid currentColor; border-radius: 3px; padding: 0 .4rem; cursor: pointer; }
   #match[data-state="same"] { color: var(--hg-success); } #match[data-state="other"] { color: var(--hg-destructive); font-weight: 600; }
-  #workbench { flex: 1; min-height: 0; position: relative; }
+  /* The workbench fills the window under one top line, as VS Code does. Notes are one line each and open on a click;
+     the app this model builds, and push and pull, sit in a pane at the side, which the App button hides. */
+  #main { flex: 1; min-height: 0; display: flex; }
+  #workbench { flex: 1; min-width: 0; min-height: 0; position: relative; }
+  #side { width: min(34vw, 460px); min-width: 260px; display: flex; flex-direction: column; border-left: 1px solid var(--hg-border-solid); overflow: auto; }
+  body.sideHidden #side { display: none; }
+  .sideHead { display: flex; align-items: center; justify-content: space-between; padding: .2rem .5rem .2rem .75rem; border-bottom: 1px solid var(--hg-border-solid); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--hg-muted-foreground); }
+  .sideHead button { font: inherit; font-size: 15px; line-height: 1; color: inherit; background: none; border: 0; cursor: pointer; padding: .1rem .35rem; }
+  #side #run { max-height: none; border-bottom: 1px solid var(--hg-border-solid); }
+  #side #runView { height: 46vh; }
+  #publish summary { padding: .35rem .75rem; cursor: pointer; color: var(--hg-muted-foreground); }
+  #publish #pushForm { border-bottom: 0; }
+  #notes > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; padding-block: .2rem; }
+  #notes > .open { white-space: normal; overflow-wrap: anywhere; }
+  #sideToggle[aria-pressed="false"] { opacity: .7; }
 </style>
 </head>
 <body>
-<div id="top"><div id="strip" role="status">Starting…</div><span id="starters"><a href="?project=../app/model/" title="The one template every Prism app starts from: the app prism-code init and build write, with theorems of its own">Start a new app</a><button id="openFolder" type="button" title="Open a project folder from this computer, one that npx prism-code init wrote. Its files are read into the project's own holospace in this browser; nothing is sent anywhere.">Open folder</button></span><button id="build" type="button" title="Check, prove and build this model into a holo, here in this tab">Build</button><label id="liveLabel" title="After each edit that checks and whose theorems are all proved, build the model and show the app that was built. An edit that is not fully proved changes nothing that is running."><input id="live" type="checkbox" checked> Live</label><button id="download" type="button" title="The model as it stands in the editor, as one tar archive">Download model</button></div>
+<div id="top"><div id="strip" role="status">Starting…</div><span id="starters"><a href="?project=../app/model/" title="The one template every Prism app starts from: the app prism-code init and build write, with theorems of its own">Start a new app</a><button id="openFolder" type="button" title="Open a project folder from this computer, one that npx prism-code init wrote. Its files are read into the project's own holospace in this browser; nothing is sent anywhere.">Open folder</button></span><button id="build" type="button" title="Check, prove and build this model into a holo, here in this tab">Build</button><button id="sideToggle" type="button" title="Show or hide the app this model builds, and push and pull" aria-pressed="true">App</button><label id="liveLabel" title="After each edit that checks and whose theorems are all proved, build the model and show the app that was built. An edit that is not fully proved changes nothing that is running."><input id="live" type="checkbox" checked> Live</label><button id="download" type="button" title="The model as it stands in the editor, as one tar archive">Download model</button></div>
+
+
+
+
+
+<div id="notes">
 <div id="took" role="status" hidden></div>
-<form id="pushForm">
-  <label>Registry <input id="pushTarget" type="text" placeholder="registry.example/name:tag" aria-label="The registry, name and tag to push the built holo to, or to pull a holo from" autocomplete="off" spellcheck="false"></label>
-  <label title="Only if the registry asks for them. Kept in this tab's memory for this push and nowhere else.">as <input id="pushUser" type="text" aria-label="A user name, if the registry asks" autocomplete="off" spellcheck="false" size="10"> <input id="pushSecret" type="password" aria-label="A password or token, if the registry asks" autocomplete="off" size="14"></label>
-  <button id="pushButton" type="submit" disabled title="Push the holo that was just built">Push</button>
-  <button id="pullButton" type="button" title="Fetch the holo at this address and judge it here. Nothing of it is run unless it is judged verified">Pull</button>
-  <span id="pushSaid" role="status"></span>
-</form>
+<div id="match" role="status" hidden></div>
+<div id="draft" role="status" hidden><span id="draftText"></span> <button id="draftDiscard" type="button" hidden>Discard my changes</button></div>
+</div>
+<div id="main">
+<div id="workbench"></div>
+<aside id="side" aria-label="The app and publishing">
+<div class="sideHead"><span>App</span><button id="sideClose" type="button" title="Hide this pane (the App button shows it again)" aria-label="Hide the app pane">×</button></div>
 <div id="run" hidden>
   <div id="runVerdict" role="status"></div>
   <form id="runForm" hidden>
@@ -61,9 +81,17 @@
   <iframe id="runView" title="The app's own page" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" hidden></iframe>
   <pre id="runLog" aria-label="Requests and answers"></pre>
 </div>
-<div id="match" role="status" hidden></div>
-<div id="draft" role="status" hidden><span id="draftText"></span> <button id="draftDiscard" type="button" hidden>Discard my changes</button></div>
-<div id="workbench"></div>
+<details id="publish"><summary>Push and pull</summary>
+<form id="pushForm">
+  <label>Registry <input id="pushTarget" type="text" placeholder="registry.example/name:tag" aria-label="The registry, name and tag to push the built holo to, or to pull a holo from" autocomplete="off" spellcheck="false"></label>
+  <label title="Only if the registry asks for them. Kept in this tab's memory for this push and nowhere else.">as <input id="pushUser" type="text" aria-label="A user name, if the registry asks" autocomplete="off" spellcheck="false" size="10"> <input id="pushSecret" type="password" aria-label="A password or token, if the registry asks" autocomplete="off" size="14"></label>
+  <button id="pushButton" type="submit" disabled title="Push the holo that was just built">Push</button>
+  <button id="pullButton" type="button" title="Fetch the holo at this address and judge it here. Nothing of it is run unless it is judged verified">Pull</button>
+  <span id="pushSaid" role="status"></span>
+</form>
+</details>
+</aside>
+</div>
 <script type="module" src="./src/model-editor.js"></script>
 </body>
 </html>
