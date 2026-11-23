@@ -27,7 +27,7 @@ Every Prism app starts with one command:
 npx prism-code@latest init my-app
 ```
 
-It writes three things, all inside `my-app`: `prism.toml`, the canonical
+It writes these, all inside `my-app`: `prism.toml`, `prism.project`, the canonical
 template, and the Prism skill for an agent, in `.claude/skills/prism` and
 `.agents/skills/prism`. Nothing outside the folder is written or configured,
 and nothing is fetched. Run again in a folder that holds a model, it leaves
@@ -50,6 +50,12 @@ npx prism-code build --json     # check, then the app under app/.prism/build, wi
 npx prism-code verify --json    # check again, then every acceptance vector on a fresh instance
 npx prism-code run              # build when the model changed, then serve the app; --input <text> for one request
 ```
+
+`prism.project` holds the project's ID, 32 random bytes made once. A holospace
+opened from the project is named by it, so two apps started from the one
+template never share files or storage. No build reads it: the same model
+builds the same bytes for anyone, and the ID is not in the holo. A copy of the
+folder is the same project to a holospace until its ID is changed.
 
 When you change `app/lexlean.toml`, to give the project its own name or a
 lexicon of its own, `npx prism-code lock` writes `lexlean.lock` again, and

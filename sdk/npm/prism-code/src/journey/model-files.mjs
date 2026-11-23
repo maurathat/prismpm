@@ -24,6 +24,8 @@ export function modelFiles(dir, { skip = [] } = {}) {
   const visit = (at, rel) => {
     for (const entry of readdirSync(at, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
       if (entry.name.startsWith('.')) continue;
+      // The project's ID to a holospace (project-id.mjs) is not the model's: no check or build reads it, and it is not published.
+      if (rel === '' && entry.name === 'prism.project') continue;
       if (entry.isDirectory()) { if (!skipped.has(entry.name)) visit(join(at, entry.name), rel + entry.name + '/'); }
       else if (entry.isFile() && (!/\.(md|json|log)$/.test(entry.name) || entry.name === 'lake-manifest.json')) files.set(rel + entry.name, readFileSync(join(at, entry.name)));
     }
