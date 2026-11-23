@@ -15,6 +15,7 @@ import { loadArchive } from '../index.mjs';
 import { NO_SERVER_BUILD } from './frontend.mjs';
 import { lexleanCheck, lexleanSnapshot } from './lexlean-core.mjs';
 import { buildHolo } from './model-holo.mjs';
+import { withProofHints } from './proof-hints.mjs';
 
 /** A Lean warning, such as an unused simp argument: reported, never a reason a step failed. */
 export const isWarning = (d) => d.severity === 'warning' || /^Lean rejected `[^`]+` \(warning\):/.test(d.message);
@@ -123,7 +124,8 @@ export async function buildFromFiles({ files, lexlean, evaluator, prove = null, 
     } catch (error) {
       return { ok: false, stage: 'prove', code: error.code ?? 'kernel.unavailable', diagnostics, ...nothing, semanticId, ms: ms(), message: `Lean's kernel could not run (${error.message}). This says nothing about the app.` };
     }
-    theorems = judged.theorems ?? null;
+    // A theorem that is not proved says where the model states it and what to try (proof-hints.mjs).
+    theorems = withProofHints(judged.theorems ?? null, given);
     // A record is written only when it names the kernel that judged: a prover that cannot say which gives none.
     if (judged.ok && judged.record?.kernel && judged.record?.library) record = judged.record;
     if (!judged.ok) return { ok: false, stage: 'prove', code: judged.code ?? null, diagnostics, semanticId, proved: false, theorems, holo: null, ms: ms(), message: judged.message };

@@ -17,7 +17,7 @@ import { join } from 'node:path';
 export const MODEL_LISTING_SCHEMA = 'prism/model-listing/1';
 const SKIPPED = ['target', 'node_modules'];
 
-/** `{ files: Map<path, bytes>, entry }` for the LexLean project in `dir`. Throws when `lexlean.toml` names no entrypoint. */
+/** `{ files: Map<path, bytes>, entry }` for the LexLean project in `dir`. Throws when the project has no module to open. */
 export function modelFiles(dir, { skip = [] } = {}) {
   const skipped = new Set([...SKIPPED, ...skip]);
   const files = new Map();
@@ -29,8 +29,13 @@ export function modelFiles(dir, { skip = [] } = {}) {
     }
   };
   visit(dir, '');
-  const entry = /entrypoints\s*=\s*\[\s*"([^"]+)"/.exec(new TextDecoder().decode(files.get('lexlean.toml') ?? new Uint8Array()))?.[1];
-  if (!entry || !files.has(entry)) throw new Error(`${join(dir, 'lexlean.toml')} names no entrypoint that is in the project`);
+  const named = /entrypoints\s*=\s*\[\s*"([^"]+)"/.exec(new TextDecoder().decode(files.get('lexlean.toml') ?? new Uint8Array()))?.[1];
+  // The file to open. An app started from the template may give its modules its own names and leave the template's
+  // entrypoint behind: LexLean reads every module under src/ and checks such a project, so the file to open is then
+  // the module that states the application, or the first module there is.
+  const modules = [...files.keys()].filter((path) => path.endsWith('.lex.tex')).sort();
+  const entry = named && files.has(named) ? named : (modules.find((path) => /name:\s*application/.test(new TextDecoder().decode(files.get(path)))) ?? modules[0]);
+  if (!entry) throw new Error(`${join(dir, 'lexlean.toml')} names no entrypoint that is in the project, and the project has no module`);
   return { files: new Map([...files].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))), entry };
 }
 

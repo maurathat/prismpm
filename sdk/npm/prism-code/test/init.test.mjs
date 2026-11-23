@@ -83,7 +83,8 @@ test('planInit is the template plus prism.toml and an LF-only .gitattributes; an
   // The scaffold names the gates that follow, each run in this process.
   const steps = nextSteps('calc').split('\n');
   assert.match(steps[0], /every step in this process/);
-  assert.ok(steps.some((s) => /prism-code check --json/.test(s)) && steps.some((s) => /prism-code verify --json/.test(s)));
+  // Each names the version that wrote the project, so a stale copy npx kept is never the one that runs.
+  assert.ok(steps.some((s) => /prism-code@\d+\.\d+\.\d+ check --json/.test(s)) && steps.some((s) => /prism-code@\d+\.\d+\.\d+ verify --json/.test(s)) && steps.some((s) => /prism-code@\d+\.\d+\.\d+ run /.test(s)));
   assert.ok(steps.includes('  cd calc'));
   assert.throws(() => planInit({ name: 'calc', template: 'nope' }), (e) => e.code === 'init.template' && /text-request/.test(e.message));
 });
