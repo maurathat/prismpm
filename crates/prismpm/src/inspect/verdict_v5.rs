@@ -12,14 +12,16 @@
 
 use super::{
     attestation, document_object, holoview_version, model_schema_finding, model_sha256_finding,
-    wire, world_finding, Analysis, Finding, ModelProvenanceV1, NoVerdict, Row, ViewBinding,
-    BINARY_MODEL_DOCUMENT_SCHEMA, CHECK_ORDER, FORMAT_REVISION, HOLOVIEW_VERSION,
+    model_sha256_of, wire, world_finding, Analysis, Finding, ModelProvenanceV1, NoVerdict, Row,
+    ViewBinding, BINARY_MODEL_DOCUMENT_SCHEMA, CHECK_ORDER, FORMAT_REVISION, HOLOVIEW_VERSION,
     KIND_APP_MANIFEST, KIND_CONTENT_BLOB, KIND_EXTENSION, KIND_METADATA, MODEL_DOCUMENT_SCHEMAS,
     REVISION_2026_11_18, SOURCE_MANIFEST_VERSION,
 };
 use crate::holo::archive::{
-    declared_contract, encode_json, layers_v5, optional_roles, schemas_of, snapshot_problem,
-    sources_problem, v5_entry, ManifestV5, ObjectV5, CONTENT_OBJECTS, ROLES_V5, ROLE_ATTESTATIONS,
+    declared_contract, encode_json, evaluator_provenance as evaluator_provenance_of,
+    is_evaluator_provenance, layers_v5, optional_roles, schemas_of, snapshot_problem,
+    sources_problem, v5_entry, EvaluatorObjects, ManifestV5, ObjectV5, CONTENT_OBJECTS,
+    EVALUATOR_PROVENANCE_SCHEMA, ROLES_V5, ROLE_ATTESTATIONS,
 };
 use crate::holo::v5;
 use serde_json::Value;
@@ -217,8 +219,40 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         },
     );
 
-    // provenance.schema: the model provenance object.
+    // provenance.schema: the model provenance object, or in a v6 built with
+    // nothing compiled, the evaluator provenance (ADR-018).
+    let evaluator =
+        format == v5::Format::V6 && at(2).is_some_and(|row| is_evaluator_provenance(&row.bytes));
+    let evaluator_provenance = evaluator.then(|| {
+        let manifest_contract = document_object("the holo manifest", at(0))
+            .ok()
+            .and_then(|value| serde_json::from_value::<ManifestV5>(value).ok())
+            .map(|manifest| declared_contract(&manifest.layers))
+            .unwrap_or_default();
+        let snapshot_kappa = optional
+            .iter()
+            .position(|role| *role == "snapshot")
+            .map(|i| kappa(ROLES_V5.len() + i));
+        let bytes_at = |index: usize| at(index).map(|row| &row.bytes[..]).unwrap_or_default();
+        evaluator_provenance_of(
+            bytes_at(2),
+            &EvaluatorObjects {
+                contract: &manifest_contract,
+                application_kappa: &kappa(0),
+                guest_kappa: &kappa(4),
+                view_kappa: &kappa(5),
+                model_kappa: &kappa(6),
+                snapshot_kappa: snapshot_kappa.as_deref(),
+                guest: bytes_at(4),
+                view: bytes_at(5),
+                model: bytes_at(6),
+            },
+        )
+    });
     let provenance = document_object("the model provenance", at(2)).and_then(|value| {
+        if evaluator {
+            return Err("an evaluator provenance".to_owned());
+        }
         if value.get("schema").and_then(Value::as_str) != Some(provenance_schema) {
             return Err(format!(
                 "the model provenance names schema {}, which no known format revision packs into a holo",
@@ -233,29 +267,65 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
             format!("the model provenance does not have the {provenance_schema} shape: {error}")
         })
     });
-    add(
-        "provenance.schema",
-        provenance.is_ok(),
-        match &provenance {
-            Ok(_) => format!("the model provenance matches {provenance_schema}"),
-            Err(problem) => problem.clone(),
-        },
-    );
+    match &evaluator_provenance {
+        Some(Ok(_)) => add(
+            "provenance.schema",
+            true,
+            format!("the evaluator provenance matches {EVALUATOR_PROVENANCE_SCHEMA} and names the archive's objects"),
+        ),
+        Some(Err(problem)) => add("provenance.schema", false, problem.clone()),
+        None => add(
+            "provenance.schema",
+            provenance.is_ok(),
+            match &provenance {
+                Ok(_) => format!("the model provenance matches {provenance_schema}"),
+                Err(problem) => problem.clone(),
+            },
+        ),
+    }
+    let evaluator_ok = matches!(evaluator_provenance, Some(Ok(_)));
 
     // model.schema: the model object.
     let model_row = at(6);
-    if let (Ok(_), Some(row)) = (&provenance, model_row) {
+    if let (true, Some(row)) = (provenance.is_ok() || evaluator_ok, model_row) {
         let (ok, detail) = model_schema_finding(row);
         add("model.schema", ok, detail);
     }
 
     // references: the provenance names the objects in their roles.
     let mut roles = BTreeMap::new();
-    let contract = provenance
-        .as_ref()
-        .ok()
-        .map(|provenance| provenance.core_wasm_contract.clone());
-    if let Ok(provenance) = &provenance {
+    let contract = match &evaluator_provenance {
+        Some(Ok(evaluator)) => Some(evaluator.core_wasm_contract.clone()),
+        _ => provenance
+            .as_ref()
+            .ok()
+            .map(|provenance| provenance.core_wasm_contract.clone()),
+    };
+    // The optional snapshot and sources bind to the source manifest, not to the
+    // provenance, so they are checked whether or not the provenance holds.
+    let mut optional_problems = Vec::new();
+    if layout_known {
+        for (i, role) in optional.iter().enumerate() {
+            let object = &rows[ROLES_V5.len() + i].bytes;
+            let problem = match *role {
+                "snapshot" => snapshot_problem(&rows[1].bytes, object),
+                _ => sources_problem(object),
+            };
+            optional_problems.extend(problem);
+        }
+    }
+    if evaluator_ok || (evaluator && !optional_problems.is_empty()) {
+        // The evaluator provenance check already held it to the objects in their roles.
+        add(
+            "references",
+            optional_problems.is_empty(),
+            if optional_problems.is_empty() {
+                "the manifest and the provenance name the same objects".to_owned()
+            } else {
+                optional_problems.join("; ")
+            },
+        );
+    } else if let Ok(provenance) = &provenance {
         let mut problems = Vec::new();
         let named = [
             ("guest", &provenance.guest_content_kappa, kappa(4)),
@@ -280,14 +350,7 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
                 ));
             }
         }
-        for (i, role) in optional.iter().enumerate() {
-            let object = &rows[ROLES_V5.len() + i].bytes;
-            let problem = match *role {
-                "snapshot" => snapshot_problem(&rows[1].bytes, object),
-                _ => sources_problem(object),
-            };
-            problems.extend(problem);
-        }
+        problems.extend(optional_problems);
         add(
             "references",
             problems.is_empty(),
@@ -307,6 +370,10 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
     // model.sha256 and world.contract, as in v4.
     if let (Ok(provenance), Some(row)) = (&provenance, model_row) {
         let (ok, detail) = model_sha256_finding(provenance, row, &source_manifest);
+        add("model.sha256", ok, detail);
+    }
+    if let (Some(Ok(evaluator)), Some(row)) = (&evaluator_provenance, model_row) {
+        let (ok, detail) = model_sha256_of(&evaluator.model_id, row, &source_manifest);
         add("model.sha256", ok, detail);
     }
     if let Some((ok, detail)) = world_finding(contract.as_deref(), at(4)) {

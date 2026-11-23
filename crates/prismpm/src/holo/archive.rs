@@ -805,6 +805,198 @@ pub(crate) const PROVENANCE_SCHEMA_V5: &str = "prismpm/model-provenance/2";
 pub const MANIFEST_SCHEMA_V6: &str = "prism/holo/6";
 /// Schema of the v6 model provenance: v5's, with every κ a `blake3:` label.
 pub(crate) const PROVENANCE_SCHEMA_V6: &str = "prismpm/model-provenance/3";
+/// The provenance of a holo v6 that prism-code built with nothing compiled:
+/// its guest is the evaluator guest with the model's program linked in.
+pub(crate) const EVALUATOR_PROVENANCE_SCHEMA: &str = "prismpm/evaluator-provenance/1";
+/// The one builder an evaluator provenance names.
+const EVALUATOR_BUILDER: &str = "prism-code/evaluator-guest/1";
+
+/// What an evaluator build tested, not proved.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct EvaluatorVectors {
+    pub(crate) compared: u64,
+    pub(crate) replayed: u64,
+}
+
+/// What built an evaluator holo, and what it built.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct EvaluatorBuilder {
+    pub(crate) evaluator_guest: String,
+    pub(crate) guest: String,
+    pub(crate) model: String,
+    pub(crate) name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) snapshot: Option<String>,
+    pub(crate) vectors: EvaluatorVectors,
+    pub(crate) view: String,
+}
+
+/// The view an evaluator holo carries: written from the model's view, with no
+/// browser projection and no view model to name.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct EvaluatorViewBinding {
+    pub(crate) tag: String,
+    pub(crate) view_content_kappa: String,
+}
+
+/// The exact, closed `prismpm/evaluator-provenance/1` wire value.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct EvaluatorProvenanceV1 {
+    pub(crate) schema: String,
+    pub(crate) application_kappa: String,
+    pub(crate) builder: EvaluatorBuilder,
+    pub(crate) cargo_name: String,
+    pub(crate) cargo_version: String,
+    pub(crate) compiler_semantics_id: String,
+    pub(crate) core_wasm_contract: String,
+    pub(crate) guest_content_kappa: String,
+    pub(crate) model_content_kappa: String,
+    pub(crate) model_id: String,
+    pub(crate) semantic_id: String,
+    pub(crate) source_id: String,
+    pub(crate) view_binding: EvaluatorViewBinding,
+}
+
+/// The objects an evaluator provenance must name, as the archive holds them.
+pub(crate) struct EvaluatorObjects<'a> {
+    pub(crate) contract: &'a str,
+    pub(crate) application_kappa: &'a str,
+    pub(crate) guest_kappa: &'a str,
+    pub(crate) view_kappa: &'a str,
+    pub(crate) model_kappa: &'a str,
+    pub(crate) snapshot_kappa: Option<&'a str>,
+    pub(crate) guest: &'a [u8],
+    pub(crate) view: &'a [u8],
+    pub(crate) model: &'a [u8],
+}
+
+fn label_is_valid(value: &str) -> bool {
+    value.strip_prefix("blake3:").is_some_and(digest_is_valid)
+}
+
+/// Whether a provenance object names the evaluator schema; read from its JSON, so
+/// a reader picks the shape before it decodes one.
+pub(crate) fn is_evaluator_provenance(bytes: &[u8]) -> bool {
+    serde_json::from_slice::<serde_json::Value>(bytes)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("schema")
+                .and_then(|s| s.as_str())
+                .map(str::to_owned)
+        })
+        .as_deref()
+        == Some(EVALUATOR_PROVENANCE_SCHEMA)
+}
+
+/// Decode an evaluator provenance and hold it to the archive: canonical, the
+/// objects in their roles, the builder naming the same guest, model, view and
+/// carried snapshot, the model's id its sha256, and every identity well formed.
+pub(crate) fn evaluator_provenance(
+    bytes: &[u8],
+    objects: &EvaluatorObjects<'_>,
+) -> Result<EvaluatorProvenanceV1, String> {
+    let provenance: EvaluatorProvenanceV1 = serde_json::from_slice(bytes)
+        .map_err(|error| format!("the evaluator provenance does not have its shape: {error}"))?;
+    let mut problems = Vec::new();
+    if provenance.schema != EVALUATOR_PROVENANCE_SCHEMA {
+        problems.push(format!("the schema is {}", provenance.schema));
+    }
+    if encode_json(&provenance).ok().as_deref() != Some(bytes) {
+        problems.push("it is not canonical JSON".to_owned());
+    }
+    let builder = &provenance.builder;
+    for (what, recorded, actual) in [
+        (
+            "core_wasm_contract",
+            provenance.core_wasm_contract.as_str(),
+            objects.contract,
+        ),
+        (
+            "application_kappa",
+            &provenance.application_kappa,
+            objects.application_kappa,
+        ),
+        (
+            "guest_content_kappa",
+            &provenance.guest_content_kappa,
+            objects.guest_kappa,
+        ),
+        (
+            "model_content_kappa",
+            &provenance.model_content_kappa,
+            objects.model_kappa,
+        ),
+        (
+            "view_binding.view_content_kappa",
+            &provenance.view_binding.view_content_kappa,
+            objects.view_kappa,
+        ),
+        ("builder.guest", &builder.guest, objects.guest_kappa),
+        ("builder.model", &builder.model, objects.model_kappa),
+        ("builder.view", &builder.view, objects.view_kappa),
+    ] {
+        if recorded != actual {
+            problems.push(format!("{what} {recorded} is not the archive's {actual}"));
+        }
+    }
+    if let Some(carried) = objects.snapshot_kappa {
+        if builder.snapshot.as_deref() != Some(carried) {
+            problems.push(format!(
+                "builder.snapshot does not name the carried snapshot {carried}"
+            ));
+        }
+    }
+    if provenance.view_binding.tag != "present" {
+        problems.push("view_binding.tag is not present".to_owned());
+    }
+    if builder.name != EVALUATOR_BUILDER {
+        problems.push(format!("builder.name is not {EVALUATOR_BUILDER}"));
+    }
+    if builder.vectors.replayed == 0 {
+        problems.push("builder.vectors.replayed is 0".to_owned());
+    }
+    if !label_is_valid(&builder.evaluator_guest)
+        || builder
+            .snapshot
+            .as_deref()
+            .is_some_and(|label| !label_is_valid(label))
+    {
+        problems.push("a builder label is not blake3: and 64 lowercase hex".to_owned());
+    }
+    if [
+        &provenance.model_id,
+        &provenance.semantic_id,
+        &provenance.source_id,
+        &provenance.compiler_semantics_id,
+    ]
+    .into_iter()
+    .any(|digest| !digest_is_valid(digest))
+    {
+        problems.push("an identity is not 64 lowercase hex".to_owned());
+    }
+    if content_id(objects.model) != provenance.model_id {
+        problems.push("model_id is not the model document's sha256".to_owned());
+    }
+    if !objects.guest.starts_with(b"\0asm") || !objects.view.starts_with(b"HOLOVIEW\0\x01") {
+        problems.push("the guest or the view is not of its kind".to_owned());
+    }
+    if provenance.cargo_name.is_empty() || provenance.cargo_version.is_empty() {
+        problems.push("cargo_name or cargo_version is empty".to_owned());
+    }
+    if problems.is_empty() {
+        Ok(provenance)
+    } else {
+        Err(format!(
+            "the evaluator provenance disagrees with the archive: {}",
+            problems.join("; ")
+        ))
+    }
+}
 
 /// The manifest and provenance schemas of a holo of `format`.
 pub(crate) fn schemas_of(format: v5::Format) -> (&'static str, &'static str) {
@@ -1310,61 +1502,85 @@ fn parse_application_v5(bytes: &[u8]) -> Result<ParsedApplicationArchive, PrismE
         ));
     }
     let application_kappa = content_kappa(manifest_bytes);
-    let provenance: ModelProvenanceV1 = serde_json::from_slice(objects[2])
-        .map_err(|error| PrismError::new("PP3015", format!("model provenance: {error}")))?;
-    let (view_model_id, browser_sha256) = match &provenance.view_binding {
-        ViewBinding::Present {
+    // A v6 built with nothing compiled names the evaluator that built it (ADR-018).
+    if format == v5::Format::V6 && is_evaluator_provenance(objects[2]) {
+        let snapshot_kappa = optional
+            .iter()
+            .position(|role| *role == "snapshot")
+            .map(|i| content_kappa(objects[ROLES_V5.len() + i]));
+        let contract = declared_contract(&manifest.layers);
+        evaluator_provenance(
+            objects[2],
+            &EvaluatorObjects {
+                contract: &contract,
+                application_kappa: &application_kappa,
+                guest_kappa: &guest_kappa,
+                view_kappa: &view_kappa,
+                model_kappa: &model_kappa,
+                snapshot_kappa: snapshot_kappa.as_deref(),
+                guest,
+                view,
+                model,
+            },
+        )
+        .map_err(|problem| PrismError::new("PP3015", problem))?;
+    } else {
+        let provenance: ModelProvenanceV1 = serde_json::from_slice(objects[2])
+            .map_err(|error| PrismError::new("PP3015", format!("model provenance: {error}")))?;
+        let (view_model_id, browser_sha256) = match &provenance.view_binding {
+            ViewBinding::Present {
+                view_model_id,
+                view_content_kappa,
+                browser_projection: BrowserProjection::Present { sha256 },
+            } if *view_content_kappa == view_kappa => (view_model_id, sha256),
+            _ => {
+                return Err(PrismError::new(
+                    "PP3015",
+                    "portable View applications require a bound browser projection of the view object",
+                ));
+            }
+        };
+        let digest_fields = [
+            &provenance.model_id,
+            &provenance.source_id,
+            &provenance.semantic_id,
+            &provenance.compiler_semantics_id,
+            &provenance.snapshot_id,
+            &provenance.stdlib_semantics_id,
+            &provenance.prism_stdlib_crate_sha256,
+            &provenance.lexlean_package_sha256,
+            &provenance.target_profile_id,
+            &provenance.lean_manifest_sha256,
+            &provenance.lcnf_manifest_sha256,
+            &provenance.generated_core_sha256,
+            &provenance.cargo_crate_sha256,
             view_model_id,
-            view_content_kappa,
-            browser_projection: BrowserProjection::Present { sha256 },
-        } if *view_content_kappa == view_kappa => (view_model_id, sha256),
-        _ => {
+            browser_sha256,
+        ];
+        if provenance.schema != provenance_schema
+            || provenance.core_wasm_contract != declared_contract(&manifest.layers)
+            || provenance.application_kappa != application_kappa
+            || provenance.guest_content_kappa != guest_kappa
+            || provenance.model_content_kappa != model_kappa
+            || !guest.starts_with(b"\0asm")
+            || !view.starts_with(b"HOLOVIEW\0\x01")
+            || content_id(model) != provenance.model_id
+            || digest_fields
+                .into_iter()
+                .any(|digest| !digest_is_valid(digest))
+            || !revision_is_valid(&provenance.lexlean_commit)
+            || !revision_is_valid(&provenance.lean4_prod_commit)
+            || !revision_is_valid(&provenance.hologram_live_commit)
+            || !revision_is_valid(&provenance.uor_hologram_commit)
+            || provenance.cargo_name.is_empty()
+            || provenance.cargo_version.is_empty()
+            || encode_json(&provenance)? != objects[2]
+        {
             return Err(PrismError::new(
                 "PP3015",
-                "portable View applications require a bound browser projection of the view object",
+                "Prism provenance is missing or disagrees with archive content",
             ));
         }
-    };
-    let digest_fields = [
-        &provenance.model_id,
-        &provenance.source_id,
-        &provenance.semantic_id,
-        &provenance.compiler_semantics_id,
-        &provenance.snapshot_id,
-        &provenance.stdlib_semantics_id,
-        &provenance.prism_stdlib_crate_sha256,
-        &provenance.lexlean_package_sha256,
-        &provenance.target_profile_id,
-        &provenance.lean_manifest_sha256,
-        &provenance.lcnf_manifest_sha256,
-        &provenance.generated_core_sha256,
-        &provenance.cargo_crate_sha256,
-        view_model_id,
-        browser_sha256,
-    ];
-    if provenance.schema != provenance_schema
-        || provenance.core_wasm_contract != declared_contract(&manifest.layers)
-        || provenance.application_kappa != application_kappa
-        || provenance.guest_content_kappa != guest_kappa
-        || provenance.model_content_kappa != model_kappa
-        || !guest.starts_with(b"\0asm")
-        || !view.starts_with(b"HOLOVIEW\0\x01")
-        || content_id(model) != provenance.model_id
-        || digest_fields
-            .into_iter()
-            .any(|digest| !digest_is_valid(digest))
-        || !revision_is_valid(&provenance.lexlean_commit)
-        || !revision_is_valid(&provenance.lean4_prod_commit)
-        || !revision_is_valid(&provenance.hologram_live_commit)
-        || !revision_is_valid(&provenance.uor_hologram_commit)
-        || provenance.cargo_name.is_empty()
-        || provenance.cargo_version.is_empty()
-        || encode_json(&provenance)? != objects[2]
-    {
-        return Err(PrismError::new(
-            "PP3015",
-            "Prism provenance is missing or disagrees with archive content",
-        ));
     }
     let mut blobs = BTreeMap::new();
     for (kappa, bytes) in [
