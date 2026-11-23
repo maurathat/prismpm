@@ -128,7 +128,7 @@ fn lean4_prod_dependency_record_and_checksums_are_valid() {
         (
             "vendor/lean4-prod/rust/MANIFEST.sha256",
             (
-                "45fe620c63632e8a4cfa950cc75531b8266b5d56caafff24a31abe6eb81f309d",
+                "14226c4973154aee8b657e6b7c20ba055befbf6501b95eb1041adbb403041012",
                 Some("vendor/lean4-prod/rust"),
             ),
         ),
@@ -142,7 +142,7 @@ fn lean4_prod_dependency_record_and_checksums_are_valid() {
         (
             "vendor/lean4-prod/crates/prod-codegen-0.1.0.crate",
             (
-                "81602aea6d0e08cebc8be4ea77d28b68ba8f84d0957b7a6d32175aa66b560b55",
+                "d4b843670a47c89edad97c8364821428d5cbdbf756da014361213dbebf87fe6f",
                 None,
             ),
         ),

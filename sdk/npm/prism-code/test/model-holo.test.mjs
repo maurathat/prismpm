@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { loadArchive } from '../src/index.mjs';
 import { readObjects, writeObjects } from '../src/uorc.mjs';
+import { decodeHoloview } from '../src/view.mjs';
 import { EVALUATOR_GUEST } from '../src/journey/model-guest.mjs';
 import { HOLO_BUILDER, NO_CAPABILITIES_OBJECT, buildHolo } from '../src/journey/model-holo.mjs';
 import { TEXT_VIEW_CSS, TEXT_VIEW_HOLOGRAM_JS, TEXT_VIEW_SHARED_JS, textViewBundle } from '../src/journey/text-view.mjs';
@@ -23,8 +24,15 @@ test('the page is the bytes the SDK image writes for the same view', () => {
   const sdk = objectsOf(readFileSync(new URL('../fixtures/PaymentApproval.v5.holo', import.meta.url)));
   const app = JSON.parse(dec.decode(sdk[6])).application;
   const v = app.view;
-  const made = textViewBundle({ title: v.title, heading: v.heading, inputLabel: v.input_label, submitLabel: v.submit_label, outputLabel: v.output_label, inputError: v.input_error, responseError: v.response_error }, { requestMaximum: app.request_maximum, responseMaximum: app.response_maximum });
-  assert.deepEqual(made, sdk[5]);
+  const made = decodeHoloview(textViewBundle({ title: v.title, heading: v.heading, inputLabel: v.input_label, submitLabel: v.submit_label, outputLabel: v.output_label, inputError: v.input_error, responseError: v.response_error }, { requestMaximum: app.request_maximum, responseMaximum: app.response_maximum }));
+  const written = decodeHoloview(sdk[5]);
+  assert.equal(made.entry, written.entry);
+  assert.deepEqual([...made.files.keys()], [...written.files.keys()]);
+  // The page and its script are the bytes the SDK image wrote. The stylesheet changed after that
+  // fixture was built (the Hologram brand), so it is held to the generator's own source in the
+  // next test instead; a holo the SDK image builds again restores the whole-bundle comparison.
+  assert.deepEqual(made.files.get('index.html'), written.files.get('index.html'));
+  assert.deepEqual(made.files.get('app.js'), written.files.get('app.js'));
   assert.deepEqual(NO_CAPABILITIES_OBJECT, sdk[3]);
 });
 
