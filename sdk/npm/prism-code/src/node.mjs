@@ -304,3 +304,18 @@ export {
   CREATED,
 } from './oci-manifest.mjs';
 export { exportBrowser as experimental_exportBrowser, checkExport as experimental_checkExport } from './export.mjs';
+
+// The proof record of a holo, checked again on this machine (journey/reprove-here.mjs). The functions themselves,
+// which a page binds to its own kernel and LexLean, are `prism-code/reprove`.
+/**
+ * Experimental. The `reprove` function `check` and `experimental_verify` take, bound to Lean's kernel as this
+ * package ships it: `experimental_verify(holo, { reprove: experimental_reproveHere() })`. Nothing is opened until
+ * a holo that carries a proof record is given.
+ */
+export function experimental_reproveHere(options = {}) {
+  return async (holo) => (await import('./journey/reprove-here.mjs')).reproveHere(options)(holo);
+}
+/** Experimental. The `relex` function they take, bound to LexLean's front end as this package ships it. */
+export function experimental_relexHere(options = {}) {
+  return async (holo) => (await import('./journey/reprove-here.mjs')).relexHere(options)(holo);
+}

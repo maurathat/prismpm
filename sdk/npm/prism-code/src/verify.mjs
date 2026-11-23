@@ -14,7 +14,7 @@
 import { ASSURANCE, VerifyError, verify as verifyBytes } from './vendor/verify.mjs';
 import { VerificationError, classForCheck, errorFromVerdict } from './errors.mjs';
 import { parseArchive } from './archive.mjs';
-import { attestationSection, ATTESTATION_EXTENSION } from './attestations.mjs';
+import { attestationSection, readAttestations, stripAttestations, ATTESTATION_EXTENSION } from './attestations.mjs';
 
 /** The environment variable that sets the client's minimum assurance level, P0 to P3. */
 export const MINIMUM_LEVEL_ENV = 'PRISM_MINIMUM_LEVEL';
@@ -39,6 +39,8 @@ function defined(options) {
  * `check` and a container's gate both ask this first, so they cannot disagree.
  */
 export function attestationBlocker(bytes) {
+  // Statements that are all unsigned are records, and the holo is judged without them (`recordsOnly`).
+  if (recordsOnly(bytes)) return null;
   let section;
   try {
     section = attestationSection(parseArchive(bytes));
@@ -50,6 +52,27 @@ export function attestationBlocker(bytes) {
     `the holo carries an attestation section (${ATTESTATION_EXTENSION}), which joins a format revision only when the wire model change of #267 merges; no reader can judge its statements until then`,
     { check: 'format.revision' },
   );
+}
+
+/**
+ * A sealed holo v5 or v6 whose every statement is unsigned, as `{ bytes, holo }`: the holo without its statements,
+ * and the κ of the file as given; or null for any other holo. An unsigned statement is a record, such as the
+ * kernel-proof statement a build writes (ADR-018): no verifier accepts it as evidence, and it has no signature to
+ * check. So such a holo is judged as the holo without them, which is what its seal and its statements' subjects
+ * name object by object, and the level it reaches is the one its own bytes support. A holo with a signed statement
+ * is not this: `check` judges it, with the signer the caller names. A holo whose seal does not match is not this
+ * either: taking its statements off would write a new seal over the damage.
+ */
+function recordsOnly(bytes) {
+  try {
+    const parsed = parseArchive(bytes);
+    if (!(parsed.format >= 5) || !parsed.verification.seal || !attestationSection(parsed)) return null;
+    const statements = readAttestations(parsed);
+    if (statements.length === 0 || statements.some((statement) => statement.signed)) return null;
+    return { bytes: stripAttestations(parsed), holo: parsed.kappa };
+  } catch {
+    return null;
+  }
 }
 
 function environment(env) {
@@ -119,6 +142,7 @@ async function judged(source, options, clientOptions, statements = undefined) {
   const { reprove, relex, ...policy } = resolved;
   let verdict;
   try {
+    // A holo whose statements are all unsigned is judged without them, by the verifier itself (`recordsOnly`).
     verdict = await verifyBytes(await bytesOf(source), statements === undefined ? policy : { ...policy, statements }, { reprove, relex });
   } catch (error) {
     if (error instanceof VerifyError) throw new (classForCheck(error.code))(error.message, { check: error.code, cause: error });

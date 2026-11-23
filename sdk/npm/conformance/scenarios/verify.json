@@ -213,6 +213,50 @@
       }
     },
     {
+      "id": "verify.evaluator-v6.default-policy",
+      "title": "A holo v6 built with nothing compiled meets its documents' schemas, the evaluator provenance and its source manifest, and its unsigned kernel-proof statement is a record that raises no level (ADR-018).",
+      "op": "verify",
+      "archive": "evaluator-v6",
+      "expect": {
+        "ok": true,
+        "result": {
+          "schema": "prism/verdict/1",
+          "holo": "blake3:3ca5957c529d9948e55f2e01d89efb712a6c2b815c9ab6e32881ebef395e27c7",
+          "level": "P0",
+          "policy": {
+            "name": "default",
+            "minimum": "P2"
+          },
+          "passed": false,
+          "reasons": {
+            "$contains": [
+              {
+                "check": "provenance.statement",
+                "withholds": "P1"
+              },
+              {
+                "check": "proof.statement",
+                "withholds": "P2"
+              },
+              {
+                "check": "policy.level",
+                "code": "PP5601",
+                "withholds": null
+              }
+            ],
+            "$excludes": [
+              {
+                "check": "holo.integrity"
+              },
+              {
+                "check": "holo.documents"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
       "id": "verify.reference-v6-carried.sources",
       "title": "A holo v6 that carries a sources object that reads has a sources claim, present, not compared with its snapshot when no LexLean was run (ADR-018).",
       "op": "verify",

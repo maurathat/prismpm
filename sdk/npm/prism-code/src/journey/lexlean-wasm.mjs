@@ -150,6 +150,16 @@ function moduleOf(file) {
   return compiled.get(file);
 }
 
+/**
+ * LexLean's front end as it is on this machine: `{ module, kappa }`, the compiled module and the κ-label it was
+ * admitted by, which is what `relex` takes (proof-record.mjs). Throws `lexlean.wasm-unavailable` when it is not here.
+ */
+export async function lexleanModule({ env = process.env, pin = null } = {}) {
+  const file = lexleanWasmFile({ env, pin });
+  if (!file) throw new PrismCodeError('lexlean.wasm-unavailable', 'LexLean as WebAssembly is not on this machine');
+  return { module: await moduleOf(file), kappa: pinOf(pin).kappa };
+}
+
 /** The admitted module and the project's files: what lexlean-core.mjs runs on. */
 async function here(projectDir, { env = process.env, pin = null } = {}) {
   const file = lexleanWasmFile({ env, pin });

@@ -20,9 +20,9 @@ Which Prism runtime passes which part of the runtime contract, from the results 
 | Dual digests (`digests`) | 18 | + | + | N/A |
 | Dispatch through the guest (`dispatch`) | 7 | + | - | N/A |
 | Typed errors (`errors`) | 8 | + | - | N/A |
-| Load a holo (`load`) | 24 | + | - | N/A |
+| Load a holo (`load`) | 25 | + | - | N/A |
 | Histories and replay (`replay`) | 5 | + | - | N/A |
-| Verify a holo (`verify`) | 35 | + | - | N/A |
+| Verify a holo (`verify`) | 36 | + | - | N/A |
 | The world contract (`world`) | 20 | + | - | N/A |
 
 ## Checks
@@ -134,6 +134,7 @@ Which Prism runtime passes which part of the runtime contract, from the results 
 | `load.reference-v5.opens` | The reference holo v5, a UORC archive, opens with the same name, limits and vectors as the v4 reference. | + | - | N/A |
 | `load.reference-v6.opens` | The reference holo v6, sealed and named by BLAKE3, opens with the same name, limits and vectors as the v5 reference. | + | - | N/A |
 | `load.reference-v6-carried.opens` | The reference holo v6 carrying its semantic snapshot and sources opens with the same name, limits and vectors (ADR-018). | + | - | N/A |
+| `load.evaluator-v6.opens` | A holo v6 built with nothing compiled opens: its provenance is prismpm/evaluator-provenance/1, and it carries its snapshot, its sources and an unsigned kernel-proof statement (ADR-018). | + | - | N/A |
 | `load.refuse.empty` | An empty file is refused. | + | - | N/A |
 | `load.refuse.too-short` | A file shorter than a header and a footer is refused. | + | - | N/A |
 | `load.refuse.bad-magic` | A file that does not start with HOLO is refused. | + | - | N/A |
@@ -174,6 +175,7 @@ Which Prism runtime passes which part of the runtime contract, from the results 
 | `verify.reference-v6.default-policy` | A holo v6 gets the same verdict as the v5 reference, named by the blake3 κ of the file (ADR-018). | + | + | N/A |
 | `verify.reference-v6.seal-broken` | A holo v6 with one byte changed fails its BLAKE3 seal: a failed integrity check that withholds P1 (ADR-018). | + | + | N/A |
 | `verify.reference-v6-carried.default-policy` | A holo v6 that carries its semantic snapshot and sources after the model gets the verdict of the same holo without them, named by its blake3 κ (ADR-018). | + | + | N/A |
+| `verify.evaluator-v6.default-policy` | A holo v6 built with nothing compiled meets its documents' schemas, the evaluator provenance and its source manifest, and its unsigned kernel-proof statement is a record that raises no level (ADR-018). | + | + | N/A |
 | `verify.reference-v6-carried.sources` | A holo v6 that carries a sources object that reads has a sources claim, present, not compared with its snapshot when no LexLean was run (ADR-018). | + | - | N/A |
 | `verify.reference-v6-wrong-snapshot.integrity` | A holo v6 whose snapshot object is not the bytes its source manifest names fails an integrity check that withholds P1 (ADR-018). | + | + | N/A |
 | `verify.reference-v6-outside-sources.integrity` | A holo v6 whose sources name a file that does not decide the model fails an integrity check that withholds P1 (ADR-018). | + | + | N/A |
@@ -286,6 +288,7 @@ Which Prism runtime passes which part of the runtime contract, from the results 
 | Rust | `load.reference-v5.opens` | The Rust runtime has no load operation yet (#298). |
 | Rust | `load.reference-v6.opens` | The Rust runtime has no load operation yet (#298). |
 | Rust | `load.reference-v6-carried.opens` | The Rust runtime has no load operation yet (#298). |
+| Rust | `load.evaluator-v6.opens` | The Rust runtime has no load operation yet (#298). |
 | Rust | `load.refuse.empty` | The Rust runtime has no load operation yet (#298). |
 | Rust | `load.refuse.too-short` | The Rust runtime has no load operation yet (#298). |
 | Rust | `load.refuse.bad-magic` | The Rust runtime has no load operation yet (#298). |

@@ -39,10 +39,12 @@ const enc = new TextEncoder();
  * With `resettable`, the kernel's memory as it is once the library is resident is held, and `reset()` lays it back:
  * the kernel is then as it was before anything was judged, so what one batch declared cannot stand in for the next.
  * It costs one copy of the kernel's memory. `memory()` is a copy of the kernel's memory as it is now, for a caller
- * that keeps images in a format of its own (kernel-image.mjs).
- * Resolves `{ library, baseText, check, memory, reset, resumed, setAside? }`.
+ * that keeps images in a format of its own (kernel-image.mjs). `labels`, `{ kernel, library }`, are the κ-labels the
+ * caller admitted the kernel's module and its library by; they are handed back, so a record of what this kernel
+ * judged can name it (`kernelRecord`).
+ * Resolves `{ library, baseText, check, memory, reset, resettable, resumed, labels?, setAside? }`.
  */
-export async function openKernel({ factory, wasm, baseText, image = null, keepImage = null, resettable = false }) {
+export async function openKernel({ factory, wasm, baseText, image = null, keepImage = null, resettable = false, labels = null }) {
   const said = [];
   // A kernel, and its memory, taken from the instance: a view of memory made after it grows always reaches its end,
   // where a view kept from before the growth does not.
@@ -108,7 +110,7 @@ export async function openKernel({ factory, wasm, baseText, image = null, keepIm
     now.set(loaded);
     if (now.length > loaded.length) now.fill(0, loaded.length);
   };
-  return { library: loadLibrary(baseText), baseText, check: (text) => run('check_suffix', text), memory: () => heap().slice(), reset, resumed, ...(setAside ? { setAside } : {}) };
+  return { library: loadLibrary(baseText), baseText, check: (text) => run('check_suffix', text), memory: () => heap().slice(), reset, resettable, resumed, ...(labels ? { labels } : {}), ...(setAside ? { setAside } : {}) };
 }
 
 /** A theorem's verdict from the axioms the kernel observed for its accepted proof: the same rule for both paths. */
@@ -209,6 +211,37 @@ export async function proveDeclared(document, k) {
   return { ok, theorems, declarations: lines(document.suffix).filter(Boolean).length, judged, remembered: 0, produced: theorems.filter((t) => t.produced).length, setAside: j.setAside.size, resumed: !!k.resumed, ms: elapsed() };
 }
 
+/**
+ * The κ-label of the code that lowers a snapshot to kernel declarations and finds the proofs: the bytes of
+ * vendor/kernel-path's emit.mjs, lower.mjs and plan.mjs, in that order. Written here, since a page cannot read its
+ * own modules' bytes; a test holds it to those files, so a change to them changes it.
+ */
+export const LOWERING_LABEL = 'blake3:8685f6726fc10a26b9df2374edf62a2812c4e02f02415641ed90f783c4291857';
+
+/** A theorem's verdict as the kernel-proof predicate names it (`https://uor.foundation/prism/kernel-proof/v1`). */
+const recordedStatus = (status) => (status.startsWith('proved') ? 'proved' : /is not covered here yet|no proof found/.test(status) ? 'unsupported' : 'refused');
+
+/**
+ * Lean's kernel's verdict on every theorem a semantic snapshot states, judged now on the open kernel `k` and from
+ * nothing kept: the predicate of a kernel-proof statement, and what a re-proof compares it with. Resolves
+ * `{ semantic_id, kernel, library, lowering, theorems: [{ name, status, axioms }], refusal }`, the theorems sorted
+ * by name. `status` is `proved` (the kernel accepted a proof within the theorem's declared axioms), `refused` (it
+ * accepted none, or one that rests on other axioms) or `unsupported` (this prover finds no proof of that kind, so
+ * nothing was judged). `refusal` is why the model could not be put to the kernel at all, or null; the theorems
+ * are then none. `kernel` and `library` are the labels the kernel was opened with, or null.
+ */
+export async function kernelRecord(snapshot, k) {
+  if (k.resettable) k.reset();
+  const result = await proveSnapshot(snapshot, k);
+  const theorems = result.theorems
+    .map((t) => {
+      const status = recordedStatus(t.status);
+      return { name: t.name, status, axioms: status === 'proved' ? [...new Set(t.axioms ?? [])].sort() : [] };
+    })
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return { semantic_id: snapshot.semantic_id ?? null, kernel: k.labels?.kernel ?? null, library: k.labels?.library ?? null, lowering: LOWERING_LABEL, theorems, refusal: result.refusal ?? null };
+}
+
 const short = (name) => name.slice(name.lastIndexOf('.') + 1);
 
 /**
@@ -249,7 +282,8 @@ export function kernelProver(k, { known = new Map(), keep = null } = {}) {
     if (result.refusal) return { ok: false, ...common, message: `The model could not be put to Lean's kernel: ${result.refusal}. This is a limit of this prover, not a verdict on the app.` };
     const missed = theorems.filter((t) => t.status !== 'proved');
     if (missed.length) return { ok: false, ...common, message: `${missed.length} of ${theorems.length} theorems are not proved: ${missed.slice(0, 3).map((t) => `${t.theorem} (${t.detail.replace(/^not proved: /, '')})`).join('; ')}.` };
-    return { ok: true, ...common, message: `Lean's kernel accepted a proof of every one of the model's ${theorems.length} theorems over ${result.declarations} declarations, from ${via}, each within its declared axioms.` };
+    // What the holo records is the verdict a re-proof reaches from the snapshot alone, so it is judged that way here.
+    return { ok: true, ...common, record: await kernelRecord(snapshot, k), message: `Lean's kernel accepted a proof of every one of the model's ${theorems.length} theorems over ${result.declarations} declarations, from ${via}, each within its declared axioms.` };
   };
 }
 
@@ -257,7 +291,7 @@ export function kernelProver(k, { known = new Map(), keep = null } = {}) {
 export async function loaderFromBlob(glue) {
   const url = URL.createObjectURL(new Blob([glue], { type: 'text/javascript' }));
   try {
-    return (await import(url)).default;
+    return (await import(/* webpackIgnore: true */ url)).default;
   } finally {
     URL.revokeObjectURL(url);
   }
@@ -276,5 +310,5 @@ export async function openKernelFrom(pins, { store = null, fetch = null, load = 
     admitBytes(pins.kernel, { store, fetch, refuse, what: "Lean's kernel" }),
     admitBytes(pins.library, { store, fetch, refuse, what: "the kernel's base library" }),
   ]);
-  return openKernel({ factory: await load(glue), wasm, baseText: new TextDecoder().decode(base), image, keepImage, resettable });
+  return openKernel({ factory: await load(glue), wasm, baseText: new TextDecoder().decode(base), image, keepImage, resettable, labels: { kernel: pins.kernel.kappa, library: pins.library.kappa } });
 }

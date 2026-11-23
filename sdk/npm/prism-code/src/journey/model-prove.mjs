@@ -156,7 +156,7 @@ export function openModelKernel({ env = process.env } = {}) {
     }
     const factory = (await import(pathToFileURL(loader).href)).default;
     // Resumed from this machine's image when there is one; otherwise the library is read, and the image kept.
-    return openKernel({ factory, wasm, baseText: base.toString('utf8'), image: readImage(env), keepImage: (image) => keepImage(env, image) });
+    return openKernel({ factory, wasm, baseText: base.toString('utf8'), image: readImage(env), keepImage: (image) => keepImage(env, image), labels: { kernel: MODEL_KERNEL_FILES['lean-kernel.wasm.gz'].kappa, library: MODEL_KERNEL_FILES['base.ndjson.gz'].kappa } });
   })();
   opened.catch(() => { opened = null; });
   return opened;

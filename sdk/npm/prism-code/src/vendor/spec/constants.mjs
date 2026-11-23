@@ -341,6 +341,13 @@ export const HOLO_V6 = freeze({
   MAGIC_HEX: '554f52430202',
   MANIFEST_SCHEMA: 'prism/holo/6',
   PROVENANCE_SCHEMA: 'prismpm/model-provenance/3',
+  /**
+   * The provenance of a holo built with nothing compiled, whose guest is the evaluator guest with the model's
+   * program: it names what built it, since such a build has none of the SDK image's crates, commits or manifests.
+   * A holo with this provenance has the source manifest of `HOLO_SCHEMAS.EVALUATOR_SOURCE_MANIFEST`. A reader
+   * accepts either provenance in a holo v6, and checks each document against its own schema.
+   */
+  EVALUATOR_PROVENANCE_SCHEMA: 'prismpm/evaluator-provenance/1',
   ROLES: HOLO_V5.ROLES,
   /**
    * The optional objects after `model`, in this order, each present only when the manifest's `objects` rows list

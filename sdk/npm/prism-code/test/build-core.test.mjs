@@ -10,7 +10,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { kappa } from '../src/blake3.mjs';
-import { buildFromFiles, holoFromSnapshot, readBack, serveBuild } from '../src/journey/build-core.mjs';
+import { buildFromFiles, filesOf, holoFromSnapshot, readBack, serveBuild } from '../src/journey/build-core.mjs';
 import { admitModule, blobStore, compileAdmitted, memoryStore } from '../src/journey/toolchain.mjs';
 import { decoded } from '../src/journey/kappa-store.mjs';
 import { hasLexleanWasm, lexleanWasmFile, projectFiles, wasmSnapshot } from '../src/journey/lexlean-wasm.mjs';
@@ -133,7 +133,14 @@ test('files in, a holo out: the same label as the Node route gives, for a decisi
     assert.equal(result.ok, true, `${name}: ${result.message}`);
     assert.equal(result.stage, 'build');
     const taken = await wasmSnapshot(dir, {});
-    const node = await buildHolo(taken.snapshot, { evaluator: evaluator(), snapshotBytes: taken.bytes });
+    // The holo carries the files that decide the model, so the Node route is given the same ones.
+    const sources = [...projectFiles(dir)].map(([path, bytes]) => ({ path: path.slice(1), bytes }));
+    const node = await buildHolo(taken.snapshot, { evaluator: evaluator(), snapshotBytes: taken.bytes, sources });
+    assert.deepEqual(result.holo.carries, { snapshot: true, sources: true, proof: false });
+    // Told to leave the sources out, it does, and that is another holo.
+    const without = await buildFromFiles({ files: projectFiles(dir), lexlean: await lexlean(), evaluator: evaluator(), sources: false });
+    assert.deepEqual(without.holo.carries, { snapshot: true, sources: false, proof: false });
+    assert.equal(without.holo.label, (await buildHolo(taken.snapshot, { evaluator: evaluator(), snapshotBytes: taken.bytes })).label);
     assert.equal(result.holo.label, node.label);
     assert.equal(result.holo.label, kappa(result.holo.bytes));
     assert.equal(result.vectors.passed, result.vectors.total);
@@ -162,6 +169,16 @@ test('a prover is asked before anything is built, and a refused model gives its 
   // A prover that does not accept, and one that cannot run: nothing is built.
   const no = await buildFromFiles({ files, lexlean: await lexlean(), evaluator: evaluator(), prove: async () => ({ ok: false, theorems: [{ theorem: 't', status: 'not proved: no proof' }], message: '1 of 1 theorems are not proved' }) });
   assert.deepEqual([no.ok, no.stage, no.holo, no.proved], [false, 'prove', null, false]);
+  // A theorem that is not proved says where the model states it and what to try; one no file states has no place.
+  assert.deepEqual(no.theorems[0].place, { file: null, line: null });
+  assert.match(no.theorems[0].remedy, /never weaken the theorem/);
+  const named = await buildFromFiles({ files, lexlean: await lexlean(), evaluator: evaluator(), prove: async () => ({ ok: false, theorems: [{ theorem: 'inv001Holds', status: 'not proved: no proof found (no certificate found)' }, { theorem: 'inv002Holds', status: 'proved' }], message: '1 of 2 theorems are not proved' }) });
+  const [missed, held] = named.theorems;
+  const stated = [...filesOf(files)].find(([path]) => path.endsWith('ParkingFeeTierProofs.lex.tex'));
+  assert.equal(missed.place.file, stated[0]);
+  assert.match(new TextDecoder().decode(stated[1]).split(/\r?\n/)[missed.place.line - 1], /^\s*name: inv001Holds,/);
+  assert.match(missed.remedy, /Nat parameters/);
+  assert.deepEqual(Object.keys(held), ['theorem', 'status'], 'a proved theorem is returned as it was');
   const down = await buildFromFiles({ files, lexlean: await lexlean(), evaluator: evaluator(), prove: async () => { throw new Error('no kernel'); } });
   assert.deepEqual([down.ok, down.stage, down.holo, down.code], [false, 'prove', null, 'kernel.unavailable']);
   // Planted: the model's source is no longer a model. LexLean refuses it, with a line to go to.

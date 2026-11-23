@@ -220,5 +220,5 @@ test('the route that counts statements is not exported from the package', async 
   assert.equal((await import('../src/index.mjs')).verifyWithStatements, undefined);
   assert.equal((await import('../src/node.mjs')).verifyWithStatements, undefined);
   const { exports: map } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-  assert.deepEqual(Object.keys(map), ['.', './node', './browser', './init', './canonical', './webgpu', './package.json']);
+  assert.deepEqual(Object.keys(map), ['.', './node', './browser', './init', './canonical', './webgpu', './reprove', './package.json']);
 });

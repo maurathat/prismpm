@@ -83,7 +83,8 @@ async function auditJudge(loadArchive, judgeBytes) {
 }
 
 function fingerprint(rows) {
-  for (const [name, l] of rows) row('fingerprint', [['th', name], ['td', l.blake3, 'mono'], ['td', l.sha256, 'mono']]);
+  // Shown by BLAKE3 label only. (A rule app's record still names its judge by SHA-256, which is compared above.)
+  for (const [name, l] of rows) row('fingerprint', [['th', name], ['td', l.blake3, 'mono']]);
 }
 function guaranteeRow(text) {
   return row('guarantees', [['td', text], ['td', 'checking…', 'status'], ['td', '', 'why']]);

@@ -32,6 +32,12 @@ npx prism-code build --json     # check, then write the app under app/.prism/bui
 npx prism-code verify --json    # check again, then replay every acceptance vector on a fresh instance
 ```
 
+The holo `build` writes carries what it takes to check it again: the model's semantic snapshot, the sources LexLean
+read (`build --no-sources` leaves them out), and an unsigned record of Lean's kernel's verdict on every theorem.
+`npx prism-code verify app/.prism/build/<name>.holo --json` then needs nothing but the holo: it runs the kernel on the
+carried snapshot and LexLean on the carried sources, offline, and reports four separate answers, `sealed`, `vectors`,
+`reproved` and `sources`. The record is never taken as evidence; only the kernel's answer now is.
+
 `npx prism-code@latest init` is the one command every Prism app starts with;
 `npm create prism-code@latest` runs the same code. It writes only inside the
 folder, and fetches nothing. Every app, simple or complex, starts from one

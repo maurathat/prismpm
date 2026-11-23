@@ -1053,6 +1053,9 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `load.path` |  | `OC-11` | The holo path cannot be read, or is not a local file. |
 | `load.source` |  | `OC-11` | load or images.push was given a source that is not bytes, a Blob, a path or a URL; until the local image store (#349) a pushed image comes as options.source. |
 | `lock.image` |  | `OC-11` | prismpm.lock does not select an immutable SDK image, or the image named is not immutable. |
+| `lock.refused` |  | `DK-46` | LexLean does not accept, as the lock it would have written, the lexlean.lock that prism-code lock proposes for the project, so nothing was written. |
+| `lock.stale` |  | `DK-46` | lexlean.lock is not the lock of the project as it is: lexlean.toml, a workspace file or a lexicon changed since it was written, and prism-code lock --check only says so. |
+| `lock.unresolved` |  | `DK-46` | prism-code lock cannot write the lock from the project's files: an embedded package the lock does not hold, a Git package, a source package or a PDF provider, or a lexicon folder with no lexicon.toml. |
 | `manifest.env` |  | `DK-41` | A manifest variable reads an environment variable that is not set. |
 | `manifest.invalid` |  | `DK-41` | The manifest is missing, is not TOML text or bytes, or has a member it does not allow. |
 | `manifest.overlay` |  | `DK-41` | A manifest overlay is not a table, or names no target or an unknown one. |
@@ -1128,6 +1131,8 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `vectors.failed` |  | `DK-41` | An acceptance vector answers otherwise than the model states. |
 | `vectors.none` |  | `DK-41` | An artifact carries no acceptance vector, so verify replayed nothing. |
 | `verification_failed` | `VerificationError` | `CT-12` | No verdict could be reached, or the holo failed a check about the archive itself, its documents or its provenance. |
+| `verify.reproved` |  | `DK-50` | A holo carries a proof record, its semantic snapshot or its kernel-proof statement, and Lean's kernel, run again on that snapshot from the holo alone, does not bear it out: the holo does not verify, the snapshot or the statement is not this holo's, or the kernel does not accept a proof of every theorem the snapshot states. |
+| `verify.sources` |  | `DK-50` | A holo carries its model's sources, and LexLean, reading them and nothing else, does not write the snapshot the holo carries. |
 | `verify.stale` |  | `DK-41` | What is built is the build of an earlier model: the sources changed since, so verify refuses it until it is built again. |
 | `verify.unbuilt` |  | `DK-41` | The model checks and is proved, and nothing is built from it yet, so verify has nothing to replay. |
 | `view.bounds` |  | `OC-11` | The HOLOVIEW bundle is shorter than its header, or an entry or file overruns it. |

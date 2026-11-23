@@ -184,6 +184,52 @@ export function readArchive(bytes, budget = BUDGET) {
   return { version, objects, seal, sealed: (version === 6 ? blake3Hex(preimage) : chainHex(preimage)) === seal };
 }
 
+function uleb(n) {
+  const out = [];
+  do {
+    let byte = n % 0x80;
+    n = Math.floor(n / 0x80);
+    if (n > 0) byte |= 0x80;
+    out.push(byte);
+  } while (n > 0);
+  return Uint8Array.from(out);
+}
+
+/**
+ * A sealed holo v5 or v6 whose every statement is unsigned, as `{ bytes, holo }`: the holo without its attestations
+ * object, sealed again, and the κ of the file as given; or null for any other bytes. An unsigned statement is a
+ * record, such as the kernel-proof statement a build writes (ADR-018): it has no signature to check, and no verifier
+ * takes it as evidence. So such a holo is judged as the holo without them, which is what its statements' subjects
+ * name object by object, and its level is the one its own bytes support. A holo with a signed statement is not this:
+ * its signer has to be named, which is `check`'s to do. A holo whose seal does not match is not this either: taking
+ * its statements off would write a new seal over the damage.
+ */
+export function withoutRecords(bytes) {
+  const version = versionOf(bytes);
+  if (version === null) return null;
+  const archive = readArchive(bytes);
+  if (archive.problem || !archive.sealed) return null;
+  const base = ROLES.length + (version === 6 ? optionalRolesOf(archive.objects[0].bytes).length : 0);
+  if (archive.objects.length !== base + 1) return null;
+  let text;
+  try {
+    text = utf8.decode(archive.objects[base].bytes);
+  } catch {
+    return null;
+  }
+  if (text === '' || !text.endsWith('\n')) return null;
+  for (const line of text.slice(0, -1).split('\n')) {
+    const decoded = decode(new TextEncoder().encode(line));
+    const signatures = decoded.value?.dsseEnvelope?.signatures;
+    if (decoded.error || !Array.isArray(signatures) || signatures.length === 0 || signatures.some((signature) => signature?.sig !== '')) return null;
+  }
+  const kept = archive.objects.slice(0, base).map((object) => object.bytes);
+  const total = kept.reduce((n, object) => n + object.length, 0);
+  const preimage = concat([bytes.subarray(0, 8), uleb(kept.length), ...kept.map((object) => uleb(object.length)), uleb(total), ...kept]);
+  const seal = fromHex(version === 6 ? blake3Hex(preimage) : chainHex(preimage));
+  return { bytes: concat([preimage, seal]), holo: kappa(bytes, version) };
+}
+
 /** JSON as the canonical form of a holo document: keys sorted, no whitespace. */
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -321,13 +367,17 @@ export function analyzeV5(bytes, context) {
   const revisions = Object.values(spec.FORMAT_REVISIONS);
   const modelSchemas = new Set(revisions.flatMap((r) => r.modelDocumentSchemas));
 
-  documentCheck('metadata.schema', 'the source manifest', at(1), spec.HOLO_SCHEMAS.SOURCE_MANIFEST, 'sourceManifest');
+  // A holo v6 built with nothing compiled names what built it (ADR-018): its provenance and its source manifest are
+  // documents of their own, each checked against its own schema. Which it is, the provenance's `schema` says.
+  const evaluatorProvenance = version === 6 ? spec.HOLO_V6.EVALUATOR_PROVENANCE_SCHEMA : null;
+  const byEvaluator = evaluatorProvenance !== null && at(2) !== undefined && decode(at(2).payload).value?.schema === evaluatorProvenance;
+  documentCheck('metadata.schema', 'the source manifest', at(1), byEvaluator ? spec.HOLO_SCHEMAS.EVALUATOR_SOURCE_MANIFEST : spec.HOLO_SCHEMAS.SOURCE_MANIFEST, 'sourceManifest');
   skip('documents', 'directory.schema', `not checked: a holo v${version} names its layers in the manifest`);
   documentCheck(
     'provenance.schema',
     'the model provenance',
     at(2),
-    (v) => (v?.schema === format.provenance ? spec.SCHEMAS[format.provenance] : null),
+    (v) => (v?.schema === format.provenance || (evaluatorProvenance !== null && v?.schema === evaluatorProvenance) ? spec.SCHEMAS[v.schema] : null),
     'provenance',
     (v) => (canonical(v) === utf8.decode(at(2).payload) ? '' : 'it is not canonical JSON'),
   );
