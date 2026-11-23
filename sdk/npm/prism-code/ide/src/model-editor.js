@@ -43,6 +43,7 @@ import getSnippetsOverride from '@codingame/monaco-vscode-snippets-service-overr
 import getAccessibilityOverride from '@codingame/monaco-vscode-accessibility-service-override';
 import '@codingame/monaco-vscode-theme-defaults-default-extension';
 import { registerExtension, ExtensionHostKind } from '@codingame/monaco-vscode-api/extensions';
+import { Action2, MenuId, registerAction2 } from '@codingame/monaco-vscode-api/vscode/vs/platform/actions/common/actions';
 // The workbench's own theme, from the Hologram brand kit (tools/build-theme.mjs, tools/brand-pins.json).
 import hologramThemeUrl from './theme/hologram-dark.json?url';
 import './theme/focus.css';
@@ -581,6 +582,20 @@ try {
   const hologram = registerExtension({ name: 'hologram-theme', publisher: 'prism', version: '1.0.0', engines: { vscode: '*' },
     contributes: { themes: [{ id: HOLOGRAM_THEME, label: HOLOGRAM_THEME, uiTheme: 'vs-dark', path: './hologram-dark.json' }] } }, ExtensionHostKind.LocalProcess, { system: true });
   hologram.registerFileUrl('./hologram-dark.json', hologramThemeUrl);
+  // File: Open Folder… in the File menu, the command palette and on VS Code's keys (Ctrl+K Ctrl+O), as in VS Code; it
+  // does what the Open folder button does. Not under a host: there the holospace is the host's to choose.
+  if (!HOST) {
+    registerAction2(class extends Action2 {
+      constructor() {
+        super({
+          id: 'prism.openFolder', title: { value: 'Open Folder…', original: 'Open Folder…' }, category: { value: 'File', original: 'File' }, f1: true,
+          keybinding: { primary: monaco.KeyMod.chord(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyO), weight: 200 },
+          menu: { id: MenuId.MenubarFileMenu, group: '2_open', order: 2 },
+        });
+      }
+      run() { document.getElementById('openFolder').click(); }
+    });
+  }
   const theme = new URLSearchParams(location.search).get('theme') || HOLOGRAM_THEME;
   // The editor's font and its size are VS Code's own, untouched: code reads as it does there.
   // No minimap: it is one more thing drawn on every keystroke, and the files here are short.
@@ -604,7 +619,22 @@ try {
   // LexLean's name, brackets and colours, before the file is opened, so the editor takes it for LexLean.
   registerLexLean(monaco);
   const resource = uriOf(entry);
-  await (await getService(IEditorService)).openEditor({ resource, options: { pinned: true } });
+  const editorService = await getService(IEditorService);
+  await editorService.openEditor({ resource, options: { pinned: true } });
+  // The workbench brings back the editors that were open the last time, and every model opens at the same folder, so
+  // tabs of another project come back too. Only this model's files stay open; the rest are closed, unsaved or not
+  // (an earlier project's unsaved text is not this project's to keep).
+  {
+    // The model's own files, as loaded, and any made on an earlier visit and restored with the draft.
+    const ours = new Set([...Object.keys(files), ...Object.keys(restored)]);
+    const SEQUENTIAL = 1;
+    const others = editorService.getEditors(SEQUENTIAL).filter(({ editor }) => {
+      const at = editor.resource && editor.resource.scheme === 'file' && editor.resource.path.startsWith('/workspace/') ? editor.resource.path.slice('/workspace'.length) : null;
+      return at !== null && !ours.has(at);
+    });
+    if (others.length) await editorService.closeEditors(others, { preserveFocus: true }).catch(() => {});
+    state.closedOtherTabs = others.length;
+  }
   const markers = await getService(IMarkerService);
   const model = monaco.editor.getModels().find((m) => m.uri.toString() === resource.toString());
   if (!model) throw new Error('the workbench opened no model for ' + listing.entry);
