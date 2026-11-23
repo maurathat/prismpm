@@ -43,6 +43,10 @@
       "types": "./types/webgpu.d.ts",
       "import": "./src/webgpu.mjs"
     },
+    "./reprove": {
+      "types": "./types/reprove.d.ts",
+      "import": "./src/journey/proof-record.mjs"
+    },
     "./package.json": "./package.json"
   },
   "browser": {

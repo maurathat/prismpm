@@ -1,0 +1,17 @@
+{
+  "application_kappa": "blake3:a289775db7888655b854626b78f374f9a0c0378d2c6da0be19872e3b24cb5fa5",
+  "cargo_name": "prism-template-contract",
+  "cargo_version": "0.1.0",
+  "compiler_semantics_id": "4b3ed2378d6c43bb32a41d466cf140337e8b1cedc5e1f345aaf3395f488f63a9",
+  "core_wasm_contract": "hologram:guest/core-wasm@1",
+  "guest_content_kappa": "blake3:c0e5de742062bb720dbc34ffc839b48a22650eb3e0b7e64966f81a31e31df183",
+  "model_content_kappa": "blake3:701d6bb52d302c7ecd8ef4a5573071c48857b263c3cf5e59d8747c3c10dcd460",
+  "model_id": "5543c4eaf3e5430e9a8288723b5b7e2d008a63f874a3e495791f88a7d20299ad",
+  "schema": "prismpm/evaluator-provenance/1",
+  "semantic_id": "1444e42b2978e907c779341b5cf6e3321aa86746ffca88cbb35fb17958ac34ee",
+  "source_id": "68818b420f99e5fc989bf56f75e501db98b761010df47e44ff4458c02c2363e5",
+  "view_binding": {
+    "tag": "present",
+    "view_content_kappa": "blake3:d1b866268c0aa0cca2c79504eba7c28968c682e244e1a36f05fcbc02199ba577"
+  }
+}

@@ -15,6 +15,8 @@ import { hasLexleanWasm, lexleanWasmFile, projectFiles } from '../src/journey/le
 import { EVALUATOR_GUEST } from '../src/journey/model-guest.mjs';
 import { MODEL_KERNEL_FILES } from '../src/journey/model-prove.mjs';
 import { appDir, startApp } from '../src/journey/project.mjs';
+import { readAttestations, stripAttestations } from '../src/attestations.mjs';
+import { kappa } from '../src/blake3.mjs';
 import { ModelKernelMissing, kernelProver, openKernelFrom, proveSnapshot, reported, verdictOf } from '../src/journey/prove-core.mjs';
 import { memoryStore } from '../src/journey/toolchain.mjs';
 
@@ -132,7 +134,7 @@ test('a resettable kernel is laid back to its just-loaded state, and a kept memo
   await assert.rejects(kernel().then((plain) => plain.reset()), /not opened resettable/);
 });
 
-test('the build asks the prover, reports each theorem, and builds the same holo as without one', { skip: noLexlean }, async () => {
+test('the build asks the prover, reports each theorem, and builds the same holo as without one, with the record of the proof', { skip: noLexlean }, async () => {
   const dir = appDir(mkdtempSync(join(tmpdir(), 'prism-prove-core-')));
   startApp(dir, 'decision-app');
   const files = projectFiles(dir);
@@ -146,6 +148,11 @@ test('the build asks the prover, reports each theorem, and builds the same holo 
   for (const t of built.theorems) assert.deepEqual([t.status, typeof t.theorem, Array.isArray(t.axioms)], ['proved', 'string', true], t.name);
   assert.match(built.message, new RegExp(`Proved: Lean's kernel accepted every one of the model's ${built.theorems.length} theorems`));
   const bare = await buildFromFiles({ files, lexlean, evaluator: evaluator() });
-  assert.equal(built.holo.label, bare.holo.label, 'proving changes no byte of the holo');
+  // Proving changes no object of the holo: it adds the unsigned record of what the kernel answered, and nothing else.
+  assert.deepEqual([built.holo.carries.proof, bare.holo.carries.proof], [true, false]);
+  assert.equal(kappa(stripAttestations(built.holo.bytes)), bare.holo.label, 'proving changes no byte of the holo but its record');
+  const [recorded] = readAttestations(built.holo.bytes);
+  assert.deepEqual([recorded.signed, recorded.statement.predicate.kernel, recorded.statement.predicate.library], [false, pins.kernel.kappa, pins.library.kappa]);
+  assert.deepEqual(recorded.statement.predicate.theorems.map((t) => t.status), built.theorems.map(() => 'proved'));
   assert.equal(bare.proved, false);
 });

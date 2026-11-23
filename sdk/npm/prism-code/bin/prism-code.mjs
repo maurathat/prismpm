@@ -38,8 +38,8 @@
  *                                                     watch the project, rebuild and re-check on every change, serve the local studio
  *   prism-code push <app.holo> <reference>            put the holo and its attestations in a registry or a local store
  *   prism-code pull <reference> [<out.holo>]          fetch a holo, verify it, then write it
- *   prism-code build [<dir>] [--out <dir>] [--json]  check, then write the app, in this process
- *   prism-code verify <app.holo | dir> [--json]      replay every acceptance vector; for a project, check it again first
+ *   prism-code build [<dir>] [--out <dir>] [--no-sources] [--json]  check, then write the app, in this process
+ *   prism-code verify <app.holo | dir> [--json]      replay every acceptance vector and prove the holo again; for a project, check it again first
  *   prism-code skill --out <dir>                     copy the Prism skill into a project folder
  *   prism-code <plugin> [args]                        run prism-<plugin> from the PATH (experimental)
  *
@@ -163,13 +163,17 @@ Usage:
                                                     All in this process; writes nothing. Exit 0 passed, 1 a theorem is not
                                                     proved or the template contract is broken, 2 the manifest or the model
                                                     does not check
-  prism-code build [<dir>] [--project <dir>] [--out <dir>] [--json]
+  prism-code build [<dir>] [--project <dir>] [--out <dir>] [--no-sources] [--json]
                                                     check, then write the app under .prism/build with nothing compiled,
                                                     and replay its acceptance vectors; --out also copies it there.
+                                                    The holo carries the model's semantic snapshot, its sources and the
+                                                    record of its proof; --no-sources leaves the sources out.
                                                     --check stops after the check
   prism-code verify <app.holo | dir> [--project <dir>] [--policy <file>] [--json]
                                                     a holo: its digests, its world within the grant, and every acceptance
-                                                    vector on a fresh instance. A project: check it again, then the same
+                                                    vector on a fresh instance; then Lean's kernel proves its snapshot's
+                                                    theorems again and LexLean reads its sources again, from the holo
+                                                    alone. The report says each apart: sealed, vectors, reproved, sources. A project: check it again, then the same
                                                     for what build wrote, which must be the build of the model on disk
   prism-code skill --out <dir>                      copy the Prism skill, SKILL.md and its references, into <dir>;
                                                     reads only this package and reaches no network
@@ -767,7 +771,7 @@ async function commandProviders(positional, options) {
   return 0;
 }
 
-const MODEL_OPTIONS = { check: ['project', 'json'], build: ['project', 'out', 'json', 'check'], verify: ['project', 'policy', 'json'] };
+const MODEL_OPTIONS = { check: ['project', 'json'], build: ['project', 'out', 'json', 'check', 'no-sources'], verify: ['project', 'policy', 'json'] };
 
 /**
  * The model verbs (src/model-cli.mjs): check, build and verify, each in this process. LexLean as WebAssembly checks the
@@ -786,7 +790,7 @@ async function commandModel(verb, positional, options) {
   const shared = { project: options.project ?? null, log: options.json ? () => {} : (line) => process.stderr.write(`${line}\n`) };
   let result;
   if (verb === 'check' || (verb === 'build' && options.check)) result = await model.modelCheck(positional[0], shared);
-  else if (verb === 'build') result = await model.modelBuild(positional[0], { ...shared, out: options.out ?? null });
+  else if (verb === 'build') result = await model.modelBuild(positional[0], { ...shared, out: options.out ?? null, sources: options['no-sources'] !== true });
   else result = await model.modelVerify(positional[0], { ...shared, policy: options.policy ?? null });
   process.stdout.write(options.json ? `${JSON.stringify(result.report, null, 2)}\n` : model.formatReport(result.report));
   return result.code;

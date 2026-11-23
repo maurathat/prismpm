@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uor.foundation/prismpm/evaluator-provenance/1",
+  "title": "EvaluatorProvenance",
+  "description": "Object 2 of a holo v6 (ADR-018) that prism-code built with nothing compiled: its guest is the evaluator guest with the model's program, not Rust compiled from Lean's export. It names the same objects as the model provenance (prismpm/model-provenance/3) under the same member names, and in place of the SDK image's crates, commits and manifests, which such a build has none of, it names what built it. Every kappa is a blake3: label over the bytes it names; LexLean's ids are kept as LexLean writes them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "application_kappa",
+    "builder",
+    "cargo_name",
+    "cargo_version",
+    "compiler_semantics_id",
+    "core_wasm_contract",
+    "guest_content_kappa",
+    "model_content_kappa",
+    "model_id",
+    "schema",
+    "semantic_id",
+    "source_id",
+    "view_binding"
+  ],
+  "properties": {
+    "application_kappa": {
+      "description": "The kappa of the holo's manifest object.",
+      "$ref": "#/$defs/Label"
+    },
+    "builder": {
+      "description": "What built the holo, and what it built: the evaluator guest it started from, the guest it linked the model's program into, the model document and the view it wrote, and the semantic snapshot it read when LexLean gave its bytes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluator_guest", "guest", "model", "name", "vectors", "view"],
+      "properties": {
+        "evaluator_guest": { "$ref": "#/$defs/Label" },
+        "guest": { "$ref": "#/$defs/Label" },
+        "model": { "$ref": "#/$defs/Label" },
+        "name": {
+          "description": "The builder and its revision.",
+          "const": "prism-code/evaluator-guest/1"
+        },
+        "snapshot": { "$ref": "#/$defs/Label" },
+        "vectors": {
+          "description": "What the build tested, not proved: the model's acceptance vectors it replayed through the guest, and the requests made from them whose answers it compared with the model's own definitions.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["compared", "replayed"],
+          "properties": {
+            "compared": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "replayed": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+          }
+        },
+        "view": { "$ref": "#/$defs/Label" }
+      }
+    },
+    "cargo_name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+    },
+    "cargo_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "compiler_semantics_id": { "$ref": "#/$defs/Id" },
+    "core_wasm_contract": {
+      "description": "The guest contract, as the manifest's wasm layer names it: the evaluator guest is of the stateless world.",
+      "const": "hologram:guest/core-wasm@1"
+    },
+    "guest_content_kappa": { "$ref": "#/$defs/Label" },
+    "model_content_kappa": { "$ref": "#/$defs/Label" },
+    "model_id": {
+      "description": "The sha256 of the model document object.",
+      "$ref": "#/$defs/Id"
+    },
+    "schema": {
+      "const": "prismpm/evaluator-provenance/1"
+    },
+    "semantic_id": { "$ref": "#/$defs/Id" },
+    "source_id": { "$ref": "#/$defs/Id" },
+    "view_binding": {
+      "description": "The view object the holo carries. The page is written from the model's view, so there is no browser projection and no view model to name.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tag", "view_content_kappa"],
+      "properties": {
+        "tag": { "const": "present" },
+        "view_content_kappa": { "$ref": "#/$defs/Label" }
+      }
+    }
+  },
+  "$defs": {
+    "Label": {
+      "type": "string",
+      "pattern": "^blake3:[0-9a-f]{64}$"
+    },
+    "Id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

@@ -253,7 +253,8 @@ test('on first use it adds only check.mjs, attest.mjs and verify-closure.mjs, wh
 
 test('adding the namespace leaves the package export map as it was: it is reachable only through #441', () => {
   const { exports: map } = JSON.parse(readFileSync(here('../package.json'), 'utf8'));
-  assert.deepEqual(Object.keys(map), ['.', './node', './browser', './init', './canonical', './webgpu', './package.json']);
+  // ./reprove is the re-proof of a holo's record (ADR-018), a module of its own so that a page loads it without the client.
+  assert.deepEqual(Object.keys(map), ['.', './node', './browser', './init', './canonical', './webgpu', './reprove', './package.json']);
 });
 
 test('pullClosure is the verdict pull gets: it refuses claims that do not hold, and passes a closure that does', async () => {

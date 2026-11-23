@@ -134,6 +134,7 @@ export declare const HOLO_V6: Readonly<{
   MAGIC_HEX: '554f52430202';
   MANIFEST_SCHEMA: 'prism/holo/6';
   PROVENANCE_SCHEMA: 'prismpm/model-provenance/3';
+  EVALUATOR_PROVENANCE_SCHEMA: 'prismpm/evaluator-provenance/1';
   ROLES: readonly ['manifest', 'source-manifest', 'provenance', 'capabilities', 'guest', 'view', 'model'];
   OPTIONAL_ROLES: readonly ['snapshot', 'sources'];
   ROLE_ATTESTATIONS: 'attestations';

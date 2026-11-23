@@ -32,6 +32,8 @@ export const PROVENANCE_SCHEMA_V5 = 'prismpm/model-provenance/2';
 /** Holo v6 (ADR-018): v5's documents with every κ a `blake3:` label. */
 export const MANIFEST_SCHEMA_V6 = 'prism/holo/6';
 export const PROVENANCE_SCHEMA_V6 = 'prismpm/model-provenance/3';
+/** The provenance of a holo v6 built with nothing compiled, whose guest is the evaluator guest (journey/model-holo.mjs). */
+export const EVALUATOR_PROVENANCE_SCHEMA = 'prismpm/evaluator-provenance/1';
 const MANIFEST_SCHEMA = { 5: MANIFEST_SCHEMA_V5, 6: MANIFEST_SCHEMA_V6 };
 /** A holo v6's optional objects after `model`, in this order, present when the manifest's rows list them (ADR-018). */
 export const OPTIONAL_ROLES_V6 = Object.freeze(['snapshot', 'sources']);
@@ -516,7 +518,7 @@ function resolveArchiveV5(parsed) {
     manifest.requires === capabilities.label &&
     wasmLayer.kappa === guest.label &&
     viewLayer.kappa === view.label &&
-    provenance.schema === PROVENANCE_SCHEMA[parsed.format] &&
+    (provenance.schema === PROVENANCE_SCHEMA[parsed.format] || (parsed.format === 6 && provenance.schema === EVALUATOR_PROVENANCE_SCHEMA)) &&
     provenance.guest_content_kappa === guest.label &&
     provenance.model_content_kappa === model.label &&
     provenance.view_binding?.view_content_kappa === view.label &&

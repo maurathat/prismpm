@@ -6,8 +6,11 @@
  *                     WebAssembly, proves every theorem. Writes nothing in the project.
  *   build [<dir>]     check, then the app is written under <project>/.prism/build, with nothing compiled.
  *   verify <target>   a holo: its digests, its world within the grant, and every acceptance vector replayed
- *                     on a fresh instance. A project: check again, then the same for what `build` wrote, which
- *                     must be the build of the model as it is on disk.
+ *                     on a fresh instance; then, from the holo alone, Lean's kernel proves again every theorem
+ *                     of the snapshot it carries and LexLean reads again the sources it carries
+ *                     (journey/proof-record.mjs). The summary says each apart, never as one answer: `sealed`,
+ *                     `vectors`, `reproved` and `sources`. A project: check again, then the same for what
+ *                     `build` wrote, which must be the build of the model as it is on disk.
  *
  * No step starts another program, and nothing about the model is sent anywhere (journey/engine.mjs).
  *
@@ -171,8 +174,11 @@ function builtOf(session) {
   return null;
 }
 
-/** `build`: check, then write the app. `out` also copies what was written into that folder. */
-export async function modelBuild(path, { project: explicit = null, out = null, env = process.env, log = () => {}, engine = null } = {}) {
+/**
+ * `build`: check, then write the app. `out` also copies what was written into that folder. A holo carries the
+ * files that decide its model unless `sources` is false (`--no-sources`).
+ */
+export async function modelBuild(path, { project: explicit = null, out = null, sources = true, env = process.env, log = () => {}, engine = null } = {}) {
   const started = Date.now();
   const project = await openProject(path, explicit);
   if (project.refused) return answer('build', started, EXIT.REFUSED, {}, project.diagnostics);
@@ -180,10 +186,10 @@ export async function modelBuild(path, { project: explicit = null, out = null, e
   const gated = await gate(project, session, { env, log, engine, write: true });
   if (gated.code !== null) return answer('build', started, gated.code, gated.summary, gated.diagnostics);
   const { build } = engine ?? (await import('./journey/engine.mjs'));
-  const built = await build(project.dir, session, { env, log });
+  const built = await build(project.dir, session, { env, log, sources, root: project.root });
   if (built.ok) session.status.lastBuild = { source: sourceDigest(project.dir), result: { ok: true, address: built.address } };
   writeSession(project.dir, session);
-  const summary = { ...gated.summary, vectorsPassed: built.vectors?.passed ?? 0, vectorsTotal: built.vectors?.total ?? 0 };
+  const summary = { ...gated.summary, vectorsPassed: built.vectors?.passed ?? 0, vectorsTotal: built.vectors?.total ?? 0, ...(built.carries ? { carries: built.carries } : {}) };
   if (!built.ok) return answer('build', started, EXIT.FAILED, summary, [...gated.diagnostics, ...stepDiagnostics(built, new PrismCodeError('build.failed', ''))]);
   const written = built.holo ?? built.app;
   let artifact = written;
@@ -195,8 +201,17 @@ export async function modelBuild(path, { project: explicit = null, out = null, e
   return answer('build', started, EXIT.OK, { ...summary, artifact: forward(relative(process.cwd(), artifact) || artifact), address: built.address, bytes: built.bytes ?? statSync(written).size, site: built.site ? forward(relative(process.cwd(), built.site) || built.site) : null }, gated.diagnostics);
 }
 
-/** Load what was built and replay every acceptance vector on a fresh instance. Resolves `{ summary, diagnostics, code }`. */
-async function replay(kind, path, { policy = null } = {}) {
+/**
+ * Load what was built and replay every acceptance vector on a fresh instance; for a holo, then prove it again
+ * and read its sources again, from the holo alone. Resolves `{ summary, diagnostics, code }`.
+ *
+ * The summary's members are separate answers: `sealed` (the holo's bytes are the ones it names), `vectors` (it
+ * answers its own examples), `reproved` (Lean's kernel just accepted a proof of every theorem its snapshot
+ * states) and `sources` (LexLean, on the sources it carries, writes that snapshot). A holo that carries no proof
+ * record or no sources reports that, and it fails only a policy that requires the claim; a record or sources
+ * that are carried and do not hold fail the verification.
+ */
+async function replay(kind, path, { policy = null, env = process.env, log = () => {} } = {}) {
   const summary = { artifact: forward(relative(process.cwd(), path) || path), identitiesVerified: false, vectorsPassed: 0, vectorsTotal: 0 };
   const diagnostics = [];
   let app;
@@ -218,6 +233,8 @@ async function replay(kind, path, { policy = null } = {}) {
   }
   summary.vectorsPassed = acceptance.passed;
   summary.vectorsTotal = acceptance.total;
+  summary.sealed = { passed: summary.identitiesVerified };
+  summary.vectors = { passed: acceptance.total > 0 && acceptance.failed.length === 0, replayed: acceptance.passed, total: acceptance.total };
   if (!summary.identitiesVerified) diagnostics.push(diagnostic({ ...coded(new PrismCodeError('holo.identities', 'The identities the holo states are not the identities of its bytes.')), file: summary.artifact, remediation: 'Build it again from the model.' }));
   if (acceptance.total === 0) diagnostics.push(diagnostic({ ...coded(new PrismCodeError('vectors.none', 'The artifact carries no acceptance vector, so nothing was replayed.')), file: summary.artifact, remediation: 'State examples in the model: one for every accepted path and every typed error.' }));
   for (const f of acceptance.failed.slice(0, 12)) diagnostics.push(diagnostic({ ...coded(new PrismCodeError('vectors.failed', `Acceptance vector ${f.index} answers otherwise than the model states.`)), file: summary.artifact, remediation: 'Repair the rule or the example in the model, then build again.' }));
@@ -225,16 +242,29 @@ async function replay(kind, path, { policy = null } = {}) {
   // process carries no signed statement, so its level is what its own bytes support.
   if (kind === 'holo') {
     const { check } = await import('./check.mjs');
+    const { relexHere, reproveHere } = await import('./journey/reprove-here.mjs');
+    const { proofRecordOf } = await import('./journey/proof-record.mjs');
+    const carried = proofRecordOf(new Uint8Array(readFileSync(path)));
     try {
-      const verdict = await check(path, policy ? { policy } : {});
+      const verdict = await check(path, { ...(policy ? { policy } : {}), reprove: reproveHere({ env, log }), relex: relexHere({ env, log }) });
       summary.level = verdict.level;
+      summary.reproved = verdict.reproved;
+      summary.sources = verdict.sources ?? { present: false, matchesSnapshot: null, semantic_id: null, lexlean: null, reason: 'The holo carries no sources object.' };
+      // A record the holo carries and the kernel does not bear out is a failure; a holo with none only says so.
+      if ((carried.statement || carried.snapshot) && verdict.reproved?.passed !== true) {
+        diagnostics.push(diagnostic({ ...coded(new PrismCodeError('verify.reproved', verdict.reproved?.reason ?? 'The holo was not proved again.')), file: summary.artifact, remediation: 'Build the holo again from its model; never edit its bytes.' }));
+      }
+      if (verdict.sources?.present && verdict.sources.matchesSnapshot === false) {
+        diagnostics.push(diagnostic({ ...coded(new PrismCodeError('verify.sources', verdict.sources.reason ?? "The sources the holo carries do not give its snapshot.")), file: summary.artifact, remediation: 'Build the holo again from its model; never edit its bytes.' }));
+      }
       if (policy) {
         summary.policy = verdict.policy?.name ?? null;
         if (!verdict.passed) for (const r of verdict.reasons.filter((x) => x.check?.startsWith('policy'))) diagnostics.push(diagnostic({ code: r.check, message: r.message, file: summary.artifact }));
       }
     } catch (error) {
       if (!(error instanceof PrismError)) throw error;
-      if (policy) diagnostics.push(diagnostic({ code: error.check ?? error.code, message: error.message, file: summary.artifact }));
+      // No verdict was reached. That fails a policy, and it fails a holo that carries a record nothing then checked.
+      if (policy || carried.statement || carried.snapshot) diagnostics.push(diagnostic({ code: error.check ?? error.code, message: error.message, file: summary.artifact }));
     }
   }
   return { code: diagnostics.some((d) => d.severity === 'error') ? EXIT.FAILED : null, summary, diagnostics };
@@ -248,7 +278,7 @@ export async function modelVerify(target, { project: explicit = null, policy = n
   if (!info) return answer('verify', started, EXIT.REFUSED, {}, [diagnostic({ ...coded(new PrismCodeError('load.path', `${path} does not exist`)), remediation: 'Name a holo, or a project directory.' })]);
   if (info.isFile()) {
     const kind = /\.rule-app\.json$/.test(path) ? 'rule-app' : 'holo';
-    const replayed = await replay(kind, path, { policy });
+    const replayed = await replay(kind, path, { policy, env, log });
     return answer('verify', started, replayed.code ?? EXIT.OK, replayed.summary, replayed.diagnostics);
   }
   const project = await openProject(path, explicit);
@@ -263,7 +293,7 @@ export async function modelVerify(target, { project: explicit = null, policy = n
   if (built.source !== sourceDigest(project.dir)) {
     return answer('verify', started, EXIT.FAILED, gated.summary, [...gated.diagnostics, diagnostic({ ...coded(new PrismCodeError('verify.stale', 'What is built is the build of an earlier model: the sources changed since.')), remediation: 'Run prism-code build, then verify again.' })]);
   }
-  const replayed = await replay(built.kind, built.path, { policy });
+  const replayed = await replay(built.kind, built.path, { policy, env, log });
   return answer('verify', started, replayed.code ?? EXIT.OK, { ...gated.summary, ...replayed.summary, address: built.address ?? null }, [...gated.diagnostics, ...replayed.diagnostics]);
 }
 
@@ -276,6 +306,9 @@ export function formatReport(r) {
   if (s.artifact) lines.push(`  artifact   ${s.artifact}${s.address ? ` (${s.address})` : ''}`);
   if (s.vectorsTotal !== undefined) lines.push(`  vectors    ${s.vectorsPassed} of ${s.vectorsTotal} acceptance vectors pass`);
   if (s.identitiesVerified !== undefined) lines.push(`  identities ${s.identitiesVerified ? 'verified' : 'NOT verified'}${s.level ? `; assurance level ${s.level}` : ''}`);
+  if (s.reproved) lines.push(`  reproved   ${s.reproved.passed ? `Lean's kernel accepted a proof of all ${s.reproved.theorems.length} theorems again, from the holo alone` : `NOT proved again: ${s.reproved.reason}`}`);
+  if (s.sources) lines.push(`  sources    ${!s.sources.present ? 'not carried' : s.sources.matchesSnapshot === true ? "LexLean, on the sources the holo carries, writes its snapshot" : s.sources.matchesSnapshot === null ? 'carried, not read again' : `do NOT give the snapshot: ${s.sources.reason}`}`);
+  if (s.carries) lines.push(`  carries    ${['snapshot', 'sources', 'proof'].map((member) => `${member === 'proof' ? 'proof record' : member} ${s.carries[member] ? 'yes' : 'no'}`).join(', ')}`);
   for (const d of r.diagnostics) {
     lines.push(`  ${d.severity === 'warning' ? 'warning' : 'error  '} ${d.file ? `${d.file}${d.line ? `:${d.line}${d.column ? `:${d.column}` : ''}` : ''}: ` : ''}${d.code}: ${d.message.replace(/\n/g, '\n    ')}`);
     if (d.remediation) lines.push(`          ${d.remediation}`);

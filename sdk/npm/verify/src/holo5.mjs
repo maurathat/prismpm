@@ -321,13 +321,17 @@ export function analyzeV5(bytes, context) {
   const revisions = Object.values(spec.FORMAT_REVISIONS);
   const modelSchemas = new Set(revisions.flatMap((r) => r.modelDocumentSchemas));
 
-  documentCheck('metadata.schema', 'the source manifest', at(1), spec.HOLO_SCHEMAS.SOURCE_MANIFEST, 'sourceManifest');
+  // A holo v6 built with nothing compiled names what built it (ADR-018): its provenance and its source manifest are
+  // documents of their own, each checked against its own schema. Which it is, the provenance's `schema` says.
+  const evaluatorProvenance = version === 6 ? spec.HOLO_V6.EVALUATOR_PROVENANCE_SCHEMA : null;
+  const byEvaluator = evaluatorProvenance !== null && at(2) !== undefined && decode(at(2).payload).value?.schema === evaluatorProvenance;
+  documentCheck('metadata.schema', 'the source manifest', at(1), byEvaluator ? spec.HOLO_SCHEMAS.EVALUATOR_SOURCE_MANIFEST : spec.HOLO_SCHEMAS.SOURCE_MANIFEST, 'sourceManifest');
   skip('documents', 'directory.schema', `not checked: a holo v${version} names its layers in the manifest`);
   documentCheck(
     'provenance.schema',
     'the model provenance',
     at(2),
-    (v) => (v?.schema === format.provenance ? spec.SCHEMAS[format.provenance] : null),
+    (v) => (v?.schema === format.provenance || (evaluatorProvenance !== null && v?.schema === evaluatorProvenance) ? spec.SCHEMAS[v.schema] : null),
     'provenance',
     (v) => (canonical(v) === utf8.decode(at(2).payload) ? '' : 'it is not canonical JSON'),
   );
