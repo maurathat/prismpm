@@ -1,8 +1,8 @@
 {
   "schema": "prism/template-bundle/1",
   "repository": "UOR-Foundation/template",
-  "commit": "411df10dcb1b34403e6e21bac36b7987a521d43d",
-  "label": "blake3:9c7f918853eb87e01da84ef965c7481b96934a485b7222f11f2e18bad7962a28",
+  "commit": "1169406ae4321beb4844a0d584e2580582d8b127",
+  "label": "blake3:e8c71d17317191977cea2f4236af407fcefceea93ca9e5d382907fb4ea937b45",
   "files": {
     ".gitattributes": "blake3:d542a5f258efab7fbab10dd0d63e808b2687e9588034aebc5f5e3a9fc7f144c6",
     ".gitignore": "blake3:d859d7c0aec3441cfc083ae2b996e1127d1a28fe2633c730752338496e54254a",
@@ -57,7 +57,7 @@
     "docs/qortara/governance-actions/external-instruction-lock-8931c560d6673f1b327e.json": "blake3:0bcfc8900c4b21d5d15d659e06d3f301caa0fe7e6831ae950a8f5f96709b16af",
     "features/suites/README.md": "blake3:9584e336a413a29d3bb2711c9fcf93410ed82b751cbd16ee4767dd88666fe670",
     "features/suites/contract.feature": "blake3:fb2b542cb11ef55029c6d5bff5183b186296831610d0afa645953777d580b0b1",
-    "model/authorities.toml": "blake3:c81c0c6ffdd09ec38a765e29a983248d8030522505904a6bde9f713b7532a022",
+    "model/authorities.toml": "blake3:63fb3fba35235f9462dff49f5fff556c471b77a8ccf18e3b1a48a0e0b4e65d5d",
     "model/ids.toml": "blake3:ce8b7b1250d243691124da5588a009f47fa63021371f64046c3435cb0da732b4",
     "model/ledger.toml": "blake3:443cfcdcefd04524e5e698c362a4b3899cea3f09b2b384817f73bdf20a551f32",
     "template-contract.json": "blake3:7abe000eb73c98209fc1a121e8f56668c6f6229f8ff8a47b14e12fa2364df9d3",
