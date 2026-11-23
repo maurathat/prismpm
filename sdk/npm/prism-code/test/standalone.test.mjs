@@ -357,6 +357,35 @@ test('init gives each project an ID of its own, keeps it, and no build reads it'
   assert.equal(readFileSync(join(two, 'prism.project'), 'utf8'), 'id = "not an id"\n');
 });
 
+test('one model, one address: the folder a project was started in, its name and its prism.toml do not move it', { timeout: 600000 }, () => {
+  // Three projects from the one template, named for three folders, as init names an app.
+  const roots = ['app', 'prism-template-v9eydd', 'another-name'].map((name) => {
+    const root = join(scratch(), name);
+    mkdirSync(root);
+    assert.equal(run(['init', root], { cwd: root }).code, 0);
+    assert.match(readFileSync(join(root, 'prism.toml'), 'utf8'), new RegExp(`^name = "${name}"$`, 'm'));
+    return root;
+  });
+  // The third also changes what else prism.toml holds, and the fourth has no prism.toml at all, as a page's build has none.
+  writeFileSync(join(roots[2], 'prism.toml'), readFileSync(join(roots[2], 'prism.toml'), 'utf8').replace('version = "0.1.0"', 'version = "9.9.9"').replace(/^description = .*$/m, 'description = "Something else."'));
+  const bare = join(scratch(), 'bare');
+  mkdirSync(bare);
+  assert.equal(run(['init', bare], { cwd: bare }).code, 0);
+  rmSync(join(bare, 'prism.toml'));
+  const built = [...roots, bare].map((root) => {
+    const build = run(['build', '--json'], { cwd: root, env: OFFLINE });
+    assert.equal(build.code, 0, build.out);
+    const { address, artifact } = JSON.parse(build.out).summary;
+    // The address is the BLAKE3 kappa-label of the holo's bytes, and the holo holds no prism.toml and none of its names.
+    const holo = readFileSync(join(root, artifact));
+    assert.equal(kappa(new Uint8Array(holo)), address);
+    assert.equal(holo.includes(Buffer.from('prism-template-v9eydd')) || holo.includes(Buffer.from('another-name')) || holo.includes(Buffer.from('Something else.')), false);
+    return address;
+  });
+  assert.deepEqual(built, [built[0], built[0], built[0], built[0]]);
+  assert.match(built[0], /^blake3:[0-9a-f]{64}$/);
+});
+
 test('lock writes the lock again after the project changes, and only what LexLean accepts', { timeout: 600000 }, () => {
   const root = scratch();
   assert.equal(run(['init', root], { cwd: root }).code, 0);
