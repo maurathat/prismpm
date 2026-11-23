@@ -16,14 +16,16 @@ const enc = new TextEncoder();
 const requestOf = (table, text) => text.trim().split(/\s+/).map((word, i) => (table.fields[i].kind === 'choice' ? table.fields[i].values.indexOf(word) : Number(word)));
 
 /**
- * check, snapshot, prove and audit.
+ * check, snapshot, prove, audit, build and verify.
+ *   build(files), verify()            the page's: the package's whole build of the model, in the tab, and the
+ *                                     judging of the holo it made. Optional: a page that cannot build says so.
  *   check(files), snapshotOf(files)   the LexLean worker's two questions
  *   modelLabel(files)                 the model's BLAKE3 label (model-tar.mjs's), named when it checks; optional
  *   prove(words, guarantees)          the kernel worker's
  *   judge                             makeJudge's, for the audit table
  *   rules                             { ruleTable, tableWords, judgeTable, OPS } of src/journey/rule-table.mjs
  */
-export function createPrograms({ check, snapshotOf, prove, judge, rules, modelLabel = null }) {
+export function createPrograms({ check, snapshotOf, prove, judge, rules, modelLabel = null, build = null, verify = null }) {
   const { ruleTable, tableWords, judgeTable, OPS } = rules;
   // A model's guarantees as the kernel judged them, for `prove` and `audit`.
   async function judged(files) {
@@ -66,6 +68,29 @@ export function createPrograms({ check, snapshotOf, prove, judge, rules, modelLa
       const lines = j.table.guarantees.map((g, i) => judge('audit', { kernel: j.results[i].proved ? 'accepted' : 'refused', kernelmodel: 'this', attestation: 'none', attestedmodel: 'other', vectors }).padEnd(9) + j.said(g));
       return { text: lines.join('\n') + `\nExamples: ${examples.length}, ${vectors}. No attestation is read here. Statuses by the rule of model/ide-audit.` };
     },
+    // What `prism-code build` does, by the same functions, in this tab. "Proved" is said only of what Lean's kernel
+    // accepted and "tested" of what the examples cover. A build that gives no holo says where it stopped.
+    async build(files) {
+      if (!build) return { text: 'This page cannot build. Open the model in the workbench and type build there.', keep: false };
+      let made;
+      try { made = await build(files); } catch (error) { return { text: 'Not built: ' + String(error?.message ?? error), keep: false }; }
+      if (!made?.holo) return { text: `Not built${made?.stage ? ` (stopped at ${made.stage})` : ''}: ${made?.message ?? made?.error ?? 'no answer'}`, keep: false };
+      const lines = [`Built ${made.holo.name || 'app'}.holo: ${made.holo.bytes} bytes, ${made.holo.label}${made.ms != null ? `, in ${made.ms} ms` : ''}.`];
+      if (made.theorems) lines.push(`Proved: Lean's kernel accepted ${made.theorems.proved} of ${made.theorems.total} theorems.`);
+      if (made.vectors) lines.push(`Tested: ${made.vectors.passed} of ${made.vectors.total} examples give their recorded answer through it.`);
+      return { text: lines.join('\n') };
+    },
+    // What `prism-code verify` asks: is the holo that was built sound, and do its examples replay. Nothing is proved
+    // again by it.
+    async verify() {
+      if (!verify) return { text: 'This page cannot verify. Open the model in the workbench and type verify there.', keep: false };
+      let said;
+      try { said = await verify(); } catch (error) { return { text: 'Not verified: ' + String(error?.message ?? error), keep: false }; }
+      if (!said?.label) return { text: said?.why ?? 'Nothing is built to verify. Type build first.', keep: false };
+      const replay = said.replay ? ` ${said.replay.passed} of ${said.replay.total} of its examples replayed.` : '';
+      if (said.verdict !== 'verified') return { text: `Not verified: ${said.label} was judged "${said.verdict}"${said.error ? ` (${said.error})` : ''}.${replay}`, keep: false };
+      return { text: `Verified: ${said.label}, ${said.bytes} bytes, judged in this tab.${replay} Its theorems were not proved again by this.` };
+    },
   };
 }
 
@@ -81,7 +106,8 @@ export function createPins({ pin, manifest, kappa, held }) {
   const worst = (...all) => (all.includes('mismatch') ? 'mismatch' : all.includes('absent') ? 'absent' : 'pinned');
   const front = (command) => command === 'check' || command === 'snapshot';
   return {
-    labelOf: (command) => (front(command) ? pin.kappa : command === 'prove' || command === 'audit' ? prover : null),
+    // build and verify need what prove needs: LexLean and the kernel.
+    labelOf: (command) => (front(command) ? pin.kappa : ['prove', 'audit', 'build', 'verify'].includes(command) ? prover : null),
     bytesOf: async (command) => { const now = await held(); return front(command) ? now.lexlean : worst(now.lexlean, now.kernel); },
   };
 }
@@ -102,7 +128,7 @@ export function createPins({ pin, manifest, kappa, held }) {
  *   change        { write(path, text), remove(path) }: how the page changes a file of the model; without it the
  *                 commands that change a file say the page holds the model read-only
  */
-export function createCommandLine({ tables, luts = {}, rules, kappa, reuseAdmits, project, check, snapshotOf, prove, held, pin, manifest, sink, echo, clear, kept = createKept(), change = null, askLines = null, modelLabel = null }) {
+export function createCommandLine({ tables, luts = {}, rules, kappa, reuseAdmits, project, check, snapshotOf, prove, held, pin, manifest, sink, echo, clear, kept = createKept(), change = null, askLines = null, modelLabel = null, build = null, verify = null }) {
   // The words the command line answers are exactly the words the proved table lists, or it does not start.
   const listed = tables.commands.fields[0].values.filter((word) => word !== 'other');
   if ([...listed].sort().join(' ') !== [...WORDS].sort().join(' ')) throw new Error('the command line and the proved command table list different commands');
@@ -116,7 +142,7 @@ export function createCommandLine({ tables, luts = {}, rules, kappa, reuseAdmits
     made[name] = lut;
   }
   const judge = makeJudge(tables, rules.judgeTable, made);
-  const programs = createPrograms({ check, snapshotOf, prove, judge, rules, modelLabel });
+  const programs = createPrograms({ check, snapshotOf, prove, judge, rules, modelLabel, build, verify });
   const { labelOf, bytesOf } = createPins({ pin, manifest, kappa, held });
   const writer = createWriter({ judge, sink });
   const session = createSession({ judge, writer, files: () => new Map(Object.entries(project())), bytesOf, labelOf, programs, kappa, reuseAdmits, kept, clear, change });

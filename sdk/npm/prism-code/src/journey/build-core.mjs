@@ -110,6 +110,9 @@ export async function buildFromFiles({ files, lexlean, evaluator, prove = null, 
   const diagnostics = (check.diagnostics ?? []).map(placed);
   const semanticId = `sha256:${taken.snapshot.semantic_id}`;
   log(`LexLean checked the model in ${check.ms} ms and took its semantic snapshot in ${taken.ms} ms.`);
+  // A run that trapped and answered on a later try is worth seeing in a report (lexlean-core.mjs, lexleanRun).
+  const retried = (check.retried ?? 0) + (taken.retried ?? 0);
+  if (retried) log(`LexLean trapped ${retried} time${retried === 1 ? '' : 's'} before it answered; each trapped run was run again from the start.`);
 
   let theorems = null;
   let record = null;
