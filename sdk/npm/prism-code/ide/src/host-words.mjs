@@ -8,6 +8,7 @@
 //                              (and this page's own replace.unanswered, when no answer came in a minute)
 //   limits          -> { memoryMaxBytes, cpuTimePerEventMs, storageQuotaBytes } | null
 //   a refused step  -> an error whose code is engine.memory | engine.trap | engine.contract | engine.time | fs.quota
+//                      or, for a session that has ended, session.closed | session.diverged | session.full
 
 const WHY = {
   'replace.unanswered': 'its holospace did not answer within a minute',
@@ -58,10 +59,18 @@ const STOPPED = {
   'engine.contract': 'it broke the contract a holospace runs an app by',
   'fs.quota': 'it asked for more storage than its holospace allows',
 };
+// A session that will take no more requests, in Holospace's own meanings.
+const ENDED = {
+  'session.closed': 'its session has ended, since an earlier step failed; it takes no more requests until its holospace is restarted',
+  'session.diverged': 'the steps saved for its session do not give the same answers when replayed, so the saved history is not trusted',
+  'session.full': 'its session has taken the 10,000 steps it keeps; restart its holospace to begin a new one',
+};
 
 /** Why an app gave no answer to a request, from the error the holospace threw. */
 export function stoppedSaid(error) {
   const code = typeof error?.code === 'string' ? error.code : null;
   const known = code ? STOPPED[code] : null;
-  return known ? `the app was stopped by its holospace: ${known} (${code})` : `the app did not answer: ${String(error?.message ?? error)}`;
+  if (known) return `the app was stopped by its holospace: ${known} (${code})`;
+  if (code && ENDED[code]) return `the app took no request: ${ENDED[code]} (${code})`;
+  return `the app did not answer: ${String(error?.message ?? error)}`;
 }

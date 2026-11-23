@@ -42,6 +42,12 @@ for (const none of [null, undefined, {}, { memoryMaxBytes: '64 MB' }, { cpuTimeP
 const coded = (code) => Object.assign(new Error('x'), { code });
 assert.equal(stoppedSaid(coded('engine.time')), 'the app was stopped by its holospace: it ran longer than its holospace allows for one request (engine.time)');
 for (const code of ['engine.memory', 'engine.trap', 'engine.contract', 'fs.quota']) assert.match(stoppedSaid(coded(code)), new RegExp(`^the app was stopped by its holospace: .* \\(${code.replace('.', '\\.')}\\)$`));
+// A session that has ended is said to take no request, with why; it is not called stopped.
+assert.equal(stoppedSaid(coded('session.full')), 'the app took no request: its session has taken the 10,000 steps it keeps; restart its holospace to begin a new one (session.full)');
+for (const code of ['session.closed', 'session.diverged']) {
+  const said = stoppedSaid(coded(code));
+  assert.ok(said.startsWith('the app took no request: ') && said.endsWith(' (' + code + ')'), said);
+}
 assert.equal(stoppedSaid(new Error('no such export')), 'the app did not answer: no such export');
 assert.equal(stoppedSaid(coded('something.else')), 'the app did not answer: x');
 
