@@ -129,7 +129,9 @@ const PROJECT_MARKER = 'prism.project';
 // Holospace's library, opened once for the page: by the folder's own loading below when there is a folder, and by
 // everything after it.
 let opened = null;
-const openLibrary = () => (opened ??= import(/* @vite-ignore */ EDIT + 'holospace/holospace.bundle.mjs').then((m) => m.openHolospace()));
+// For a folder's project the library proves each build again with Lean's kernel before it runs it: the kernel's files
+// are this site's own copy (edit/model-kernel/), each held by the library to the package's pinned label.
+const openLibrary = () => (opened ??= import(/* @vite-ignore */ EDIT + 'holospace/holospace.bundle.mjs').then((m) => m.openHolospace(FOLDER !== null ? { reprove: 'pinned', kernelBase: EDIT + 'model-kernel/' } : undefined)));
 // The holospace of the folder that is open, when one is.
 let projectSpace = null;
 
@@ -733,15 +735,31 @@ try {
         runVerdict.textContent = `Not run: the holo was judged "${opened.verdict}"` + (opened.error ? ` (${opened.error})` : '') + '. Nothing of it was started.';
         return;
       }
-      running = { runner: h.run(opened), steps: [] };
-      runBox.dataset.state = 'verified';
-      runVerdict.textContent = `Ready to run ${opened.name ?? 'the app'}: its holo was judged verified in this tab${replayed}. Each request is one call on a fresh instance.`;
+      if (projectSpace && typeof projectSpace.replace === 'function') {
+        // A folder's project: the build goes into the project's own holospace, which proves it again itself and starts
+        // it, or swaps it for the one running. Its answer is what is said; nothing runs that it did not take.
+        runVerdict.textContent = "Putting the build in this project's holospace, which proves it again itself…";
+        const said = await projectSpace.replace(bytes.slice());
+        const told = replaceSaid(said);
+        state.replaced = told.state;
+        if (!told.state.replaced) { runBox.dataset.state = 'refused'; runVerdict.textContent = told.text; return; }
+        running = { runner: { step: (request) => projectSpace.step(request) }, steps: [] };
+        const now = typeof projectSpace.running === 'function' ? await projectSpace.running() : null;
+        state.run.holospace = { label: now?.label ?? told.state.label ?? null, stateful: now?.stateful ?? null, phase: now?.phase ?? null };
+        state.run.limits = now?.limits ?? null;
+        runBox.dataset.state = 'verified';
+        runVerdict.textContent = `${told.text} ${opened.name ?? 'The app'} runs in this project's own holospace${replayed}.`;
+      } else {
+        running = { runner: h.run(opened), steps: [] };
+        runBox.dataset.state = 'verified';
+        runVerdict.textContent = `Ready to run ${opened.name ?? 'the app'}: its holo was judged verified in this tab${replayed}. Each request is one call on a fresh instance.`;
+      }
       runForm.hidden = false;
       // A View that cannot be shown does not stop the app being run by request.
       try { state.run.view = await showView(opened); } catch (error) { state.run.view = { shown: false, why: String(error?.message ?? error) }; }
       if (state.run.view?.shown) runVerdict.textContent += ' Its own page is shown below, in a frame that can reach nothing but the app.';
       // The limits its holospace holds it to, when this page is in one and it names them. None is assumed.
-      state.run.limits = HOST?.limits ?? null;
+      state.run.limits = state.run.limits ?? HOST?.limits ?? null;
       const limits = limitsSaid(state.run.limits);
       if (limits) runVerdict.textContent += ' ' + limits;
     } catch (error) {
