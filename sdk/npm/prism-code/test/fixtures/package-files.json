@@ -56,6 +56,7 @@
   "src/generate/python.mjs",
   "src/generate/rust.mjs",
   "src/generate/wit.mjs",
+  "src/holospace-link.mjs",
   "src/home.mjs",
   "src/image-store-rules.json",
   "src/image-store.mjs",

@@ -22,6 +22,7 @@
  * manifest fails its checks or the model does not check (it does not parse, link or elaborate). A contract
  * violation is exit 1.
  */
+import { holospaceOf } from './holospace-link.mjs';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { PrismCodeError, PrismError } from './errors.mjs';
@@ -174,6 +175,12 @@ function builtOf(session) {
   return null;
 }
 
+/** `{ holospace }` for a built holo: the link to its own holospace and the file that page asks for; else nothing. */
+function holospaceMember(built, file) {
+  const holospace = built.holo ? holospaceOf(built.address, file) : null;
+  return holospace ? { holospace } : {};
+}
+
 /**
  * `build`: check, then write the app. `out` also copies what was written into that folder. A holo carries the
  * files that decide its model unless `sources` is false (`--no-sources`).
@@ -198,7 +205,7 @@ export async function modelBuild(path, { project: explicit = null, out = null, s
     artifact = join(resolve(out), basename(written));
     copyFileSync(written, artifact);
   }
-  return answer('build', started, EXIT.OK, { ...summary, artifact: forward(relative(process.cwd(), artifact) || artifact), address: built.address, bytes: built.bytes ?? statSync(written).size, site: built.site ? forward(relative(process.cwd(), built.site) || built.site) : null }, gated.diagnostics);
+  return answer('build', started, EXIT.OK, { ...summary, ...holospaceMember(built, forward(relative(process.cwd(), artifact) || artifact)), artifact: forward(relative(process.cwd(), artifact) || artifact), address: built.address, bytes: built.bytes ?? statSync(written).size, site: built.site ? forward(relative(process.cwd(), built.site) || built.site) : null }, gated.diagnostics);
 }
 
 /**
@@ -305,6 +312,7 @@ export function formatReport(r) {
   if (s.idsRegistered !== undefined) lines.push(`  contract   ${s.idsRegistered} IDs, ${s.scenarios} scenarios, ${s.authorities} authorities, ${s.claims} claims; ${s.contractViolations} violation${s.contractViolations === 1 ? '' : 's'}`);
   if (s.artifact) lines.push(`  artifact   ${s.artifact}${s.address ? ` (${s.address})` : ''}`);
   if (s.vectorsTotal !== undefined) lines.push(`  vectors    ${s.vectorsPassed} of ${s.vectorsTotal} acceptance vectors pass`);
+  if (s.holospace) lines.push(`  holospace  open ${s.holospace.link}`, `             and choose ${s.holospace.choose}: the app runs there, in its own holospace, in your browser`);
   if (s.identitiesVerified !== undefined) lines.push(`  identities ${s.identitiesVerified ? 'verified' : 'NOT verified'}${s.level ? `; assurance level ${s.level}` : ''}`);
   if (s.reproved) lines.push(`  reproved   ${s.reproved.passed ? `Lean's kernel accepted a proof of all ${s.reproved.theorems.length} theorems again, from the holo alone` : `NOT proved again: ${s.reproved.reason}`}`);
   if (s.sources) lines.push(`  sources    ${!s.sources.present ? 'not carried' : s.sources.matchesSnapshot === true ? "LexLean, on the sources the holo carries, writes its snapshot" : s.sources.matchesSnapshot === null ? 'carried, not read again' : `do NOT give the snapshot: ${s.sources.reason}`}`);
