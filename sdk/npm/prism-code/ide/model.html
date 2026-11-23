@@ -12,6 +12,12 @@
   #starters { white-space: nowrap; } #starters a { color: #9cc4ff; margin-left: .35rem; }
   #download, #build { font: inherit; color: #ddd; background: none; border: 1px solid #555; border-radius: 3px; padding: .1rem .5rem; margin-right: .5rem; cursor: pointer; white-space: nowrap; }
   #took { padding: .35rem .75rem; border-bottom: 1px solid #333; overflow-wrap: anywhere; }
+  #pushForm { padding: .35rem .75rem; border-bottom: 1px solid #333; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+  #pushForm[hidden] { display: none; }
+  #pushForm input { font: 12px/1.4 ui-monospace, monospace; background: #111; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: .15rem .4rem; }
+  #pushTarget { min-width: 18rem; }
+  #pushForm button { font: inherit; color: #ddd; background: none; border: 1px solid #555; border-radius: 3px; padding: .1rem .5rem; cursor: pointer; }
+  #pushSaid { overflow-wrap: anywhere; }
   #run { padding: .35rem .75rem; border-bottom: 1px solid #333; max-height: 32vh; overflow: auto; }
   #run[data-state="verified"] #runVerdict { color: #6fcf8f; } #run[data-state="refused"] #runVerdict { color: #ff8a8a; }
   #run form { display: flex; gap: .5rem; align-items: center; margin: .3rem 0; flex-wrap: wrap; }
@@ -30,6 +36,12 @@
 <body>
 <div id="top"><div id="strip" role="status">Starting…</div><span id="starters">Starters: <a href="?project=../starters/stateful-app/" title="An app that keeps state, with theorems of its own">stateful</a> <a href="?project=../starters/decision-app/" title="An app that decides, with theorems of its own">decision</a> <a href="?project=../starters/rule-app/" title="A rule table">rules</a></span><button id="build" type="button" title="Check, prove and build this model into a holo, here in this tab">Build</button><button id="download" type="button" title="The model as it stands in the editor, as one tar archive">Download model</button></div>
 <div id="took" role="status" hidden></div>
+<form id="pushForm" hidden>
+  <label>Push to <input id="pushTarget" type="text" placeholder="registry.example/name:tag" aria-label="The registry, name and tag to push the built holo to" autocomplete="off" spellcheck="false"></label>
+  <label title="Only if the registry asks for them. Kept in this tab's memory for this push and nowhere else.">as <input id="pushUser" type="text" aria-label="A user name, if the registry asks" autocomplete="off" spellcheck="false" size="10"> <input id="pushSecret" type="password" aria-label="A password or token, if the registry asks" autocomplete="off" size="14"></label>
+  <button type="submit">Push</button>
+  <span id="pushSaid" role="status"></span>
+</form>
 <div id="run" hidden>
   <div id="runVerdict" role="status"></div>
   <form id="runForm" hidden>

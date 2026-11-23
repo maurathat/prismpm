@@ -515,6 +515,41 @@ try {
   };
   runForm.addEventListener('submit', (event) => { event.preventDefault(); const text = runInput.value; if (text === '') return; runInput.value = ''; window.prismModel.send(text); });
   document.getElementById('runClear').addEventListener('click', () => { if (running) running.steps = []; runLog.textContent = ''; if (state.run) { state.run.sent = []; state.run.answers = []; } });
+  // Push: the holo that was just built goes to a registry by the package's own push (prism-code/push-core.mjs,
+  // the steps `prism-code push` runs, with oci-registry.mjs as the client). Nothing of it is this page's: the page
+  // gives the bytes, the reference and, when the registry asks, what the reader typed, which is held for that one
+  // push and kept nowhere. A holo that does not verify reaches no registry. Nothing is signed here.
+  const pushForm = document.getElementById('pushForm');
+  const pushSaid = document.getElementById('pushSaid');
+  window.prismModel.push = async (target, { username = '', password = '' } = {}) => {
+    const bytes = window.prismModel.holo?.();
+    if (!bytes) throw new Error('nothing is built to push: build first');
+    const [{ pushHolo }, { createRegistryClient }, { parseReference }] = await Promise.all(
+      ['push-core.mjs', 'oci-registry.mjs', 'oci-reference.mjs'].map((name) => import(/* @vite-ignore */ EDIT + 'prism-code/' + name)));
+    const reference = parseReference(target);
+    if (reference.kind !== 'registry') throw new Error('a page pushes to a registry: name it as registry.example/name:tag');
+    const asked = username !== '' || password !== '';
+    const client = createRegistryClient(reference, { resolveCredentials: asked ? () => ({ username, password }) : undefined });
+    const result = await pushHolo(bytes.slice(), client, { reference });
+    // The label a second machine asks for: the holo's own BLAKE3 label, with where it now is.
+    state.pushed = { label: 'blake3:' + result.blake3, where: result.reference, digest: result.digest, tags: result.tags, uploaded: result.layer.uploaded, referrers: result.referrers.length };
+    return state.pushed;
+  };
+  pushForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const target = document.getElementById('pushTarget').value.trim();
+    if (target === '') return;
+    const secret = document.getElementById('pushSecret');
+    pushSaid.textContent = 'Pushing…';
+    try {
+      const pushed = await window.prismModel.push(target, { username: document.getElementById('pushUser').value, password: secret.value });
+      pushSaid.textContent = `Pushed ${pushed.label} to ${pushed.where}${pushed.uploaded ? '' : ' (the registry already held these bytes)'}. Not signed here.`;
+    } catch (error) {
+      state.pushed = { error: String(error?.code ?? ''), message: String(error?.message ?? error) };
+      // The package's own words for this name a command a page does not have.
+      pushSaid.textContent = state.pushed.error === 'registry_auth_failed' ? 'Not pushed: the registry asks for a user name and a password or token. Type them beside the address and push again.' : `Not pushed: ${state.pushed.message}`;
+    } finally { secret.value = ''; }
+  });
   // Build: the package's own build, in the worker that holds LexLean and Lean's kernel. The holo is offered only
   // when the build gives one: every theorem proved, the holo read back verified, every acceptance vector passing.
   const buildButton = document.getElementById('build');
@@ -539,6 +574,8 @@ try {
       diagnostics: (built.diagnostics ?? []).length, holo: built.holo ? { label: built.holo.label, name: built.holo.name, bytes: built.holo.bytes.length, semanticId: built.holo.semanticId } : null };
     // The bytes are kept for whoever runs or saves the holo next; a failed build keeps none.
     window.prismModel.holo = built.holo ? () => built.holo.bytes : null;
+    pushForm.hidden = !built.holo;
+    pushSaid.textContent = '';
     await openRun(built.holo ? built.holo.bytes : null);
     if (!built.holo) {
       took.textContent = `Not built (stopped at ${built.stage}): ${built.message}`;
