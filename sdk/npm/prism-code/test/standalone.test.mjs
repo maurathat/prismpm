@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -212,6 +212,27 @@ function journey(t, { starter = null, model = 'app' } = {}) {
   const alone = run(['verify', join(out, readdirSync(out)[0]), '--json'], { cwd: root, env: OFFLINE });
   assert.equal(alone.code, 0, alone.out);
 
+  // run of the project runs what was built, which no signature covers: the build proved it and replayed it here.
+  if (readdirSync(out)[0].endsWith('.holo')) {
+    const ran = run(['run', '--input', 'x', '--rm'], { cwd: root, env: OFFLINE });
+    assert.match(ran.err, /the build of the model as it is on disk/, ran.err);
+    assert.doesNotMatch(ran.err, /run refused|no verdict/, ran.err);
+    const named = run(['run', root, 'x', '--rm'], { cwd: scratch(), env: OFFLINE });
+    assert.doesNotMatch(named.err, /run refused|no verdict/, named.err);
+    // The same holo named as a file is a holo from anywhere. It carries its proof record, so the one who runs it
+    // proves it again, here, and then runs it: no signature, and no word of the builder's.
+    const foreign = run(['run', join(out, readdirSync(out)[0]), 'x', '--rm'], { cwd: scratch(), env: OFFLINE });
+    assert.match(foreign.err, /proved again here: \d+ theorems? by Lean's kernel/, foreign.err);
+    assert.doesNotMatch(foreign.err, /run refused|no verdict/, foreign.err);
+    // A holo that carries no proof record is not proved here, and the default policy refuses it as before.
+    const bare = run(['run', join(PACKAGE, 'fixtures', 'Calculator.holo'), 'x', '--rm'], { cwd: scratch(), env: OFFLINE });
+    assert.equal(bare.code, 1, bare.err);
+    assert.match(bare.err, /run refused/);
+    assert.doesNotMatch(bare.err, /proved again here/);
+    // A project is judged by its build, so the flags that judge a holo do not go with it.
+    assert.equal(run(['run', '--input', 'x', '--allow-unverified'], { cwd: root, env: OFFLINE }).code, 64);
+  }
+
   // An edit to the model makes what is built stale: verify refuses it until it is built again.
   const source = readdirSync(join(at, 'src')).filter((f) => f.endsWith('.lex.tex'))[0];
   writeFileSync(join(at, 'src', source), `${readFileSync(join(at, 'src', source), 'utf8')}\n`);
@@ -265,6 +286,109 @@ test('R6: a lockfile whose digest is not the project\'s is refused by check, by 
   assert.equal(report.ok, false);
   assert.deepEqual([report.diagnostics[0].code, report.diagnostics[0].file], ['LLC0102', 'lexlean.lock']);
   assert.equal(report.summary.theoremsVerified, 0, 'nothing is proved from a model whose lock is not its own');
+});
+
+// init is the one entry point, so an app of either kind must go from it to a running holo under its own module names:
+// the template's entrypoint, src/Contract.lex.tex, is then gone, and the lock that pins lexlean.toml stays as it is.
+for (const [starter, theorem, input] of [['decision-app', 'ParkingFeeTierProofs.inv001Holds', '0 car'], ['stateful-app', 'DinnerSeatsProofs.startInBounds', 'x']]) {
+  test(`init, then a ${starter} model under its own module names: check, build, verify and run`, { timeout: 600000 }, () => {
+    const root = scratch();
+    assert.equal(run(['init', root], { cwd: root }).code, 0);
+    const src = join(root, 'app', 'src');
+    rmSync(join(src, 'Contract.lex.tex'));
+    const from = new URL(`./fixtures/starters/${starter}/src/`, import.meta.url);
+    for (const file of readdirSync(from)) writeFileSync(join(src, file), readFileSync(new URL(file, from)));
+    // The registers name the app's own guarantee in place of the template's two.
+    const ids = readFileSync(join(root, 'model', 'ids.toml'), 'utf8');
+    writeFileSync(join(root, 'model', 'ids.toml'), `${ids.slice(0, ids.indexOf('[[id]]'))}[[id]]\nid = "AP-01"\nlevel = "build"\nsuite = "app"\nstatement = "The first guarantee holds"\ntheorems = ["${theorem}"]\n`);
+    rmSync(join(root, 'features', 'suites', 'contract.feature'));
+    writeFileSync(join(root, 'features', 'suites', 'app.feature'), 'Feature: app\n\n  @AP-01 @build\n  Scenario: The first guarantee holds\n    Given the model in app/src\n    When prism-code check has the kernel prove it\n    Then it holds\n');
+    const build = run(['build', '--json'], { cwd: root, env: OFFLINE });
+    assert.equal(build.code, 0, build.out + build.err);
+    const built = JSON.parse(build.out).summary;
+    assert.ok(built.theoremsDeclared > 0 && built.theoremsVerified === built.theoremsDeclared && built.vectorsPassed === built.vectorsTotal && built.vectorsTotal > 0);
+    assert.doesNotMatch(built.artifact, /template-contract/, 'the holo is named for the app, not the template');
+    const verify = run(['verify', '--json'], { cwd: root, env: OFFLINE });
+    assert.equal(verify.code, 0, verify.out);
+    const ran = run(['run', '--input', input, '--rm'], { cwd: root, env: OFFLINE });
+    assert.equal(ran.code, 0, ran.err);
+    assert.doesNotMatch(ran.err, /run refused|no verdict/, ran.err);
+    assert.ok(ran.out.length > 0, 'the app answered');
+  });
+}
+
+test('lock writes the lock again after the project changes, and only what LexLean accepts', { timeout: 600000 }, () => {
+  const root = scratch();
+  assert.equal(run(['init', root], { cwd: root }).code, 0);
+  const app = join(root, 'app');
+  const config = () => readFileSync(join(app, 'lexlean.toml'), 'utf8');
+  const lock = () => readFileSync(join(app, 'lexlean.lock'), 'utf8');
+  const report = (args) => {
+    const r = run(['lock', ...args, '--json'], { cwd: root, env: OFFLINE });
+    return { code: r.code, ...JSON.parse(r.out) };
+  };
+  // The template's own lock is the one this command would write, byte for byte: nothing is written.
+  const shipped = lock();
+  const untouched = report([]);
+  assert.deepEqual([untouched.code, untouched.summary.current, untouched.summary.written], [0, true, false]);
+  assert.equal(lock(), shipped);
+
+  // The app takes its own name. check then refuses the lock, and says which command writes it again.
+  writeFileSync(join(app, 'lexlean.toml'), config().replace('name = "prism-template-contract"', 'name = "chess"'));
+  const refused = JSON.parse(run(['check', '--json'], { cwd: root, env: OFFLINE }).out);
+  assert.equal(refused.diagnostics.at(-1).code, 'LLC0102');
+  assert.match(refused.diagnostics.at(-1).remediation, /prism-code lock/);
+  const stale = report(['--check']);
+  assert.deepEqual([stale.code, stale.diagnostics.at(-1).code, stale.summary.written], [1, 'lock.stale', false]);
+  assert.equal(lock(), shipped, '--check writes nothing');
+  const written = report([]);
+  assert.deepEqual([written.code, written.summary.written], [0, true]);
+  assert.equal(run(['check', '--json'], { cwd: root, env: OFFLINE }).code, 0);
+
+  // A lexicon of the app's own, added in a folder and configured in its sorted place, is locked with the rest.
+  mkdirSync(join(app, 'language', 'chess.terms', 'entries'), { recursive: true });
+  writeFileSync(join(app, 'language', 'chess.terms', 'lexicon.toml'), readFileSync(join(app, 'language', 'prism.arch', 'lexicon.toml'), 'utf8').replace('package = "prism.arch"', 'package = "chess.terms"'));
+  writeFileSync(join(app, 'language', 'chess.terms', 'entries', 'arch-concern.toml'), readFileSync(join(app, 'language', 'prism.arch', 'entries', 'arch-concern.toml')));
+  const sorted = config().replace('[[lexicon_source]]', '[[lexicon_source]]\npackage = "chess.terms"\nkind = "path"\npath = "language/chess.terms"\n\n[[lexicon_source]]');
+  writeFileSync(join(app, 'lexlean.toml'), sorted);
+  const added = report([]);
+  assert.deepEqual([added.code, added.summary.written, added.summary.packages], [0, true, written.summary.packages + 1], JSON.stringify(added.diagnostics));
+  assert.match(lock(), /id = "chess\.terms"\nversion = "1\.0\.0"\nkind = "path"\nsource = "language\/chess\.terms"/);
+
+  // What LexLean does not accept is not written: here a lexicon configured out of order, which LexLean's own rule refuses.
+  const before = lock();
+  writeFileSync(join(app, 'lexlean.toml'), `${config()}\n[[lexicon_source]]\npackage = "a.first"\nkind = "path"\npath = "language/chess.terms"\n`);
+  const unaccepted = report([]);
+  assert.equal(unaccepted.code, 2);
+  assert.ok(['lock.refused', 'lock.unresolved'].includes(unaccepted.diagnostics.at(-1).code), JSON.stringify(unaccepted.diagnostics));
+  assert.equal(lock(), before);
+
+  // A package embedded in LexLean that the lock does not hold cannot be added here, and the refusal says so.
+  writeFileSync(join(app, 'lexlean.toml'), `${sorted}\n[[lexicon_source]]\npackage = "lexlean.std.zzz"\nkind = "builtin"\n`);
+  const embedded = report([]);
+  assert.deepEqual([embedded.code, embedded.diagnostics.at(-1).code], [2, 'lock.unresolved']);
+  assert.equal(lock(), before);
+});
+
+test('a theorem the kernel does not prove is reported where the model states it, with what to try', { timeout: 600000 }, () => {
+  const root = scratch();
+  startApp(root, 'decision-app');
+  // The planted defect: the first guarantee claims its breaking case always happens.
+  const file = join(root, 'src', 'ParkingFeeTierProofs.lex.tex');
+  const source = readFileSync(file, 'utf8');
+  assert.ok(source.includes(' = false)'));
+  writeFileSync(file, source.replace(' = false)', ' = true)'));
+  const check = run(['check', '--json'], { cwd: root, env: OFFLINE });
+  assert.equal(check.code, 1, check.out);
+  const rejected = JSON.parse(check.out).diagnostics.filter((d) => d.code === 'proof.rejected');
+  assert.equal(rejected.length, 1, check.out);
+  const stated = source.split(/\r?\n/).findIndex((l) => /^\s*name: inv001Holds,/.test(l)) + 1;
+  assert.deepEqual([rejected[0].file, rejected[0].line], ['src/ParkingFeeTierProofs.lex.tex', stated]);
+  assert.match(rejected[0].remediation, /never weaken the theorem/);
+  // And run refuses a project that does not build, with the report, before anything is instantiated.
+  const ran = run(['run', '--input', '0 car', '--rm'], { cwd: root, env: OFFLINE });
+  assert.equal(ran.code, 1, ran.err);
+  assert.match(ran.err, /run refused: the project did not build/);
 });
 
 test('a proof names each theorem as Module.theorem, and a build hands on the vectors it replayed, as bytes', { timeout: 600000 }, async () => {

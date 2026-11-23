@@ -52,6 +52,8 @@ test('the nearest names: an edit or two away, or one begins the other; none for 
   assert.deepEqual(nearest('Natural', scope), ['Nat']);
   assert.deepEqual(nearest('Skill::netwrk', scope), ['network']);
   assert.deepEqual(nearest('network', scope), []);
+  // A namespace is where a name was looked for, never a replacement for it.
+  assert.deepEqual(nearest('Bool.not_eq_true', scope), []);
   assert.deepEqual(nearest('zzzzzz', scope), []);
   assert.equal(distance('kitten', 'sitting'), 3);
 });

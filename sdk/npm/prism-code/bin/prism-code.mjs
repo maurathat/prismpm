@@ -2,6 +2,7 @@
 /**
  * prism-code — command line.
  *
+ *   prism-code run [<project>] [<input>]              build the project when its model changed, then run what was built
  *   prism-code run <app.holo> [--policy F] [--allow-unverified] [--capabilities <file>] [--capability-set <name>] [--port N] [--host H]
  *                                                     check the holo (#282), then serve the view and the intent endpoint
  *   prism-code run <app.holo> <input> | --input <text> [--rm] [--policy F] ...
@@ -59,9 +60,10 @@
  * and nothing about a model is sent anywhere.
  */
 import { readFile, stat } from 'node:fs/promises';
-import { statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { existsSync, statSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
+import { lexleanProjectDir } from '../src/tiers.mjs';
 import { createPrism } from '../src/index.mjs';
 import { fromFile, serve, readManifest, fileContainerStore, resolveProviders, releaseProviders } from '../src/node.mjs';
 import { replayFiles, recordingApplication, writeHistory, formatReplay, replayJson } from '../src/replay-cli.mjs';
@@ -74,7 +76,7 @@ import { canonicalJson } from '../src/archive.mjs';
 import { resolveAliases } from '../src/developer-view.mjs';
 import { GROUPS, MODULE_ALIASES, TOP_LEVEL, groupUsage, groupVerb, moduleOf } from '../src/cli/index.mjs';
 import { generate, WRITERS } from '../src/generate/index.mjs';
-import { check, readPolicy, formatVerdict, verdictJson, exitCodeOf, EXIT as CHECK_EXIT } from '../src/check.mjs';
+import { check, pinnedPolicy, readPolicy, formatVerdict, verdictJson, exitCodeOf, EXIT as CHECK_EXIT } from '../src/check.mjs';
 import { discover, errorHookMessages, listPlugins, pluginHelp, readMetadata, runPlugin } from '../src/plugins.mjs';
 
 const require = createRequire(import.meta.url);
@@ -83,10 +85,17 @@ const { version } = require('../package.json');
 const USAGE = `prism-code ${version}
 
 Usage:
+  prism-code run [<project>] [<input> | --input <text>] [--rm] [--port N] [--host H]
+                                                    in a project, or given its folder: build it when the model changed,
+                                                    proving every theorem and replaying every vector in this process,
+                                                    then run exactly the holo that build wrote, pinned by its digest
   prism-code run <app.holo> [--policy <file>] [--capabilities <file>] [--capability-set <name>] [--record <file>] [--port N] [--host H]
                                                     check the holo, then serve its view; POST /_hologram/intent
                                                     dispatches. A holo that fails check is refused (exit 1, 2 for
-                                                    no verdict) unless --allow-unverified, which warns every start
+                                                    no verdict) unless --allow-unverified, which warns every start.
+                                                    With no --policy, a holo the default policy refuses that carries
+                                                    its proof record is proved again here, its vectors replayed, and
+                                                    then run: whoever runs it re-checks it, and no signature is needed
   prism-code run <app.holo> <input> [--rm] [--policy <file>] [--allow-unverified] [--capabilities <file>] [--capability-set <name>]
   prism-code run <app.holo> --input <text> [--rm] ...
                                                     one run as a container: check the holo, dispatch the input, print
@@ -157,6 +166,11 @@ Usage:
                                                     fetch a holo and write it only after it verifies: digests, archive,
                                                     verdict, attestations; the verify-attestation flags add a signer policy;
                                                     a verified holo is also kept in the local image store
+  prism-code lock [<dir>] [--project <dir>] [--check] [--json]
+                                                    write the project's lexlean.lock again after lexlean.toml, a workspace
+                                                    file or a lexicon of its own changed. LexLean, as WebAssembly, checks
+                                                    the lock byte for byte before it is written; --check only says whether
+                                                    the lock is current, and exits 1 when it is not
   prism-code check [<dir>] [--project <dir>] [--json]
                                                     check the project: prism.toml, then LexLean as WebAssembly checks
                                                     the model, then Lean's kernel, as WebAssembly, proves every theorem.
@@ -655,7 +669,7 @@ async function commandRunOnce(path, input, options) {
     model: options.model ? resolve(options.model) : null,
     capabilities: options.capabilities ? resolve(options.capabilities) : null,
     capabilitySet: options['capability-set'],
-    policy: options.policy === undefined ? undefined : () => readPolicy(options.policy),
+    policy: options.policy === undefined ? undefined : typeof options.policy === 'object' ? options.policy : () => readPolicy(options.policy),
     allowUnverified: options['allow-unverified'] === true,
     rm: options.rm === true,
   });
@@ -675,10 +689,99 @@ async function imageOrPath(argument) {
   return imageArgument(argument, (path) => stat(path).then(() => true, () => false));
 }
 
+/**
+ * True when `path` is a Prism project: a folder that holds `prism.toml`, or a LexLean model as `check` finds one (the
+ * folder itself, or its one child that is a project). A closure directory is neither, and runs as it did.
+ */
+function isProject(path, explicit = null) {
+  const root = resolve(path);
+  if (existsSync(join(root, 'prism.toml'))) return true;
+  try {
+    lexleanProjectDir(root, null, explicit);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `run` of a project: build it, then run exactly what was built. `build` checks the model, has Lean's kernel prove
+ * every theorem and replays every acceptance vector, all in this process, so the evidence is established here and
+ * needs no signature to carry it. The policy the run is judged by pins the one holo this build wrote, by its
+ * digest: nothing else passes it, and a holo from anywhere else is still judged by the default policy.
+ * Resolves `{ path, policy }`, or `{ code }` when the build did not pass.
+ */
+async function buildToRun(dir, options) {
+  const model = await import('../src/model-cli.mjs');
+  const pinned = async (path) => ({ path: resolve(path), policy: await pinnedPolicy(resolve(path), 'built-here') });
+  // The model is as it was when it was last built: that build proved it and replayed it, and would write the same bytes.
+  const kept = await model.modelBuilt(dir, { project: options.project ?? null });
+  if (kept?.kind === 'holo') {
+    process.stderr.write(`running ${basename(kept.path)}, the build of the model as it is on disk\n`);
+    return pinned(kept.path);
+  }
+  const built = await model.modelBuild(dir, { project: options.project ?? null });
+  if (built.code !== 0) {
+    process.stderr.write(model.formatReport(built.report));
+    process.stderr.write('run refused: the project did not build. Fix what the report names, then run again.\n');
+    return { code: built.code };
+  }
+  const { artifact, theoremsVerified, vectorsPassed } = built.report.summary;
+  if (!/\.holo$/i.test(artifact)) {
+    process.stderr.write(`run refused: the project builds ${artifact}, which is not a holo; replay it with prism-code verify\n`);
+    return { code: CHECK_EXIT.NO_VERDICT };
+  }
+  process.stderr.write(`built ${artifact}: ${theoremsVerified} theorem${theoremsVerified === 1 ? '' : 's'} proved, ${vectorsPassed} acceptance vector${vectorsPassed === 1 ? '' : 's'} replayed, in this process\n`);
+  return pinned(artifact);
+}
+
+/**
+ * A holo from anywhere that the default policy refuses, re-checked by the one who runs it: its seal holds, it answers
+ * every acceptance vector it carries, and Lean's kernel, in this process, just proved again every theorem of the
+ * proof record it carries. Then it runs under a policy that pins this one archive by digest. Resolves that policy,
+ * or null when the default policy already accepts the holo, or when any of the three does not hold: a holo that
+ * carries no proof record is not proved here, and is judged by the default policy as before.
+ */
+async function reprovedToRun(path) {
+  const isHolo = (await stat(resolve(path)).catch(() => null))?.isFile() ?? false;
+  if (!isHolo) return null;
+  let verdict;
+  try {
+    verdict = await check(path, {});
+  } catch (error) {
+    if (!(error instanceof PrismError)) throw error;
+    return null;
+  }
+  if (verdict.passed) return null;
+  const model = await import('../src/model-cli.mjs');
+  const verified = await model.modelVerify(path, {});
+  const { sealed, vectors, reproved } = verified.report.summary;
+  if (verified.code !== 0 || sealed?.passed !== true || vectors?.passed !== true || reproved?.passed !== true) return null;
+  process.stderr.write(`proved again here: ${reproved.theorems?.length ?? 'every'} theorem${reproved.theorems?.length === 1 ? '' : 's'} by Lean's kernel, ${vectors.replayed} acceptance vector${vectors.replayed === 1 ? '' : 's'} replayed, in this process\n`);
+  return pinnedPolicy(resolve(path), 'reproved-here');
+}
+
 async function commandRun(positional, options) {
-  if (positional.length < 1 || positional.length > 2) return usage('run takes one artifact and at most one input');
-  positional[0] = await imageOrPath(positional[0]);
+  if (positional.length > 2) return usage('run takes one artifact and at most one input');
+  // No artifact, or a project folder: build the project and run what it built.
+  if (positional.length === 0 || isProject(positional[0], options.project ?? null)) {
+    if (positional.length === 0 && !isProject('.', options.project ?? null)) return usage('run takes a holo, or runs the project in this folder: there is no project here');
+    if (options.policy !== undefined || options['allow-unverified'] !== undefined) return usage('--policy and --allow-unverified judge a holo; a project is built and proved here before it runs');
+    const built = await buildToRun(positional[0] ?? '.', options);
+    if (built.code !== undefined) return built.code;
+    positional[0] = built.path;
+    options.policy = built.policy;
+    delete options.project;
+  } else {
+    positional[0] = await imageOrPath(positional[0]);
+    // A holo the caller names no policy for, which the default policy would refuse: prove it again here, then run it.
+    if (options.policy === undefined && options['allow-unverified'] === undefined) {
+      const reproved = await reprovedToRun(positional[0]);
+      if (reproved) options.policy = reproved;
+    }
+  }
   for (const name of ['capabilities', 'capability-set', 'policy', 'record']) {
+    if (name === 'policy' && typeof options.policy === 'object') continue;
     if (Object.hasOwn(options, name) && (typeof options[name] !== 'string' || options[name] === '')) return usage(`--${name} takes a value`);
   }
   if (Object.hasOwn(options, 'input') && typeof options.input !== 'string') return usage('--input takes a value');
@@ -771,7 +874,7 @@ async function commandProviders(positional, options) {
   return 0;
 }
 
-const MODEL_OPTIONS = { check: ['project', 'json'], build: ['project', 'out', 'json', 'check', 'no-sources'], verify: ['project', 'policy', 'json'] };
+const MODEL_OPTIONS = { lock: ['project', 'check', 'json'], check: ['project', 'json'], build: ['project', 'out', 'json', 'check', 'no-sources'], verify: ['project', 'policy', 'json'] };
 
 /**
  * The model verbs (src/model-cli.mjs): check, build and verify, each in this process. LexLean as WebAssembly checks the
@@ -789,7 +892,8 @@ async function commandModel(verb, positional, options) {
   const model = await import('../src/model-cli.mjs');
   const shared = { project: options.project ?? null, log: options.json ? () => {} : (line) => process.stderr.write(`${line}\n`) };
   let result;
-  if (verb === 'check' || (verb === 'build' && options.check)) result = await model.modelCheck(positional[0], shared);
+  if (verb === 'lock') result = await model.modelLock(positional[0], { project: shared.project, check: options.check === true });
+  else if (verb === 'check' || (verb === 'build' && options.check)) result = await model.modelCheck(positional[0], shared);
   else if (verb === 'build') result = await model.modelBuild(positional[0], { ...shared, out: options.out ?? null, sources: options['no-sources'] !== true });
   else result = await model.modelVerify(positional[0], { ...shared, policy: options.policy ?? null });
   process.stdout.write(options.json ? `${JSON.stringify(result.report, null, 2)}\n` : model.formatReport(result.report));
@@ -921,6 +1025,7 @@ async function main(argv) {
       // A holo is judged against a policy; anything else is the project, whose model is checked and proved.
       if (namesHolo(positional)) return commandCheck(positional, options);
       return commandModel('check', positional, options);
+    case 'lock':
     case 'build':
     case 'verify':
       return commandModel(command, positional, options);
