@@ -212,6 +212,21 @@ function journey(t, { starter = null, model = 'app' } = {}) {
   const alone = run(['verify', join(out, readdirSync(out)[0]), '--json'], { cwd: root, env: OFFLINE });
   assert.equal(alone.code, 0, alone.out);
 
+  // run of the project runs what was built, which no signature covers: the build proved it and replayed it here. The
+  // same holo named as a file is a holo from anywhere, and the default policy still refuses it.
+  if (readdirSync(out)[0].endsWith('.holo')) {
+    const ran = run(['run', '--input', 'x', '--rm'], { cwd: root, env: OFFLINE });
+    assert.match(ran.err, /the build of the model as it is on disk/, ran.err);
+    assert.doesNotMatch(ran.err, /run refused|no verdict/, ran.err);
+    const named = run(['run', root, 'x', '--rm'], { cwd: scratch(), env: OFFLINE });
+    assert.doesNotMatch(named.err, /run refused|no verdict/, named.err);
+    const foreign = run(['run', join(out, readdirSync(out)[0]), 'x', '--rm'], { cwd: root, env: OFFLINE });
+    assert.equal(foreign.code, 1);
+    assert.match(foreign.err, /run refused/);
+    // A project is judged by its build, so the flags that judge a holo do not go with it.
+    assert.equal(run(['run', '--input', 'x', '--allow-unverified'], { cwd: root, env: OFFLINE }).code, 64);
+  }
+
   // An edit to the model makes what is built stale: verify refuses it until it is built again.
   const source = readdirSync(join(at, 'src')).filter((f) => f.endsWith('.lex.tex'))[0];
   writeFileSync(join(at, 'src', source), `${readFileSync(join(at, 'src', source), 'utf8')}\n`);
@@ -265,6 +280,27 @@ test('R6: a lockfile whose digest is not the project\'s is refused by check, by 
   assert.equal(report.ok, false);
   assert.deepEqual([report.diagnostics[0].code, report.diagnostics[0].file], ['LLC0102', 'lexlean.lock']);
   assert.equal(report.summary.theoremsVerified, 0, 'nothing is proved from a model whose lock is not its own');
+});
+
+test('a theorem the kernel does not prove is reported where the model states it, with what to try', { timeout: 600000 }, () => {
+  const root = scratch();
+  startApp(root, 'decision-app');
+  // The planted defect: the first guarantee claims its breaking case always happens.
+  const file = join(root, 'src', 'ParkingFeeTierProofs.lex.tex');
+  const source = readFileSync(file, 'utf8');
+  assert.ok(source.includes(' = false)'));
+  writeFileSync(file, source.replace(' = false)', ' = true)'));
+  const check = run(['check', '--json'], { cwd: root, env: OFFLINE });
+  assert.equal(check.code, 1, check.out);
+  const rejected = JSON.parse(check.out).diagnostics.filter((d) => d.code === 'proof.rejected');
+  assert.equal(rejected.length, 1, check.out);
+  const stated = source.split(/\r?\n/).findIndex((l) => /^\s*name: inv001Holds,/.test(l)) + 1;
+  assert.deepEqual([rejected[0].file, rejected[0].line], ['src/ParkingFeeTierProofs.lex.tex', stated]);
+  assert.match(rejected[0].remediation, /never weaken the theorem/);
+  // And run refuses a project that does not build, with the report, before anything is instantiated.
+  const ran = run(['run', '--input', '0 car', '--rm'], { cwd: root, env: OFFLINE });
+  assert.equal(ran.code, 1, ran.err);
+  assert.match(ran.err, /run refused: the project did not build/);
 });
 
 test('a proof names each theorem as Module.theorem, and a build hands on the vectors it replayed, as bytes', { timeout: 600000 }, async () => {

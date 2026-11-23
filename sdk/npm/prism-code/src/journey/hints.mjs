@@ -57,9 +57,11 @@ export function nearest(name, scope, limit = 3) {
   const bare = name.includes('::') ? name.slice(name.lastIndexOf('::') + 2) : name;
   if (scope.has(bare)) return [];
   const max = Math.max(1, Math.floor(bare.length / 3));
+  // A namespace the name is written in (`Bool` for `Bool.and_eq_true`) is where it was looked for, never what to write instead.
+  const namespace = (n) => bare.startsWith(`${n}.`);
   // A name that one of them begins (`Boolean` for `Bool`) is as near as one edit.
   const prefix = (n) => n.length >= 3 && (bare.toLowerCase().startsWith(n.toLowerCase()) || n.toLowerCase().startsWith(bare.toLowerCase()));
-  return [...scope].map((n) => [n, prefix(n) ? 1 : distance(bare, n, max)]).filter(([, d]) => d <= max).sort((x, y) => x[1] - y[1] || x[0].localeCompare(y[0])).slice(0, limit).map(([n]) => n);
+  return [...scope].filter((n) => !namespace(n)).map((n) => [n, prefix(n) ? 1 : distance(bare, n, max)]).filter(([, d]) => d <= max).sort((x, y) => x[1] - y[1] || x[0].localeCompare(y[0])).slice(0, limit).map(([n]) => n);
 }
 
 /**

@@ -2,6 +2,7 @@
 /**
  * prism-code — command line.
  *
+ *   prism-code run [<project>] [<input>]              build the project when its model changed, then run what was built
  *   prism-code run <app.holo> [--policy F] [--allow-unverified] [--capabilities <file>] [--capability-set <name>] [--port N] [--host H]
  *                                                     check the holo (#282), then serve the view and the intent endpoint
  *   prism-code run <app.holo> <input> | --input <text> [--rm] [--policy F] ...
@@ -59,9 +60,10 @@
  * and nothing about a model is sent anywhere.
  */
 import { readFile, stat } from 'node:fs/promises';
-import { statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { existsSync, statSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
+import { lexleanProjectDir } from '../src/tiers.mjs';
 import { createPrism } from '../src/index.mjs';
 import { fromFile, serve, readManifest, fileContainerStore, resolveProviders, releaseProviders } from '../src/node.mjs';
 import { replayFiles, recordingApplication, writeHistory, formatReplay, replayJson } from '../src/replay-cli.mjs';
@@ -83,6 +85,10 @@ const { version } = require('../package.json');
 const USAGE = `prism-code ${version}
 
 Usage:
+  prism-code run [<project>] [<input> | --input <text>] [--rm] [--port N] [--host H]
+                                                    in a project, or given its folder: build it when the model changed,
+                                                    proving every theorem and replaying every vector in this process,
+                                                    then run exactly the holo that build wrote, pinned by its digest
   prism-code run <app.holo> [--policy <file>] [--capabilities <file>] [--capability-set <name>] [--record <file>] [--port N] [--host H]
                                                     check the holo, then serve its view; POST /_hologram/intent
                                                     dispatches. A holo that fails check is refused (exit 1, 2 for
@@ -655,7 +661,7 @@ async function commandRunOnce(path, input, options) {
     model: options.model ? resolve(options.model) : null,
     capabilities: options.capabilities ? resolve(options.capabilities) : null,
     capabilitySet: options['capability-set'],
-    policy: options.policy === undefined ? undefined : () => readPolicy(options.policy),
+    policy: options.policy === undefined ? undefined : typeof options.policy === 'object' ? options.policy : () => readPolicy(options.policy),
     allowUnverified: options['allow-unverified'] === true,
     rm: options.rm === true,
   });
@@ -675,10 +681,69 @@ async function imageOrPath(argument) {
   return imageArgument(argument, (path) => stat(path).then(() => true, () => false));
 }
 
+/**
+ * True when `path` is a Prism project: a folder that holds `prism.toml`, or a LexLean model as `check` finds one (the
+ * folder itself, or its one child that is a project). A closure directory is neither, and runs as it did.
+ */
+function isProject(path, explicit = null) {
+  const root = resolve(path);
+  if (existsSync(join(root, 'prism.toml'))) return true;
+  try {
+    lexleanProjectDir(root, null, explicit);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `run` of a project: build it, then run exactly what was built. `build` checks the model, has Lean's kernel prove
+ * every theorem and replays every acceptance vector, all in this process, so the evidence is established here and
+ * needs no signature to carry it. The policy the run is judged by pins the one holo this build wrote, by its
+ * digest: nothing else passes it, and a holo from anywhere else is still judged by the default policy.
+ * Resolves `{ path, policy }`, or `{ code }` when the build did not pass.
+ */
+async function buildToRun(dir, options) {
+  const model = await import('../src/model-cli.mjs');
+  const pinned = (path, address) => {
+    const [algorithm, hex] = String(address).split(':');
+    return { path: resolve(path), policy: { name: 'built-here', minimum: 'P0', digests: { archive: { [algorithm]: hex } } } };
+  };
+  // The model is as it was when it was last built: that build proved it and replayed it, and would write the same bytes.
+  const kept = await model.modelBuilt(dir, { project: options.project ?? null });
+  if (kept?.kind === 'holo') {
+    process.stderr.write(`running ${basename(kept.path)}, the build of the model as it is on disk\n`);
+    return pinned(kept.path, kept.address);
+  }
+  const built = await model.modelBuild(dir, { project: options.project ?? null });
+  if (built.code !== 0) {
+    process.stderr.write(model.formatReport(built.report));
+    process.stderr.write('run refused: the project did not build. Fix what the report names, then run again.\n');
+    return { code: built.code };
+  }
+  const { artifact, address, theoremsVerified, vectorsPassed } = built.report.summary;
+  if (!/\.holo$/i.test(artifact)) {
+    process.stderr.write(`run refused: the project builds ${artifact}, which is not a holo; replay it with prism-code verify\n`);
+    return { code: CHECK_EXIT.NO_VERDICT };
+  }
+  process.stderr.write(`built ${artifact}: ${theoremsVerified} theorem${theoremsVerified === 1 ? '' : 's'} proved, ${vectorsPassed} acceptance vector${vectorsPassed === 1 ? '' : 's'} replayed, in this process\n`);
+  return pinned(artifact, address);
+}
+
 async function commandRun(positional, options) {
-  if (positional.length < 1 || positional.length > 2) return usage('run takes one artifact and at most one input');
-  positional[0] = await imageOrPath(positional[0]);
+  if (positional.length > 2) return usage('run takes one artifact and at most one input');
+  // No artifact, or a project folder: build the project and run what it built.
+  if (positional.length === 0 || isProject(positional[0], options.project ?? null)) {
+    if (positional.length === 0 && !isProject('.', options.project ?? null)) return usage('run takes a holo, or runs the project in this folder: there is no project here');
+    if (options.policy !== undefined || options['allow-unverified'] !== undefined) return usage('--policy and --allow-unverified judge a holo; a project is built and proved here before it runs');
+    const built = await buildToRun(positional[0] ?? '.', options);
+    if (built.code !== undefined) return built.code;
+    positional[0] = built.path;
+    options.policy = built.policy;
+    delete options.project;
+  } else positional[0] = await imageOrPath(positional[0]);
   for (const name of ['capabilities', 'capability-set', 'policy', 'record']) {
+    if (name === 'policy' && typeof options.policy === 'object') continue;
     if (Object.hasOwn(options, name) && (typeof options[name] !== 'string' || options[name] === '')) return usage(`--${name} takes a value`);
   }
   if (Object.hasOwn(options, 'input') && typeof options.input !== 'string') return usage('--input takes a value');
