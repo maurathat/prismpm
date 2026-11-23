@@ -45,7 +45,8 @@ export async function holoAppRecord(project, { fetch: get = fetch } = {}) {
 }
 
 /**
- * One sentence for the reader. `identity` is what LexLean gives the model as it stands in the editor; `edited` is
+ * One sentence for the reader. The only names shown are BLAKE3 labels: the holo's. The identity LexLean gives a model
+ * is compared here and said to be the same or another; its value, which LexLean writes as a SHA-256, is not shown. `identity` is what LexLean gives the model as it stands in the editor; `edited` is
  * whether its text differs from what was fetched.
  */
 export function holoVerdict(found, identity, edited) {
@@ -55,8 +56,8 @@ export function holoVerdict(found, identity, edited) {
   if (found.holo === 'other') return { state: 'other', text: `The app at ${found.app} does not serve the holo its record names: the bytes are ${found.got}, the record names ${found.record.holo}. This model is compared with nothing.` };
   const holo = found.holo === 'same' ? `The app's holo is the bytes its record names, ${found.record.holo}.` : `The app's holo could not be fetched, so it was not checked against its record.`;
   if (mine === null) return { state: 'unread', text: `LexLean gave this model no identity, so it is not compared with the app at ${found.app}.` };
-  if (mine === named) return { state: 'same', text: (edited ? `Your text still has the identity the app at ${found.app} was built from, sha256:${named}.` : `This is the model the app at ${found.app} was built from: LexLean gives it the identity the app's record names, sha256:${named}.`) + ' ' + holo };
+  if (mine === named) return { state: 'same', text: (edited ? `Your text still has the identity the app at ${found.app} was built from.` : `This is the model the app at ${found.app} was built from: LexLean gives it the identity the app's record names.`) + ' ' + holo };
   return edited
     ? { state: 'changed', text: `Your changes give this model another identity than the app at ${found.app} was built from. The app itself is unchanged.` }
-    : { state: 'other', text: `This is NOT the model the app at ${found.app} was built from: as published LexLean gives it sha256:${mine}, and the app's record names sha256:${named}.` };
+    : { state: 'other', text: `This is NOT the model the app at ${found.app} was built from: as published LexLean gives it another identity than the app's record names.` };
 }
