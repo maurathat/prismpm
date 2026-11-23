@@ -1,0 +1,34 @@
+{
+ "schema": "prism-ide/brand-pins/1",
+ "note": "The Hologram brand kit the workbench is themed from. tools/build-theme.mjs reads the tokens at this commit and takes them only as the bytes their BLAKE3 label names; the fonts in src/theme/fonts are the kit's files at this commit, held to these labels by tools/theme-test.mjs. The kit is not changed from here: a token the theme needs and the kit lacks stops the build.",
+ "repository": "https://github.com/Hologram-Technologies/hologram-brand-kit",
+ "raw": "https://raw.githubusercontent.com/Hologram-Technologies/hologram-brand-kit/",
+ "commit": "f14a9d8cfe6bce14fc8a6ff09ac0f99b01e300be",
+ "set": "hologram-dark",
+ "license": {
+  "tokens": "MPL-2.0",
+  "fonts": "OFL-1.1"
+ },
+ "files": {
+  "tokens": {
+   "path": "brand/tokens/hologram-tokens.json",
+   "kappa": "blake3:642314875cadf458b5e110aec717dd88a1ce22fd2efd899d53751d47257ee06c",
+   "bytes": 27970
+  },
+  "GeistMono-Regular.woff2": {
+   "path": "brand/fonts/web/GeistMono-Regular.woff2",
+   "kappa": "blake3:8a8c7e911f706aab9b99d7ee73cbe19114e8f6a77e3c2992b4ec8b6e6723f3d6",
+   "bytes": 50356
+  },
+  "GeistMono-Medium.woff2": {
+   "path": "brand/fonts/web/GeistMono-Medium.woff2",
+   "kappa": "blake3:d63037ff9a4e1e11cc170e690f58cfb0380145d405c4a055749a5e9ce2b6af68",
+   "bytes": 51500
+  },
+  "OFL.txt": {
+   "path": "brand/fonts/OFL.txt",
+   "kappa": "blake3:1a11dff8bf758d177b2b11f9bd90f505448ac9244a4c0a113048a2069de3115b",
+   "bytes": 4383
+  }
+ }
+}
