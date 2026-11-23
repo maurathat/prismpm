@@ -19,6 +19,9 @@
  * It imports nothing of Node, so a browser and a worker run it.
  */
 import { EVALUATOR_PROVENANCE_SCHEMA, canonicalJson, isSourcePath, withModelFiles } from '../archive.mjs';
+
+/** The project's manifest, which a build does not carry: it is the project's, not the model's. */
+const PROJECT_MANIFEST = 'prism.toml';
 import { compileGuest, runGuest } from '../core.mjs';
 import { sha256HexSync } from '../sha256.mjs';
 import { readObjects, writeObjects } from '../uorc.mjs';
@@ -156,7 +159,11 @@ export async function buildHolo(snapshot, { evaluator, snapshotBytes = null, sou
     view_binding: { tag: 'present', view_content_kappa: kappa(view) },
   }));
   // The seven objects every holo holds; then what this one carries of its model, and the record of its proof.
-  const kept = (sources ?? []).filter((file) => isSourcePath(file.path));
+  // What is carried is what LexLean read to write the snapshot, and so what `relex` reads again. prism.toml is not:
+  // it names the project and its tools' settings, the folder it was started in among them, and LexLean never opens
+  // it. Carried, it made one model three addresses, in Node, in CI and in a page. A reader still accepts a holo that
+  // carries one (`isSourcePath`), so a holo built before this verifies as it did.
+  const kept = (sources ?? []).filter((file) => isSourcePath(file.path) && file.path !== PROJECT_MANIFEST);
   const carries = { snapshot: snapshotBytes !== null, sources: kept.length > 0, proof: proof !== null && snapshotBytes !== null };
   let bytes = writeObjects([manifest, source, provenance, capabilities, guest, view, model], 6);
   if (carries.snapshot || carries.sources) bytes = withModelFiles(bytes, { ...(carries.snapshot ? { snapshot: new Uint8Array(snapshotBytes) } : {}), ...(carries.sources ? { sources: kept } : {}) });
