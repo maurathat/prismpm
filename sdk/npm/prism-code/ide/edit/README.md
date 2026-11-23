@@ -298,7 +298,6 @@ Limits of the build:
 - It builds text applications. A rule table is proved in the page and not built here.
 - The holo is format v6, as the package's builder writes it: sealed and named by BLAKE3, so the label the build reports is the holo's own. The label above was measured on the published page at commit `a6f12a58`; it moves whenever what a build writes changes, as it will when a holo gains its proof record.
 - The holo is kept only in the page: a reload loses it.
-- For a theorem with no proof the reason shown can be "no proof found (process is not defined)". The verdict is right, nothing is called proved; the reason is the proof finder (`src/vendor/kernel-path/emit.mjs`) reading `process.env`, which a browser does not have. Whether that also hides a proof Node would find is not known.
 
 Limits of the workbench page:
 
