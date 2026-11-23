@@ -743,6 +743,8 @@ try {
     }
     const theoremsProved = built.theorems ? built.theorems.filter((t) => t.status === 'proved').length : null;
     state.built = { ok: built.ok, stage: built.stage, proved: built.proved, theorems: built.theorems ? { proved: theoremsProved, total: built.theorems.length } : null, vectors: built.vectors ?? null, ms: reply.ms, message: built.message,
+      // Each theorem a build did not prove, with where the package says it is stated and what to do about it.
+      unproved: (built.theorems ?? []).filter((t) => t.status !== 'proved').map((t) => ({ theorem: t.theorem, status: t.status, file: t.place?.file ?? null, line: t.place?.line ?? null, remedy: t.remedy ?? null })),
       diagnostics: (built.diagnostics ?? []).length, holo: built.holo ? { label: built.holo.label, name: built.holo.name, bytes: built.holo.bytes.length, semanticId: built.holo.semanticId } : null };
     // The bytes are kept for whoever runs or saves the holo next; a failed build keeps none.
     window.prismModel.holo = built.holo ? () => built.holo.bytes : null;
@@ -922,12 +924,15 @@ try {
         }
         return { path: entry, line: 1 };
       };
-      const missed = proving.theorems.filter((t) => t.status !== 'proved').map((t) => ({ ...t, at: stated(t.theorem) }));
+      // The package says where a theorem that is not proved is stated (place) and what to do about it (remedy). Its
+      // place is used when it names a file of the model; this page's own search stands in when it does not.
+      const placed = (t) => (t.place && typeof t.place.file === 'string' && t.place.file in project && Number.isInteger(t.place.line) && t.place.line > 0 ? { path: t.place.file, line: t.place.line } : stated(t.theorem));
+      const missed = proving.theorems.filter((t) => t.status !== 'proved').map((t) => ({ ...t, at: placed(t) }));
       for (const path of Object.keys(project)) {
         markers.changeOne('prism-guarantees', uriOf(path), missed.filter((t) => t.at.path === path).map((t) => ({
           severity: ERROR, source: 'Prism', code: t.status,
           message: t.status === 'not settled' ? `Theorem ${t.theorem} is not settled: Lean's kernel accepted no proof of it here. That says nothing about whether it is true. ${t.detail}`
-            : `Theorem ${t.theorem} is not proved: ${t.detail.replace(/^not proved: /, '')}.`,
+            : `Theorem ${t.theorem} is not proved: ${t.detail.replace(/^not proved: /, '')}.` + (typeof t.remedy === 'string' && t.remedy !== '' ? ' ' + t.remedy : ''),
           startLineNumber: t.at.line, startColumn: 1, endLineNumber: t.at.line, endColumn: 1000,
         })));
       }
