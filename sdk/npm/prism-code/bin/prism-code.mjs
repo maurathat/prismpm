@@ -76,7 +76,7 @@ import { canonicalJson } from '../src/archive.mjs';
 import { resolveAliases } from '../src/developer-view.mjs';
 import { GROUPS, MODULE_ALIASES, TOP_LEVEL, groupUsage, groupVerb, moduleOf } from '../src/cli/index.mjs';
 import { generate, WRITERS } from '../src/generate/index.mjs';
-import { check, readPolicy, formatVerdict, verdictJson, exitCodeOf, EXIT as CHECK_EXIT } from '../src/check.mjs';
+import { check, pinnedPolicy, readPolicy, formatVerdict, verdictJson, exitCodeOf, EXIT as CHECK_EXIT } from '../src/check.mjs';
 import { discover, errorHookMessages, listPlugins, pluginHelp, readMetadata, runPlugin } from '../src/plugins.mjs';
 
 const require = createRequire(import.meta.url);
@@ -92,7 +92,10 @@ Usage:
   prism-code run <app.holo> [--policy <file>] [--capabilities <file>] [--capability-set <name>] [--record <file>] [--port N] [--host H]
                                                     check the holo, then serve its view; POST /_hologram/intent
                                                     dispatches. A holo that fails check is refused (exit 1, 2 for
-                                                    no verdict) unless --allow-unverified, which warns every start
+                                                    no verdict) unless --allow-unverified, which warns every start.
+                                                    With no --policy, a holo the default policy refuses that carries
+                                                    its proof record is proved again here, its vectors replayed, and
+                                                    then run: whoever runs it re-checks it, and no signature is needed
   prism-code run <app.holo> <input> [--rm] [--policy <file>] [--allow-unverified] [--capabilities <file>] [--capability-set <name>]
   prism-code run <app.holo> --input <text> [--rm] ...
                                                     one run as a container: check the holo, dispatch the input, print
@@ -705,15 +708,12 @@ function isProject(path, explicit = null) {
  */
 async function buildToRun(dir, options) {
   const model = await import('../src/model-cli.mjs');
-  const pinned = (path, address) => {
-    const [algorithm, hex] = String(address).split(':');
-    return { path: resolve(path), policy: { name: 'built-here', minimum: 'P0', digests: { archive: { [algorithm]: hex } } } };
-  };
+  const pinned = async (path) => ({ path: resolve(path), policy: await pinnedPolicy(resolve(path), 'built-here') });
   // The model is as it was when it was last built: that build proved it and replayed it, and would write the same bytes.
   const kept = await model.modelBuilt(dir, { project: options.project ?? null });
   if (kept?.kind === 'holo') {
     process.stderr.write(`running ${basename(kept.path)}, the build of the model as it is on disk\n`);
-    return pinned(kept.path, kept.address);
+    return pinned(kept.path);
   }
   const built = await model.modelBuild(dir, { project: options.project ?? null });
   if (built.code !== 0) {
@@ -721,13 +721,39 @@ async function buildToRun(dir, options) {
     process.stderr.write('run refused: the project did not build. Fix what the report names, then run again.\n');
     return { code: built.code };
   }
-  const { artifact, address, theoremsVerified, vectorsPassed } = built.report.summary;
+  const { artifact, theoremsVerified, vectorsPassed } = built.report.summary;
   if (!/\.holo$/i.test(artifact)) {
     process.stderr.write(`run refused: the project builds ${artifact}, which is not a holo; replay it with prism-code verify\n`);
     return { code: CHECK_EXIT.NO_VERDICT };
   }
   process.stderr.write(`built ${artifact}: ${theoremsVerified} theorem${theoremsVerified === 1 ? '' : 's'} proved, ${vectorsPassed} acceptance vector${vectorsPassed === 1 ? '' : 's'} replayed, in this process\n`);
-  return pinned(artifact, address);
+  return pinned(artifact);
+}
+
+/**
+ * A holo from anywhere that the default policy refuses, re-checked by the one who runs it: its seal holds, it answers
+ * every acceptance vector it carries, and Lean's kernel, in this process, just proved again every theorem of the
+ * proof record it carries. Then it runs under a policy that pins this one archive by digest. Resolves that policy,
+ * or null when the default policy already accepts the holo, or when any of the three does not hold: a holo that
+ * carries no proof record is not proved here, and is judged by the default policy as before.
+ */
+async function reprovedToRun(path) {
+  const isHolo = (await stat(resolve(path)).catch(() => null))?.isFile() ?? false;
+  if (!isHolo) return null;
+  let verdict;
+  try {
+    verdict = await check(path, {});
+  } catch (error) {
+    if (!(error instanceof PrismError)) throw error;
+    return null;
+  }
+  if (verdict.passed) return null;
+  const model = await import('../src/model-cli.mjs');
+  const verified = await model.modelVerify(path, {});
+  const { sealed, vectors, reproved } = verified.report.summary;
+  if (verified.code !== 0 || sealed?.passed !== true || vectors?.passed !== true || reproved?.passed !== true) return null;
+  process.stderr.write(`proved again here: ${reproved.theorems?.length ?? 'every'} theorem${reproved.theorems?.length === 1 ? '' : 's'} by Lean's kernel, ${vectors.replayed} acceptance vector${vectors.replayed === 1 ? '' : 's'} replayed, in this process\n`);
+  return pinnedPolicy(resolve(path), 'reproved-here');
 }
 
 async function commandRun(positional, options) {
@@ -741,7 +767,14 @@ async function commandRun(positional, options) {
     positional[0] = built.path;
     options.policy = built.policy;
     delete options.project;
-  } else positional[0] = await imageOrPath(positional[0]);
+  } else {
+    positional[0] = await imageOrPath(positional[0]);
+    // A holo the caller names no policy for, which the default policy would refuse: prove it again here, then run it.
+    if (options.policy === undefined && options['allow-unverified'] === undefined) {
+      const reproved = await reprovedToRun(positional[0]);
+      if (reproved) options.policy = reproved;
+    }
+  }
   for (const name of ['capabilities', 'capability-set', 'policy', 'record']) {
     if (name === 'policy' && typeof options.policy === 'object') continue;
     if (Object.hasOwn(options, name) && (typeof options[name] !== 'string' || options[name] === '')) return usage(`--${name} takes a value`);

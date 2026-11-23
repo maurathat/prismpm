@@ -212,17 +212,23 @@ function journey(t, { starter = null, model = 'app' } = {}) {
   const alone = run(['verify', join(out, readdirSync(out)[0]), '--json'], { cwd: root, env: OFFLINE });
   assert.equal(alone.code, 0, alone.out);
 
-  // run of the project runs what was built, which no signature covers: the build proved it and replayed it here. The
-  // same holo named as a file is a holo from anywhere, and the default policy still refuses it.
+  // run of the project runs what was built, which no signature covers: the build proved it and replayed it here.
   if (readdirSync(out)[0].endsWith('.holo')) {
     const ran = run(['run', '--input', 'x', '--rm'], { cwd: root, env: OFFLINE });
     assert.match(ran.err, /the build of the model as it is on disk/, ran.err);
     assert.doesNotMatch(ran.err, /run refused|no verdict/, ran.err);
     const named = run(['run', root, 'x', '--rm'], { cwd: scratch(), env: OFFLINE });
     assert.doesNotMatch(named.err, /run refused|no verdict/, named.err);
-    const foreign = run(['run', join(out, readdirSync(out)[0]), 'x', '--rm'], { cwd: root, env: OFFLINE });
-    assert.equal(foreign.code, 1);
-    assert.match(foreign.err, /run refused/);
+    // The same holo named as a file is a holo from anywhere. It carries its proof record, so the one who runs it
+    // proves it again, here, and then runs it: no signature, and no word of the builder's.
+    const foreign = run(['run', join(out, readdirSync(out)[0]), 'x', '--rm'], { cwd: scratch(), env: OFFLINE });
+    assert.match(foreign.err, /proved again here: \d+ theorems? by Lean's kernel/, foreign.err);
+    assert.doesNotMatch(foreign.err, /run refused|no verdict/, foreign.err);
+    // A holo that carries no proof record is not proved here, and the default policy refuses it as before.
+    const bare = run(['run', join(PACKAGE, 'fixtures', 'Calculator.holo'), 'x', '--rm'], { cwd: scratch(), env: OFFLINE });
+    assert.equal(bare.code, 1, bare.err);
+    assert.match(bare.err, /run refused/);
+    assert.doesNotMatch(bare.err, /proved again here/);
     // A project is judged by its build, so the flags that judge a holo do not go with it.
     assert.equal(run(['run', '--input', 'x', '--allow-unverified'], { cwd: root, env: OFFLINE }).code, 64);
   }
