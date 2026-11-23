@@ -39,7 +39,10 @@ import { LEXLEAN, registerLexLean, tokenTypes } from './lexlean-language.js';
 import { prismTerminal } from './model-terminal.js';
 import { ITerminalService } from '@codingame/monaco-vscode-terminal-service-override';
 
-const PAUSE_MS = 350;
+// How long after a keystroke LexLean is asked. A check takes tens of milliseconds, so the pause is one frame or
+// two, enough to take a burst of keys as one edit; and only one check is ever waiting, the newest, so typing faster
+// than LexLean answers never builds a queue behind what is on screen.
+const PAUSE_MS = 40;
 const ERROR = 8; // MarkerSeverity.Error
 const strip = document.getElementById('strip');
 const state = (window.prismModel = { ready: false, checks: 0, last: null, proof: null, error: null, markers: 0 });
@@ -368,7 +371,8 @@ try {
   // ?theme=<a theme's name> opens the page in that theme; without it, the workbench's own choice stands.
   // Dark+ unless the address names another theme: ?theme=<a theme's name, as the command palette lists it>.
   const theme = new URLSearchParams(location.search).get('theme') || 'Default Dark+';
-  await initUserConfiguration(JSON.stringify({ 'editor.semanticHighlighting.enabled': true, 'workbench.colorTheme': theme }));
+  // No minimap: it is one more thing drawn on every keystroke, and the files here are short.
+  await initUserConfiguration(JSON.stringify({ 'editor.semanticHighlighting.enabled': true, 'workbench.colorTheme': theme, 'editor.minimap.enabled': false }));
 
   await initialize({
     ...getExtensionsOverride({ enableWorkerExtensionHost: true }), ...getFilesOverride(), ...getConfigurationOverride(),
@@ -644,13 +648,23 @@ try {
   window.prismModel.marks = () => markers.read({}).map((m) => ({ file: pathOf(m.resource), line: m.startLineNumber, code: m.code, owner: m.owner }));
 
   let latest = 0;
+  // One check with LexLean at a time. An edit made while one is out is checked as soon as it comes back, and what
+  // was typed in between is checked once, as it then stands.
+  let checking = false;
+  let checkAgain = false;
   async function run() {
+    if (checking) { checkAgain = true; return; }
     const mine = ++latest;
     const project = whole();
     const text = project[entry];
     const edited = Object.keys(project).some((path) => project[path] !== files[path]);
     say('Checking…');
-    const reply = await lexlean.ask({ files: project });
+    checking = true;
+    const asked = performance.now();
+    let reply;
+    try { reply = await lexlean.ask({ files: project }); } finally { checking = false; }
+    state.checkMs = Math.round(performance.now() - asked);
+    if (checkAgain) { checkAgain = false; queueMicrotask(run); }
     if (mine !== latest) return;
     state.checks++;
     if (reply.error) { state.last = { error: reply.error }; say('LexLean did not answer: ' + reply.error, 'bad'); state.ready = true; return; }
