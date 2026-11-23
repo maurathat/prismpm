@@ -369,6 +369,10 @@ path = "sdk/npm/prism-code/src/model-cli.mjs"
 module = "client"
 
 [[owner]]
+path = "sdk/npm/prism-code/src/holospace-link.mjs"
+module = "client"
+
+[[owner]]
 path = "sdk/npm/prism-code/src/uorc.mjs"
 module = "verify"
 
