@@ -98,9 +98,9 @@ for Lean 4.32.1.
 
 Vendored release artifacts and tree manifests are locked to immutable SHA-256 digests:
 - `vendor/lean4-prod/lean.tar`: `b1e282a8b41d8ce6172db40d73ded55e7d9db39b9145c3f5bbc160ce6c74100d`
-- `vendor/lean4-prod/rust/MANIFEST.sha256`: `45fe620c63632e8a4cfa950cc75531b8266b5d56caafff24a31abe6eb81f309d`
+- `vendor/lean4-prod/rust/MANIFEST.sha256`: `14226c4973154aee8b657e6b7c20ba055befbf6501b95eb1041adbb403041012`
 - `vendor/lean4-prod/crates/prod-alloc-counter-0.1.0.crate`: `3072374800280030ab1f03db059676f93d7f3d62df431895e32fe8c9eae8229e`
-- `vendor/lean4-prod/crates/prod-codegen-0.1.0.crate`: `81602aea6d0e08cebc8be4ea77d28b68ba8f84d0957b7a6d32175aa66b560b55`
+- `vendor/lean4-prod/crates/prod-codegen-0.1.0.crate`: `d4b843670a47c89edad97c8364821428d5cbdbf756da014361213dbebf87fe6f`
 - `vendor/lean4-prod/crates/prod-ir-0.1.0.crate`: `7cffc0251ee01ce97debe304a41a4e28f6be94ba41691fac1993c811919cdc21`
 
 Because `afflom/lean4-prod` has issues disabled, dependency tracking and closure evidence
