@@ -4,7 +4,7 @@
 // evidence. The cases build real holos, so they need LexLean and the kernel as the package ships them.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -104,8 +104,12 @@ test('a build writes the snapshot, the sources and one unsigned kernel-proof sta
   assert.deepEqual([...parsed.sections[7].body], [...taken.bytes]);
   assert.deepEqual(JSON.parse(parsed.metadata.text).files.map((f) => f.kind), ['model-document', 'lexlean-semantic-snapshot']);
   const carried = readSources(parsed.sections[8].body).map((f) => f.path);
-  for (const path of ['lexlean.toml', 'lexlean.lock', 'lakefile.toml', 'lean-toolchain', 'lake-manifest.json', 'prism.toml', 'src/ParkingFeeTier.lex.tex', 'src/ParkingFeeTierProofs.lex.tex']) assert.ok(carried.includes(path), path);
+  for (const path of ['lexlean.toml', 'lexlean.lock', 'lakefile.toml', 'lean-toolchain', 'lake-manifest.json', 'src/ParkingFeeTier.lex.tex', 'src/ParkingFeeTierProofs.lex.tex']) assert.ok(carried.includes(path), path);
   assert.equal(carried.includes('session.json'), false, 'a file that does not decide the model is left out');
+  // prism.toml is the project's, not the model's: LexLean never reads it, and carried it made one model's address
+  // depend on the folder it was started in. The project has one here, and the holo does not carry it.
+  assert.equal(existsSync(join(dir, 'prism.toml')), true);
+  assert.equal(carried.includes('prism.toml'), false);
 
   // One statement, unsigned, about the model document, the snapshot and the sources; its predicate is the kernel's verdict.
   const statements = readAttestations(parsed);

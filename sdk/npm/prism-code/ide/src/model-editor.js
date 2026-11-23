@@ -105,7 +105,103 @@ const json = async (url) => (await fresh(url)).json();
 const hostedModel = () => {
   try { return typeof HOST.app.from === 'string' ? new URL('model/', HOST.app.from).href : null; } catch { return null; }
 };
-const asked = HOST ? hostedModel() : new URLSearchParams(location.search).get('project');
+// ?folder=<key> opens a project folder a person opened here before with "Open folder". The key is not the project's
+// ID and opens nothing by itself: it names, in this browser's own storage, the prism.project file that was read from
+// the folder, and Holospace's library enters the project's holospace from that file and from nothing else. A link
+// with a key this browser does not hold opens nothing.
+const FOLDER = HOST ? null : new URLSearchParams(location.search).get('folder');
+// With a folder, nothing else is taken from the link: no project, no model by label, no workspace. The key selects
+// bytes this browser already keeps, so a link someone else wrote can at most reopen a project this browser opened,
+// and never put another's files or build into it. (?theme= is read too; it changes only colours.)
+const LINK = FOLDER !== null ? new URLSearchParams() : new URLSearchParams(location.search);
+const FOLDER_KEPT = 'prism-ide-folder:';
+const PROJECT_MARKER = 'prism.project';
+// Holospace's library, opened once for the page: by the folder's own loading below when there is a folder, and by
+// everything after it.
+let opened = null;
+const openLibrary = () => (opened ??= import(/* @vite-ignore */ EDIT + 'holospace/holospace.bundle.mjs').then((m) => m.openHolospace()));
+// The holospace of the folder that is open, when one is.
+let projectSpace = null;
+
+// Open folder: a project on this computer, read once into its own holospace. The folder is read (never written),
+// its model is found by the package's rule (folder-model.mjs), and the files go to Holospace's library with
+// prism.project among them. The library reads the project's ID from that file and names the holospace; this page
+// does neither. What this browser already holds for the project is kept unless the reader says to replace it.
+const FOLDER_SKIPPED = new Set(['node_modules', 'target', '.git', '.prism']);
+const FOLDER_MOST = { files: 4000, bytes: 64 * 1024 * 1024 };
+async function readFolder() {
+  const read = new Map();
+  let total = 0;
+  const take = (path, bytes) => {
+    total += bytes.length;
+    if (read.size >= FOLDER_MOST.files || total > FOLDER_MOST.bytes) throw new Error(`the folder holds more than ${FOLDER_MOST.files} files or ${FOLDER_MOST.bytes / 1048576} MB; open the project's own folder`);
+    read.set(path, bytes);
+  };
+  if (typeof window.showDirectoryPicker === 'function') {
+    const root = await window.showDirectoryPicker({ mode: 'read' });
+    const visit = async (dir, rel) => {
+      for await (const [name, handle] of dir.entries()) {
+        if (handle.kind === 'directory') { if (!FOLDER_SKIPPED.has(name)) await visit(handle, rel + name + '/'); }
+        else take(rel + name, new Uint8Array(await (await handle.getFile()).arrayBuffer()));
+      }
+    };
+    await visit(root, '');
+    return read;
+  }
+  // A browser with no folder picker of that kind: a folder chosen through a file input, which is read-only too.
+  const picked = await new Promise((resolve) => {
+    const input = Object.assign(document.createElement('input'), { type: 'file', multiple: true });
+    input.webkitdirectory = true;
+    input.addEventListener('change', () => resolve([...input.files]));
+    input.addEventListener('cancel', () => resolve([]));
+    input.click();
+  });
+  for (const file of picked) {
+    // The chosen folder's own name is the first part of each path; the rest is the path inside it.
+    const parts = (file.webkitRelativePath || file.name).split('/').slice(1);
+    if (parts.length === 0 || parts.slice(0, -1).some((part) => FOLDER_SKIPPED.has(part))) continue;
+    take(parts.join('/'), new Uint8Array(await file.arrayBuffer()));
+  }
+  return read;
+}
+async function openFolder() {
+  const [{ folderModel, sameFiles }, { kappa }] = await Promise.all([import(/* @vite-ignore */ EDIT + 'folder-model.mjs'), import(/* @vite-ignore */ EDIT + 'prism-code/blake3.mjs')]);
+  const read = await readFolder();
+  if (read.size === 0) return null;
+  const model = folderModel(read);
+  if (model.marker === null) throw Object.assign(new Error(`this folder has no ${PROJECT_MARKER}. Run npx prism-code@latest init in it, which writes one with the project's ID and changes nothing else, then open the folder again`), { code: 'project.id' });
+  const h = await openLibrary();
+  if (typeof h.project !== 'function') throw new Error("the Holospace library this site pins gives a project no holospace of its own yet");
+  // Entered from the project's own file alone first, so what this browser already holds can be looked at.
+  const entered = await h.project({ files: new Map([[PROJECT_MARKER, model.marker]]) });
+  const held = new Map();
+  for (const e of await walkProvider(entered.workspace)) if (!e.dir && e.path !== PROJECT_MARKER) held.set(e.path, await entered.workspace.readFile('/' + e.path));
+  let write = held.size === 0;
+  if (!write && !sameFiles(held, model.files)) write = window.confirm("This browser already holds this project, and its files differ from the folder's.\n\nOK replaces them with the folder's files. Cancel keeps what this browser holds.");
+  if (write) await h.project({ files: new Map([[PROJECT_MARKER, model.marker], ...model.files]) });
+  if (write || held.has(model.entry)) await entered.storage.writeFile(LISTING_KEPT, new TextEncoder().encode(JSON.stringify({ entry: model.entry, files: [...(write ? model.files : held).keys()] })));
+  const key = kappa(model.marker).slice('blake3:'.length, 'blake3:'.length + 16);
+  localStorage.setItem(FOLDER_KEPT + key, new TextDecoder().decode(model.marker));
+  state.folder = { key, id: entered.id ?? null, root: model.root, files: model.files.size, entry: model.entry, wrote: write, held: held.size };
+  return key;
+}
+const openFolderButton = document.getElementById('openFolder');
+// Under a host the holospace is the host's to choose; this page opens no other from inside it.
+if (HOST) openFolderButton.hidden = true;
+window.prismModel.openFolder = openFolder;
+openFolderButton.addEventListener('click', async () => {
+  try {
+    const key = await openFolder();
+    if (key !== null) location.assign('?folder=' + key);
+  } catch (error) {
+    // A picker the reader closed is not an error.
+    if (error?.name === 'AbortError') return;
+    state.folder = { error: String(error?.code ?? ''), message: String(error?.message ?? error) };
+    say('The folder was not opened: ' + state.folder.message + '.', 'bad');
+  }
+});
+
+const asked = HOST ? hostedModel() : LINK.get('project');
 const PROJECT = asked ? new URL(asked.replace(/\/?$/, '/'), location.href).href : null;
 const files = {};
 let listing, pin;
@@ -131,7 +227,7 @@ async function heldModel() {
 }
 // ?model=blake3:<label>&registry=<address>&namespace=<name> opens a model by its content: the archive "Download
 // model" makes, fetched from a kappa-registry under its BLAKE3 label and taken only if its bytes are that label.
-const wanted = new URLSearchParams(location.search);
+const wanted = LINK;
 const BY_LABEL = wanted.get('model') ? { label: wanted.get('model'), registry: wanted.get('registry') ?? '', namespace: wanted.get('namespace') ?? '' } : null;
 if (BY_LABEL) {
   try {
@@ -146,6 +242,28 @@ if (BY_LABEL) {
     state.error = String(error?.message ?? error);
     state.source = { kind: 'registry', label: BY_LABEL.label, refused: error?.code ?? 'unreadable' };
     say(`The model ${BY_LABEL.label} could not be opened: ${state.error}`, 'bad');
+    throw error;
+  }
+} else if (FOLDER !== null) {
+  try {
+    pin = await json(EDIT + 'pin.json');
+    let marker = null;
+    try { marker = localStorage.getItem(FOLDER_KEPT + FOLDER); } catch { /* no storage: nothing is held */ }
+    if (marker === null) throw Object.assign(new Error('this browser does not hold that folder'), { code: 'folder.gone' });
+    const h = await openLibrary();
+    if (typeof h.project !== 'function') throw Object.assign(new Error('the Holospace library this site pins gives a project no holospace of its own yet'), { code: 'folder.library' });
+    projectSpace = await h.project({ files: new Map([[PROJECT_MARKER, new TextEncoder().encode(marker)]]) });
+    const there = (await walkProvider(projectSpace.workspace)).filter((e) => !e.dir && e.path !== PROJECT_MARKER).map((e) => e.path);
+    const kept = JSON.parse(new TextDecoder().decode(await projectSpace.storage.readFile(LISTING_KEPT)));
+    if (typeof kept?.entry !== 'string' || !there.includes(kept.entry)) throw Object.assign(new Error("the project's holospace holds no model"), { code: 'folder.gone' });
+    const decoder = new TextDecoder();
+    for (const path of there) files['/' + path] = decoder.decode(await projectSpace.workspace.readFile('/' + path));
+    listing = { entry: kept.entry, files: there.slice().sort() };
+    state.source = { kind: 'folder', id: projectSpace.id ?? null, files: listing.files.length };
+  } catch (error) {
+    state.error = String(error?.message ?? error);
+    state.source = { kind: 'folder', refused: error?.code ?? 'unreadable' };
+    say(`The folder could not be opened here (${state.error}). Use Open folder to open it again.`, 'bad');
     throw error;
   }
 } else try {
@@ -235,12 +353,12 @@ const holospaceModule = HOST
 // Under a host there is one app and its things; nothing else of the library is reachable from here.
 const library = HOST
   ? async () => ({ open: (bytes) => HOST.run.open(bytes), run: (opened) => HOST.run.runner(opened), workbench: (provider, options) => HOST.files.workbench(provider, options), app: async () => HOST.space, store: HOST.store })
-  : () => (holospace ??= holospaceModule().then((m) => m.openHolospace()));
+  : () => (holospace ??= openLibrary());
 
 // ?workspace=<name> keeps the model's files in a workspace of Holospace's store, in this browser, and mounts them in
 // the workbench through Holospace's own file provider. The first visit puts the model there as fetched, in one
 // step; later visits open what was saved. Without it the files are held in memory and changes are kept as a draft.
-const WORKSPACE = (() => { const name = new URLSearchParams(location.search).get('workspace'); return name !== null && /^[a-z0-9][a-z0-9._-]{0,62}$/.test(name) ? name : null; })();
+const WORKSPACE = (() => { const name = LINK.get('workspace'); return name !== null && /^[a-z0-9][a-z0-9._-]{0,62}$/.test(name) ? name : null; })();
 // An app opened from its own link (?project=<app>/model/) has a holospace of its own, named by Holospace from the
 // BLAKE3 label of the holo the app publishes: the same on every visit and for every rebuild of that app, and apart
 // from every other app's. The label is the one the app's record names, taken only because the published holo's
@@ -255,7 +373,7 @@ let storedBench = null;
 let space = null;
 // The store, for what it says of this tab: whether it may write, and when that changes.
 let store = null;
-const PLACE = () => (space ? "This app's own holospace" : `Workspace "${WORKSPACE}"`);
+const PLACE = () => (space ? (projectSpace ? "This project's own holospace" : "This app's own holospace") : `Workspace "${WORKSPACE}"`);
 const READ_ONLY = 'This workspace is open for editing in another tab; this one is read-only until that tab closes. ';
 // Measured in Chromium with the library at ea96397: when the writing tab closes, this tab is told it may write, but
 // a save from the workbench already open here still does not reach the store. After a reload it does. So the page
@@ -272,11 +390,12 @@ const drafts = await openDrafts();
 const base = baseLabel(listing.entry, files);
 let kept = { restored: {}, dropped: [] };
 let restored = {};
-if (WORKSPACE || APP_ADDRESS) {
+if (WORKSPACE || APP_ADDRESS || projectSpace) {
   try {
     const [h, { walk }] = await Promise.all([library(), holospaceModule()]);
-    if (!WORKSPACE && typeof h.app !== 'function') throw Object.assign(new Error('the library this site pins gives an app no holospace of its own yet'), { quiet: true });
-    if (!WORKSPACE) { space = await h.app({ address: APP_ADDRESS }); APP_FACTS.id = space.id ?? null; }
+    if (!WORKSPACE && !projectSpace && typeof h.app !== 'function') throw Object.assign(new Error('the library this site pins gives an app no holospace of its own yet'), { quiet: true });
+    // A folder's project has its holospace already, entered from its own prism.project; an app's is asked for by its label.
+    if (!WORKSPACE) { space = projectSpace ?? await h.app({ address: APP_ADDRESS }); if (APP_FACTS) APP_FACTS.id = space.id ?? null; }
     stored = space ? space.workspace : h.workspace(WORKSPACE);
     store = h.store ?? null;
     const encoder = new TextEncoder();
@@ -286,15 +405,17 @@ if (WORKSPACE || APP_ADDRESS) {
       await stored.writeFiles(Object.fromEntries(Object.entries(files).map(([path, text]) => [path.slice(1), encoder.encode(text)])));
     } else {
       const names = new Set(there.map((e) => '/' + e.path));
+      // The project's ID file sits at the workspace's root and is no file of the model.
+      names.delete('/' + PROJECT_MARKER);
       for (const path of names) { const text = decoder.decode(await stored.readFile(path)); if (text !== files[path]) restored[path] = text; }
       for (const path of Object.keys(files)) if (!names.has(path)) goneFromWorkspace.push(path);
     }
     storedBench = h.workbench(stored);
     // Only one tab writes a store. Another is told so, reads what the first saves, and takes over when it closes.
-    state.workspace = { name: WORKSPACE, app: space ? APP_ADDRESS : null, made: there.length === 0, label: await stored.label(), changed: Object.keys(restored).sort(), gone: [...goneFromWorkspace], writable: store?.writable ?? 'unknown' };
+    state.workspace = { name: WORKSPACE, project: projectSpace ? (space.id ?? null) : null, app: space ? APP_ADDRESS : null, made: there.length === 0, label: await stored.label(), changed: Object.keys(restored).sort(), gone: [...goneFromWorkspace], writable: store?.writable ?? 'unknown' };
   } catch (error) {
     // A browser that gives no store, or a library that did not open: the page says so and goes on in memory.
-    if (error?.quiet) APP_FACTS.space = error.message; else state.workspace = { name: WORKSPACE, app: APP_ADDRESS, error: String(error?.message ?? error) };
+    if (error?.quiet && APP_FACTS) APP_FACTS.space = error.message; else state.workspace = { name: WORKSPACE, app: APP_ADDRESS, error: String(error?.message ?? error) };
     stored = null;
     storedBench = null;
     space = null;
@@ -431,7 +552,9 @@ try {
   const theme = new URLSearchParams(location.search).get('theme') || HOLOGRAM_THEME;
   // The editor's font and its size are VS Code's own, untouched: code reads as it does there.
   // No minimap: it is one more thing drawn on every keystroke, and the files here are short.
-  await initUserConfiguration(JSON.stringify({ 'editor.semanticHighlighting.enabled': true, 'workbench.colorTheme': theme, 'editor.minimap.enabled': false }));
+  await initUserConfiguration(JSON.stringify({ 'editor.semanticHighlighting.enabled': true, 'workbench.colorTheme': theme, 'editor.minimap.enabled': false,
+    // The project's ID file is the holospace's, not the model's: kept in the workspace, not listed for editing.
+    'files.exclude': { [PROJECT_MARKER]: true } }));
 
   await initialize({
     ...getExtensionsOverride({ enableWorkerExtensionHost: true }), ...getFilesOverride(), ...getConfigurationOverride(),
