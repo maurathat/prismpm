@@ -74,7 +74,11 @@ export function createPrograms({ check, snapshotOf, prove, judge, rules, modelLa
       if (!build) return { text: 'This page cannot build. Open the model in the workbench and type build there.', keep: false };
       let made;
       try { made = await build(files); } catch (error) { return { text: 'Not built: ' + String(error?.message ?? error), keep: false }; }
-      if (!made?.holo) return { text: `Not built${made?.stage ? ` (stopped at ${made.stage})` : ''}: ${made?.message ?? made?.error ?? 'no answer'}`, keep: false };
+      if (!made?.holo) {
+        // A build that stopped on a theorem says which, where it is stated and what to do about it, as the package gives them.
+        const unproved = (made?.unproved ?? []).map((t) => `${t.file ? `${String(t.file).replace(/^\//, '')}:${t.line} ` : ''}${t.theorem}: ${t.status}${t.remedy ? '\n  ' + t.remedy : ''}`);
+        return { text: [`Not built${made?.stage ? ` (stopped at ${made.stage})` : ''}: ${made?.message ?? made?.error ?? 'no answer'}`, ...unproved].join('\n'), keep: false };
+      }
       const lines = [`Built ${made.holo.name || 'app'}.holo: ${made.holo.bytes} bytes, ${made.holo.label}${made.ms != null ? `, in ${made.ms} ms` : ''}.`];
       if (made.theorems) lines.push(`Proved: Lean's kernel accepted ${made.theorems.proved} of ${made.theorems.total} theorems.`);
       if (made.vectors) lines.push(`Tested: ${made.vectors.passed} of ${made.vectors.total} examples give their recorded answer through it.`);
