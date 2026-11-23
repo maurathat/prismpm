@@ -319,6 +319,15 @@ test('prism-code manifest prints the application, the grant and the variables', 
   assert.deepEqual(json.files, ['prism.toml']);
   assert.equal(json.manifest.application.version, '0.1.0');
   assert.deepEqual(json.warnings, []);
+  // --json is one prism/report/1 report, as the model verbs print, with the manifest's own members beside it.
+  assert.deepEqual([json.schema, json.ok, json.command, json.diagnostics], ['prism/report/1', true, 'manifest', []]);
+  assert.equal(typeof json.durationMs, 'number');
+  assert.deepEqual(json.summary, { application: 'exchange', version: '0.1.0', files: 1, warnings: 0 });
+  // A refused manifest is a report too, with the code it is refused with, and the exit code it always had.
+  const refused = run(['manifest', project({ 'prism.toml': 'nonsense = [\n' }), '--json']);
+  assert.equal(refused.code, 2);
+  const report = JSON.parse(refused.out);
+  assert.deepEqual([report.schema, report.ok, report.command, report.diagnostics[0].code, report.diagnostics[0].severity], ['prism/report/1', false, 'manifest', 'manifest.toml', 'error']);
   // The current directory is the default.
   assert.equal(run(['manifest'], { cwd: dir }).code, 0);
 });
