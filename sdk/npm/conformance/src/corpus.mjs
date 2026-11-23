@@ -23,6 +23,8 @@ const here = (relative) => fileURLToPath(new URL(relative, import.meta.url));
 export const REFERENCE_PATH = here('../corpus/Calculator.holo');
 export const REFERENCE_V5_PATH = here('../corpus/Calculator.v5.holo');
 export const REFERENCE_V6_PATH = here('../corpus/Calculator.v6.holo');
+/** A holo v6 that prism-code built with nothing compiled: the canonical template, with its proof record (ADR-018). */
+export const EVALUATOR_V6_PATH = here('../corpus/TemplateContract.evaluator.v6.holo');
 export const LOCK_PATH = here('../corpus/archives.lock.json');
 
 const KIND_EXTENSION = 14;
@@ -384,6 +386,11 @@ export const ARCHIVES = Object.freeze({
   'reference-v6-carried': () => v6Carried(),
   'reference-v6-wrong-snapshot': () => v6Carried({ wrongSnapshot: true }),
   'reference-v6-outside-sources': () => v6Carried({ outsideSources: true }),
+  // A holo v6 built with nothing compiled (ADR-018): its guest is the evaluator guest with the model's program, its
+  // provenance is prismpm/evaluator-provenance/1 with the source manifest of such a build, and it carries its
+  // semantic snapshot, its sources and one unsigned kernel-proof statement. Committed, not derived: `prism-code build`
+  // wrote it from the canonical template, and the same file is crates/prismpm/testdata/evaluator-proof-record.v6.holo.
+  'evaluator-v6': () => new Uint8Array(readFileSync(EVALUATOR_V6_PATH)),
   // One byte of its model object flipped: the BLAKE3 seal no longer matches.
   'reference-v6-seal-broken': () => {
     const bytes = new Uint8Array(readFileSync(REFERENCE_V6_PATH));

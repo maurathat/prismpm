@@ -418,6 +418,11 @@
     },
     {
       "kind": "flag",
+      "place": "--no-sources",
+      "name": "no-sources"
+    },
+    {
+      "kind": "flag",
       "place": "--out",
       "name": "out"
     },

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uor.foundation/prism/holo/evaluator-source-manifest/4",
+  "title": "HoloEvaluatorSourceManifest",
+  "description": "Object 1 of a holo v6 (ADR-018) whose provenance is prismpm/evaluator-provenance/1: canonical JSON naming the inputs of a build made with nothing compiled, by SHA-256. Such a build has no LexLean build manifest, coverage or kernel IR to name, so it names the model document and, when the holo carries its semantic snapshot, that snapshot, whose sha256 is the snapshot object's.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "files",
+    "semantic_id",
+    "source_id",
+    "version"
+  ],
+  "properties": {
+    "files": {
+      "type": "array",
+      "description": "The model document, then the semantic snapshot when the holo carries it.",
+      "minItems": 1,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "sha256"
+          ],
+          "properties": {
+            "kind": {
+              "const": "model-document"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "sha256"
+          ],
+          "properties": {
+            "kind": {
+              "const": "lexlean-semantic-snapshot"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "semantic_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "version": {
+      "const": 4
+    }
+  }
+}

@@ -343,6 +343,13 @@ export const HOLO_V6 = freeze({
   MAGIC_HEX: '554f52430202',
   MANIFEST_SCHEMA: 'prism/holo/6',
   PROVENANCE_SCHEMA: 'prismpm/model-provenance/3',
+  /**
+   * The provenance of a holo built with nothing compiled, whose guest is the evaluator guest with the model's
+   * program: it names what built it, since such a build has none of the SDK image's crates, commits or manifests.
+   * A holo with this provenance has the source manifest of `HOLO_SCHEMAS.EVALUATOR_SOURCE_MANIFEST`. A reader
+   * accepts either provenance in a holo v6, and checks each document against its own schema.
+   */
+  EVALUATOR_PROVENANCE_SCHEMA: 'prismpm/evaluator-provenance/1',
   ROLES: HOLO_V5.ROLES,
   /**
    * The optional objects after `model`, in this order, each present only when the manifest's `objects` rows list
@@ -429,6 +436,7 @@ export const ASSURANCE = assuranceLevels.ASSURANCE;
 
 /** The documents this reader checks, by their `schema` member. The spec's SCHEMAS lists every document. */
 export const SCHEMAS = freeze({
+  "prismpm/evaluator-provenance/1": "schemas/documents/evaluator-provenance-v1.schema.json",
   "prismpm/model-document/1": "schemas/documents/model-document-v1.schema.json",
   "prismpm/model-document/2": "schemas/documents/model-document-v2.schema.json",
   "prismpm/model-document/5": "schemas/documents/model-document-v5.schema.json",
@@ -444,5 +452,6 @@ export const HOLO_SCHEMAS = freeze({
   "ARCHIVE": "schemas/holo/archive.schema.json",
   "APP_MANIFEST": "schemas/holo/app-manifest.schema.json",
   "SOURCE_MANIFEST": "schemas/holo/source-manifest.schema.json",
+  "EVALUATOR_SOURCE_MANIFEST": "schemas/holo/evaluator-source-manifest.schema.json",
   "APPLICATION_DIRECTORY": "schemas/holo/application-directory.schema.json",
 });

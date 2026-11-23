@@ -371,3 +371,12 @@ export function experimental_checkExport(options: { project?: string; releaseDig
   files: ExportFile[];
   tree_digest: string;
 };
+
+import type { ReprovedResult, RelexResult } from './reprove.js';
+/**
+ * Experimental. The `reprove` function `check` and `experimental_verify` take, bound to Lean's kernel as this
+ * package ships it. Nothing is opened until a holo that carries a proof record is given.
+ */
+export function experimental_reproveHere(options?: { env?: Record<string, string | undefined>; log?: (line: string) => void }): (holo: Uint8Array) => Promise<ReprovedResult>;
+/** Experimental. The `relex` function they take, bound to LexLean's front end as this package ships it. */
+export function experimental_relexHere(options?: { env?: Record<string, string | undefined>; log?: (line: string) => void }): (holo: Uint8Array) => Promise<RelexResult>;

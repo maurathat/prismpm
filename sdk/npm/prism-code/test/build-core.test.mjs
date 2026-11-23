@@ -133,7 +133,14 @@ test('files in, a holo out: the same label as the Node route gives, for a decisi
     assert.equal(result.ok, true, `${name}: ${result.message}`);
     assert.equal(result.stage, 'build');
     const taken = await wasmSnapshot(dir, {});
-    const node = await buildHolo(taken.snapshot, { evaluator: evaluator(), snapshotBytes: taken.bytes });
+    // The holo carries the files that decide the model, so the Node route is given the same ones.
+    const sources = [...projectFiles(dir)].map(([path, bytes]) => ({ path: path.slice(1), bytes }));
+    const node = await buildHolo(taken.snapshot, { evaluator: evaluator(), snapshotBytes: taken.bytes, sources });
+    assert.deepEqual(result.holo.carries, { snapshot: true, sources: true, proof: false });
+    // Told to leave the sources out, it does, and that is another holo.
+    const without = await buildFromFiles({ files: projectFiles(dir), lexlean: await lexlean(), evaluator: evaluator(), sources: false });
+    assert.deepEqual(without.holo.carries, { snapshot: true, sources: false, proof: false });
+    assert.equal(without.holo.label, (await buildHolo(taken.snapshot, { evaluator: evaluator(), snapshotBytes: taken.bytes })).label);
     assert.equal(result.holo.label, node.label);
     assert.equal(result.holo.label, kappa(result.holo.bytes));
     assert.equal(result.vectors.passed, result.vectors.total);

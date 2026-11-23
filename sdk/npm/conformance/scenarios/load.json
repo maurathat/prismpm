@@ -84,6 +84,26 @@
       }
     },
     {
+      "id": "load.evaluator-v6.opens",
+      "title": "A holo v6 built with nothing compiled opens: its provenance is prismpm/evaluator-provenance/1, and it carries its snapshot, its sources and an unsigned kernel-proof statement (ADR-018).",
+      "op": "load",
+      "archive": "evaluator-v6",
+      "expect": {
+        "ok": true,
+        "result": {
+          "kind": "holo",
+          "name": "Template contract",
+          "verified": true,
+          "limits": {
+            "request": 192,
+            "response": 256,
+            "guestAllocation": 512
+          },
+          "vectors": 9
+        }
+      }
+    },
+    {
       "id": "load.refuse.empty",
       "title": "An empty file is refused.",
       "op": "load",

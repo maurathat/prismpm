@@ -1065,6 +1065,16 @@ capability = "CT-12"
 statement = "No verdict could be reached, or the holo failed a check about the archive itself, its documents or its provenance."
 
 [[error]]
+code = "verify.reproved"
+capability = "DK-50"
+statement = "A holo carries a proof record, its semantic snapshot or its kernel-proof statement, and Lean's kernel, run again on that snapshot from the holo alone, does not bear it out: the holo does not verify, the snapshot or the statement is not this holo's, or the kernel does not accept a proof of every theorem the snapshot states."
+
+[[error]]
+code = "verify.sources"
+capability = "DK-50"
+statement = "A holo carries its model's sources, and LexLean, reading them and nothing else, does not write the snapshot the holo carries."
+
+[[error]]
 code = "verify.stale"
 capability = "DK-41"
 statement = "What is built is the build of an earlier model: the sources changed since, so verify refuses it until it is built again."

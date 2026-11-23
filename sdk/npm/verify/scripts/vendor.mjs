@@ -27,7 +27,7 @@ const header = (origin, note) =>
   '\n';
 
 /** The holo section schemas the reader checks, by their key in HOLO_SCHEMAS. */
-const HOLO_KEYS = ['ARCHIVE', 'APP_MANIFEST', 'SOURCE_MANIFEST', 'APPLICATION_DIRECTORY'];
+const HOLO_KEYS = ['ARCHIVE', 'APP_MANIFEST', 'SOURCE_MANIFEST', 'EVALUATOR_SOURCE_MANIFEST', 'APPLICATION_DIRECTORY'];
 
 /**
  * The predicate schemas the statement checks validate against (src/statements.mjs, #266).
@@ -45,6 +45,7 @@ function documentNames(spec) {
   }
   names.add(spec.HOLO_V5.PROVENANCE_SCHEMA);
   names.add(spec.HOLO_V6.PROVENANCE_SCHEMA);
+  names.add(spec.HOLO_V6.EVALUATOR_PROVENANCE_SCHEMA);
   return [...names].sort();
 }
 

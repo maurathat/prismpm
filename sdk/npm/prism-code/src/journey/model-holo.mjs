@@ -6,7 +6,9 @@
  * sealed by BLAKE3 and named by `blake3:` κ-labels, so the address the build reports is the holo's own κ. Two things differ from a holo the SDK image
  * builds, and the provenance object says both: the guest is the evaluator guest and the model's program, not Rust
  * compiled from Lean's export, so there is no Cargo crate and no browser adapter to name; and `builder` names
- * what built it, by the evaluator guest's κ-label.
+ * what built it, by the evaluator guest's κ-label. So the provenance is a document of its own,
+ * `prismpm/evaluator-provenance/1`, and the source manifest names the two inputs such a build has; each has its
+ * schema in @prism-code/spec, and a verifier checks each against it.
  *
  * A build is refused unless the guest answers every one of the model's own acceptance vectors, and every request
  * made from them, as the reference evaluator does (`holo.guest-differs`), and unless the model has vectors at all
@@ -16,10 +18,11 @@
  * It is a pure function of the snapshot and the evaluator guest: the same model gives the same bytes anywhere.
  * It imports nothing of Node, so a browser and a worker run it.
  */
-import { canonicalJson } from '../archive.mjs';
+import { EVALUATOR_PROVENANCE_SCHEMA, canonicalJson, isSourcePath, withModelFiles } from '../archive.mjs';
 import { compileGuest, runGuest } from '../core.mjs';
 import { sha256HexSync } from '../sha256.mjs';
-import { writeObjects } from '../uorc.mjs';
+import { readObjects, writeObjects } from '../uorc.mjs';
+import { withProofRecord } from './proof-record.mjs';
 // A holo v6 (ADR-018) names every object, and the file, by BLAKE3: its κ and its label are one string.
 import { kappa as label } from '../blake3.mjs';
 const kappa = label;
@@ -32,8 +35,13 @@ export const HOLO_BUILDER = 'prism-code/evaluator-guest/1';
 export const TEXT_PROFILE = 'prismpm/text-application/1';
 const CORE_CONTRACT = 'hologram:guest/core-wasm@1';
 const MODEL_DOCUMENT_SCHEMA = 'prismpm/model-document/2';
-const PROVENANCE_SCHEMA = 'prismpm/model-provenance/3';
+const PROVENANCE_SCHEMA = EVALUATOR_PROVENANCE_SCHEMA;
 const MANIFEST_SCHEMA = 'prism/holo/6';
+/**
+ * What projected the model document, as its provenance names it: this builder's projection of the snapshot's
+ * `TextApplication` (`modelDocument`), not PrismPM's projector, whose id an SDK build writes in the same member.
+ */
+export const EMITTER_SEMANTICS_ID = sha256HexSync(new TextEncoder().encode(`${HOLO_BUILDER}/model-document`));
 
 /** The empty capability set, as a holo carries it: Hologram's capability-set realization with nothing granted. */
 export const NO_CAPABILITIES_OBJECT = (() => {
@@ -69,7 +77,7 @@ export function modelDocument(snapshot, application, { snapshotId = null } = {})
   return {
     application: doc,
     architecture: empty(EMPTY.architecture),
-    provenance: { compiler_semantics_id: snapshot.compiler_semantics_id, facet_packages: [], semantic_id: snapshot.semantic_id, ...(snapshotId ? { snapshot_id: snapshotId } : {}), source_id: snapshot.source_id },
+    provenance: { compiler_semantics_id: snapshot.compiler_semantics_id, emitter_semantics_id: EMITTER_SEMANTICS_ID, facet_packages: [], semantic_id: snapshot.semantic_id, ...(snapshotId ? { snapshot_id: snapshotId } : {}), source_id: snapshot.source_id },
     quality: empty(EMPTY.quality),
     schema: MODEL_DOCUMENT_SCHEMA,
     security: empty(EMPTY.security),
@@ -79,12 +87,20 @@ export function modelDocument(snapshot, application, { snapshotId = null } = {})
 
 /**
  * Build the holo. `evaluator` is the evaluator guest's bytes, admitted only when they are the pinned ones.
- * `snapshotBytes`, LexLean's exact output, names the snapshot in the records when given.
- * Returns `{ bytes, label, kappa, name, semanticId, guest, vectors, compared, objects }`. `label` is the holo's
- * address, the UOR κ-label of its bytes (BLAKE3). `kappa` is the identity the holo v5 format gives itself and its
- * members, which is SHA-256 (ADR-017); it is kept because every reader of a holo checks it.
+ *
+ * `snapshotBytes`, LexLean's exact output, is carried as the holo's snapshot object and named in its records.
+ * `sources`, `[{ path, bytes }]`, are the files LexLean read; those that decide the model are carried as the
+ * sources object, and none is carried when the list is empty or absent. `proof` is Lean's kernel's verdict on every
+ * theorem of the snapshot, as `kernelRecord` resolves it (prove-core.mjs); it is written as the holo's unsigned
+ * kernel-proof statement, which needs the snapshot it names. Each of the three is optional (ADR-018): a holo
+ * without one says so in its manifest's rows, and a reader reports what is absent.
+ *
+ * Returns `{ bytes, label, kappa, name, semanticId, guest, vectors, compared, objects, carries }`. `label` is the
+ * holo's address, the UOR κ-label of its bytes (BLAKE3). `kappa` is the identity the holo v5 format gives itself and its
+ * members, which is SHA-256 (ADR-017); it is kept because every reader of a holo checks it. `carries` is
+ * `{ snapshot, sources, proof }`, each whether the holo holds it.
  */
-export async function buildHolo(snapshot, { evaluator, snapshotBytes = null } = {}) {
+export async function buildHolo(snapshot, { evaluator, snapshotBytes = null, sources = null, proof = null } = {}) {
   const program = modelProgram(snapshot);
   const app = program.application;
   if (app.profile !== TEXT_PROFILE) refuse('holo.profile', `the model's profile is ${JSON.stringify(app.profile)}, and this builder builds ${TEXT_PROFILE}`);
@@ -106,7 +122,8 @@ export async function buildHolo(snapshot, { evaluator, snapshotBytes = null } = 
   const model = enc.encode(canonicalJson(modelDocument(snapshot, app, { snapshotId })));
   const modelId = sha256HexSync(model);
   const source = enc.encode(canonicalJson({
-    files: [...(snapshotId ? [{ kind: 'lexlean-semantic-snapshot', sha256: snapshotId }] : []), { kind: 'model-document', sha256: modelId }],
+    // The snapshot's row is added with its object, after this one, where the schema has it (`withModelFiles`).
+    files: [{ kind: 'model-document', sha256: modelId }],
     semantic_id: snapshot.semantic_id,
     source_id: snapshot.source_id,
     version: 4,
@@ -138,7 +155,11 @@ export async function buildHolo(snapshot, { evaluator, snapshotBytes = null } = 
     source_id: snapshot.source_id,
     view_binding: { tag: 'present', view_content_kappa: kappa(view) },
   }));
-  const objects = [manifest, source, provenance, capabilities, guest, view, model];
-  const bytes = writeObjects(objects, 6);
-  return { bytes, label: label(bytes), kappa: kappa(bytes), name: app.name, semanticId: snapshot.semantic_id, guest, vectors: { total: reference.total, passed: reference.passed }, compared: { total: compared.total, agreed: compared.agreed }, objects: objects.map((o) => o.length) };
+  // The seven objects every holo holds; then what this one carries of its model, and the record of its proof.
+  const kept = (sources ?? []).filter((file) => isSourcePath(file.path));
+  const carries = { snapshot: snapshotBytes !== null, sources: kept.length > 0, proof: proof !== null && snapshotBytes !== null };
+  let bytes = writeObjects([manifest, source, provenance, capabilities, guest, view, model], 6);
+  if (carries.snapshot || carries.sources) bytes = withModelFiles(bytes, { ...(carries.snapshot ? { snapshot: new Uint8Array(snapshotBytes) } : {}), ...(carries.sources ? { sources: kept } : {}) });
+  if (carries.proof) bytes = withProofRecord(bytes, proof);
+  return { bytes, label: label(bytes), kappa: kappa(bytes), name: app.name, semanticId: snapshot.semantic_id, guest, vectors: { total: reference.total, passed: reference.passed }, compared: { total: compared.total, agreed: compared.agreed }, objects: readObjects(bytes).map((o) => o.length), carries };
 }

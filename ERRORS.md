@@ -1128,6 +1128,8 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `vectors.failed` |  | `DK-41` | An acceptance vector answers otherwise than the model states. |
 | `vectors.none` |  | `DK-41` | An artifact carries no acceptance vector, so verify replayed nothing. |
 | `verification_failed` | `VerificationError` | `CT-12` | No verdict could be reached, or the holo failed a check about the archive itself, its documents or its provenance. |
+| `verify.reproved` |  | `DK-50` | A holo carries a proof record, its semantic snapshot or its kernel-proof statement, and Lean's kernel, run again on that snapshot from the holo alone, does not bear it out: the holo does not verify, the snapshot or the statement is not this holo's, or the kernel does not accept a proof of every theorem the snapshot states. |
+| `verify.sources` |  | `DK-50` | A holo carries its model's sources, and LexLean, reading them and nothing else, does not write the snapshot the holo carries. |
 | `verify.stale` |  | `DK-41` | What is built is the build of an earlier model: the sources changed since, so verify refuses it until it is built again. |
 | `verify.unbuilt` |  | `DK-41` | The model checks and is proved, and nothing is built from it yet, so verify has nothing to replay. |
 | `view.bounds` |  | `OC-11` | The HOLOVIEW bundle is shorter than its header, or an entry or file overruns it. |

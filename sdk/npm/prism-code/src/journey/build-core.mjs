@@ -32,11 +32,12 @@ const refused = (error, reason) => ({ ok: false, code: error.code, message: erro
  * `{ ok: true, built }` (what `buildHolo` returns), or the refusal as the tools report it: `build.guest-uncovered`
  * for a model the evaluator guest does not run yet, `build.vectors` for examples the model's own rules do not
  * answer, `build.guest-differs` for a guest that answers otherwise than the model. `proved` says whether a
- * prover accepted the theorems first, and only then does a refusal say so.
+ * prover accepted the theorems first, and only then does a refusal say so. `sources` and `proof` are what the
+ * holo carries of its model and of its proof, as `buildHolo` takes them.
  */
-export async function holoFromSnapshot(snapshot, { evaluator, snapshotBytes = null, proved = true } = {}) {
+export async function holoFromSnapshot(snapshot, { evaluator, snapshotBytes = null, proved = true, sources = null, proof = null } = {}) {
   try {
-    return { ok: true, built: await buildHolo(snapshot, { evaluator, snapshotBytes }) };
+    return { ok: true, built: await buildHolo(snapshot, { evaluator, snapshotBytes, sources, proof }) };
   } catch (error) {
     if (error.code === 'guest.uncovered' || error.code === 'eval.uncovered' || error.code === 'holo.profile' || error.code === 'holo.capabilities' || error.code === 'holo.facets') {
       return refused(new PrismCodeError('build.guest-uncovered', `${proved ? "Lean's kernel proved every theorem, and the holo is not built" : 'The holo is not built'}: ${error.message}. Nothing is compiled on this path, and it does not run this yet. This is a limit of the builder, not a verdict on the app. ${NO_SERVER_BUILD}`), error.code);
@@ -78,15 +79,18 @@ export function placed(d) {
  * Build from files (`filesOf` says what they may be). `lexlean` is the compiled module, `evaluator` the evaluator
  * guest's bytes. `prove`, when given, is asked `{ files, snapshot, lexlean }` and resolves
  * `{ ok, theorems, message }`, each theorem `{ theorem, status, ms }` with `status` one of `proved`, `not proved`
- * and `not settled`; a build stops at a prover that does not answer `ok`. `onStage` is told `check`, `prove` and
- * `build` as each begins.
+ * and `not settled`; a build stops at a prover that does not answer `ok`. A prover that also resolves `record`,
+ * the kernel's verdict on the snapshot's theorems (`kernelRecord`, as `kernelProver` gives it), has it written into
+ * the holo as its kernel-proof statement. The holo carries the files that decide the model unless `sources` is
+ * false. `onStage` is told `check`, `prove` and `build` as each begins.
  *
  * Resolves `{ ok, stage, diagnostics, semanticId, proved, theorems, holo, vectors, compared, ms, message }`.
  * `stage` is the last step reached. `diagnostics` are LexLean's, warnings among them, each as `placed` gives it.
  * `semanticId` is the model's, once LexLean has checked it. `proved` is true only when a prover was given and
- * accepted every theorem. `holo` is `{ bytes, label, name, semanticId }`.
+ * accepted every theorem. `holo` is `{ bytes, label, name, semanticId, carries }`, `carries` saying whether it holds
+ * its snapshot, its sources and its proof record.
  */
-export async function buildFromFiles({ files, lexlean, evaluator, prove = null, log = () => {}, onStage = () => {} }) {
+export async function buildFromFiles({ files, lexlean, evaluator, prove = null, sources = true, log = () => {}, onStage = () => {} }) {
   const started = performance.now();
   const ms = () => Math.round(performance.now() - started);
   const given = filesOf(files);
@@ -110,6 +114,7 @@ export async function buildFromFiles({ files, lexlean, evaluator, prove = null, 
   if (retried) log(`LexLean trapped ${retried} time${retried === 1 ? '' : 's'} before it answered; each trapped run was run again from the start.`);
 
   let theorems = null;
+  let record = null;
   if (prove) {
     onStage('prove');
     let judged;
@@ -119,11 +124,14 @@ export async function buildFromFiles({ files, lexlean, evaluator, prove = null, 
       return { ok: false, stage: 'prove', code: error.code ?? 'kernel.unavailable', diagnostics, ...nothing, semanticId, ms: ms(), message: `Lean's kernel could not run (${error.message}). This says nothing about the app.` };
     }
     theorems = judged.theorems ?? null;
+    // A record is written only when it names the kernel that judged: a prover that cannot say which gives none.
+    if (judged.ok && judged.record?.kernel && judged.record?.library) record = judged.record;
     if (!judged.ok) return { ok: false, stage: 'prove', code: judged.code ?? null, diagnostics, semanticId, proved: false, theorems, holo: null, ms: ms(), message: judged.message };
   }
 
   onStage('build');
-  const made = await holoFromSnapshot(taken.snapshot, { evaluator, snapshotBytes: taken.bytes, proved: prove !== null });
+  const carried = sources ? [...given].map(([path, bytes]) => ({ path: path.slice(1), bytes })) : null;
+  const made = await holoFromSnapshot(taken.snapshot, { evaluator, snapshotBytes: taken.bytes, proved: prove !== null, sources: carried, proof: record });
   if (!made.ok) return { ...made, diagnostics, semanticId, proved: prove !== null, theorems, holo: null, ms: ms() };
   const { built } = made;
   let back;
@@ -143,7 +151,7 @@ export async function buildFromFiles({ files, lexlean, evaluator, prove = null, 
     semanticId,
     proved: prove !== null,
     theorems,
-    holo: ok ? { bytes: built.bytes, label: built.label, name: built.name, semanticId } : null,
+    holo: ok ? { bytes: built.bytes, label: built.label, name: built.name, semanticId, carries: built.carries } : null,
     vectors: { passed: back.passed, total: back.total },
     compared: built.compared,
     ms: ms(),
@@ -157,18 +165,18 @@ export async function buildFromFiles({ files, lexlean, evaluator, prove = null, 
  * Serve builds to whoever holds the other end of `scope`, a worker's global or anything with `postMessage` and
  * `onmessage`. `toolchain` resolves `{ lexlean, evaluator, prove }` and is asked once, at the first build.
  *
- * Message in: `{ id, files }`, `files` as `filesOf` takes them. Messages out: `{ id, stage }` as each of `check`,
+ * Message in: `{ id, files, sources }`, `files` as `filesOf` takes them; `sources: false` leaves the sources out of the holo. Messages out: `{ id, stage }` as each of `check`,
  * `prove` and `build` begins; then `{ id, result }`, the result of `buildFromFiles`, the holo's bytes transferred
  * and not copied; or `{ id, error: { code, message } }` when the toolchain could not be had.
  */
 export function serveBuild(scope, { toolchain }) {
   let ready = null;
   scope.onmessage = async ({ data }) => {
-    const { id, files } = data ?? {};
+    const { id, files, sources = true } = data ?? {};
     try {
       ready ??= toolchain();
       const tools = await ready;
-      const result = await buildFromFiles({ files, ...tools, onStage: (stage) => scope.postMessage({ id, stage }) });
+      const result = await buildFromFiles({ files, ...tools, sources: sources !== false, onStage: (stage) => scope.postMessage({ id, stage }) });
       scope.postMessage({ id, result }, result.holo ? [result.holo.bytes.buffer] : []);
     } catch (error) {
       ready = null;
