@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PACKAGE = fileURLToPath(new URL('../', import.meta.url));
@@ -191,6 +191,11 @@ function journey(t, { template, model }) {
     const inspected = run(['inspect', join(out, readdirSync(out)[0])], { cwd: root, env: OFFLINE });
     assert.equal(inspected.code, 0, inspected.err);
     assert.match(inspected.out, /^Verification:\n {2}Footer: +ok$/m);
+    // generate writes a client for it too: the model's digests come from the archive, and a name of several words is a class name.
+    const client = join(dirname(out), 'client');
+    const generated = run(['generate', join(out, readdirSync(out)[0]), '--out', client], { cwd: root, env: OFFLINE });
+    assert.equal(generated.code, 0, generated.err);
+    assert.equal(readdirSync(client).some((name) => name.endsWith('.d.ts')), true, 'generate wrote typed bindings');
   }
 
   // What --out holds verifies on its own, as a holo from anywhere does.
