@@ -39,6 +39,8 @@ export const USAGE = [
   ['snapshot', 'lexlean snapshot: what the model means, as JSON', 'The model'],
   ['prove', "have Lean's kernel judge each guarantee", 'The model'],
   ['audit', 'say what backs each guarantee: proved, tested, refused or unknown', 'The model'],
+  ['build', 'prism-code build: check, prove and make the holo, in this tab', 'The model'],
+  ['verify', 'prism-code verify: judge the holo that was built and replay its examples', 'The model'],
   ['ls [-l] [folder]', "list the model's files", 'Files of the model'],
   ['cd [folder]', 'change the folder paths start from', 'Files of the model'],
   ['pwd', 'print that folder', 'Files of the model'],
@@ -62,7 +64,7 @@ export const USAGE = [
 ];
 export const WORDS = USAGE.map(([usage]) => usage.split(' ')[0]);
 
-const PROGRAMS = ['check', 'snapshot', 'prove', 'audit'];
+const PROGRAMS = ['check', 'snapshot', 'prove', 'audit', 'build', 'verify'];
 // Which of a command's words are paths, the options it takes, and the one option that takes a value.
 const SHAPE = {
   ls: { paths: 'all', flags: 'l' }, cd: { paths: 'all' }, cat: { paths: 'all' }, kappa: { paths: 'all' }, touch: { paths: 'all' },
@@ -70,6 +72,7 @@ const SHAPE = {
   grep: { paths: 'rest', flags: 'ivncq' }, head: { paths: 'all', value: 'n' }, tail: { paths: 'all', value: 'n' },
   wc: { paths: 'all', flags: 'lwc' }, sort: { paths: 'all', flags: 'run' }, uniq: { paths: 'all', flags: 'c' }, diff: { paths: 'all' },
   check: { paths: 'first', free: true }, snapshot: { paths: 'first', free: true }, prove: { paths: 'first', free: true }, audit: { paths: 'first', free: true },
+  build: { paths: 'first', free: true }, verify: { paths: 'first', free: true },
 };
 
 const MAX_PATH = 512;
@@ -361,7 +364,7 @@ export function diffLines(a, b) {
  *                    the page holds the model read-only
  *   bytesOf(command) 'absent' | 'mismatch' | 'pinned': the executable the program needs, as held in this tab
  *   labelOf(command) the label the program is pinned to, or null
- *   programs         { check, snapshot, prove, audit }: each takes { '/path': text } and resolves its output as text
+ *   programs         { check, snapshot, prove, audit, build, verify }: each takes { '/path': text } and resolves its output as text
  *   kappa(bytes)     BLAKE3 label
  *   reuseAdmits      kappa-rules.mjs's rule, proved in model/rule-app
  *   kept             createKept's, or kappa-space.mjs's

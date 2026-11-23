@@ -8,15 +8,64 @@
  */
 import { PrismCodeError } from '../errors.mjs';
 import { runWasi } from './wasi-memory.mjs';
+import { rememberSource, sourceOf } from './module-source.mjs';
 
 const dec = new TextDecoder();
 const enc = new TextEncoder();
 
-/** Run `lexlean <args>`. Resolves `{ exit, stdout, stderr, ms }`: stdout as bytes, stderr as text. */
+/** Runs of one module after a trap, before its admitted bytes are compiled again. */
+const SAME_MODULE_TRIES = 3;
+/** Runs of a module compiled again from its admitted bytes. */
+const FRESH_MODULE_TRIES = 3;
+
+/**
+ * Modules found to trap, mapped to the module compiled again in their place, so later runs start from that one.
+ * WebKit compiles LexLean wrongly at times (seen with Lean's kernel open in the same page): a run then traps at
+ * its start, with "Out of bounds memory access" or "Unreachable code", and the module can keep trapping.
+ *
+ * What is known, and what is not: in every WebKit failure observed (several hundred runs), a miscompiled module
+ * trapped; no run that finished gave an answer other than Node's. That was checked only where a later step
+ * compares the answer: every in-browser build that finished gave Node's holo label, which covers the snapshot's
+ * bytes. Lean's kernel, a separate module, judges every proof itself, and the build compares the guest with the
+ * reference evaluator. What is not guarded is a `check` verdict on its own, which is taken from LexLean as it comes.
+ * A known-answer run after each compile would guard that; it is not done here.
+ */
+const replaced = new WeakMap();
+
+/**
+ * Run `lexlean <args>`. Resolves `{ exit, stdout, stderr, ms, retried }`: stdout as bytes, stderr as text, and
+ * how many runs trapped before this one answered.
+ *
+ * A trap (`WebAssembly.RuntimeError`) is not an answer: a run that traps writes nothing a caller reads, and every
+ * run is a new instance with new memory over the same read-only files, so running again is the same request and
+ * cannot change what LexLean answers. A trapped run is run again on the same module, then on the same admitted
+ * bytes compiled again (when toolchain.mjs admitted the module), and the trap is thrown only after both are spent.
+ * Any other error is thrown at once.
+ */
 export async function lexleanRun(module, files, args) {
   const started = performance.now();
-  const r = await runWasi(module, { files, args });
-  return { exit: r.exit, stdout: new Uint8Array(r.stdout), stderr: dec.decode(new Uint8Array(r.stderr)), ms: Math.round(performance.now() - started) };
+  let current = replaced.get(module) ?? module;
+  let retried = 0;
+  let fresh = false;
+  for (;;) {
+    try {
+      const r = await runWasi(current, { files, args });
+      return { exit: r.exit, stdout: new Uint8Array(r.stdout), stderr: dec.decode(new Uint8Array(r.stderr)), ms: Math.round(performance.now() - started), retried };
+    } catch (error) {
+      if (!(error instanceof WebAssembly.RuntimeError)) throw error;
+      retried += 1;
+      const source = sourceOf(current);
+      if (!fresh && retried >= SAME_MODULE_TRIES && source) {
+        current = rememberSource(await WebAssembly.compile(source), source);
+        replaced.set(module, current);
+        fresh = true;
+        continue;
+      }
+      if (retried >= (fresh ? SAME_MODULE_TRIES + FRESH_MODULE_TRIES : SAME_MODULE_TRIES)) {
+        throw new PrismCodeError('lexlean.wasm-failed', `LexLean as WebAssembly trapped ${retried} times running \`${args.join(' ')}\` (${error.message}), so there is no verdict on the model. In a browser this has been a fault of the WebAssembly engine: try again, or another browser. If it traps every time, here and in Node, the model has met a fault or a limit in LexLean, and that is worth reporting with the model.`);
+      }
+    }
+  }
 }
 
 /** `lexlean --diagnostic-format json check --all`: the command result, parsed, with how long it took. */
@@ -28,7 +77,7 @@ export async function lexleanCheck(module, files) {
   } catch {
     throw new PrismCodeError('lexlean.wasm-failed', `LexLean as WebAssembly gave no command result (exit ${r.exit}): ${r.stderr.slice(0, 400)}`);
   }
-  return { ...result, ms: r.ms };
+  return { ...result, ms: r.ms, retried: r.retried };
 }
 
 /**
@@ -39,7 +88,7 @@ export async function lexleanSnapshot(module, files) {
   const r = await lexleanRun(module, files, ['snapshot', '--all']);
   if (r.exit !== 0) return { ok: false, check: await lexleanCheck(module, files), ms: r.ms };
   // LexLean names the snapshot (its semantic_id); Prism derives no identity of its own for it.
-  return { ok: true, bytes: r.stdout, snapshot: JSON.parse(dec.decode(r.stdout)), ms: r.ms };
+  return { ok: true, bytes: r.stdout, snapshot: JSON.parse(dec.decode(r.stdout)), ms: r.ms, retried: r.retried };
 }
 
 /** Where the library export `declare` continues is placed in the instance's file system, beside the project. */
@@ -58,7 +107,7 @@ export async function lexleanDeclare(module, files, base) {
   if (r.exit === 0) {
     const document = JSON.parse(dec.decode(r.stdout));
     if (document.spec !== 'lexlean/kernel-declarations/2') throw new PrismCodeError('lexlean.wasm-failed', `LexLean's declare gave a ${document.spec}, not lexlean/kernel-declarations/2`);
-    return { ok: true, document, ms: r.ms };
+    return { ok: true, document, ms: r.ms, retried: r.retried };
   }
   // CLI misuse naming the command: this LexLean predates `declare` (a release before CL-29).
   if (r.exit === 2 && /unrecognized subcommand|invalid value 'declare'|unexpected argument/i.test(r.stderr)) return { ok: false, unsupported: true, ms: r.ms };

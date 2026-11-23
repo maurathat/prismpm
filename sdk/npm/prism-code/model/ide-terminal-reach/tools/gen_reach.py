@@ -9,7 +9,7 @@ head = src[: src.index("definition{name: title")]
 # pinned executable. The order puts each group of commands side by side, so a rule or a guarantee names a group as
 # one run of the list.
 BUILTINS = ["help", "clear", "ls", "cat", "kappa"]
-PROGRAMS = ["check", "snapshot", "prove", "audit"]
+PROGRAMS = ["check", "snapshot", "prove", "audit", "build", "verify"]
 MORE = ["echo", "pwd", "set", "unset", "env", "history", "sessions", "restore", "save",
         "grep", "head", "tail", "wc", "sort", "uniq", "diff", "cd", "run", "test", "append", "mv", "cp", "write", "touch", "rm"]
 LISTED = BUILTINS + PROGRAMS + MORE
@@ -45,14 +45,15 @@ def run_of(first, last, resource):
 # Who may use what. Each is one or two runs of the list; everything else is denied.
 #   the model is read by ls, cat, kappa and the programs, and by grep to cp
 #   the model is changed by append, mv, cp, write, touch and rm, and by nothing else
-#   the store is read by the programs and by sessions, restore and save; written by the programs and by save
-ALLOWED = [("ls", "audit", "readmodel"), ("grep", "cp", "readmodel"), ("append", "rm", "writemodel"),
+#   the store is read by the programs and by sessions, restore and save; written by the programs and by save.
+#   build and verify are the two programs that do neither: no output of theirs is kept, so none is shown again.
+ALLOWED = [("ls", "verify", "readmodel"), ("grep", "cp", "readmodel"), ("append", "rm", "writemodel"),
            ("check", "audit", "readstore"), ("sessions", "save", "readstore"),
            ("check", "audit", "writestore"), ("save", "save", "writestore")]
 DENIED = [("other", "clear", "readmodel"), ("echo", "save", "readmodel"), ("write", "rm", "readmodel"),
           ("other", "test", "writemodel"),
-          ("other", "kappa", "readstore"), ("echo", "history", "readstore"), ("grep", "rm", "readstore"),
-          ("other", "kappa", "writestore"), ("echo", "restore", "writestore"), ("grep", "rm", "writestore")]
+          ("other", "kappa", "readstore"), ("build", "verify", "readstore"), ("echo", "history", "readstore"), ("grep", "rm", "readstore"),
+          ("other", "kappa", "writestore"), ("build", "verify", "writestore"), ("echo", "restore", "writestore"), ("grep", "rm", "writestore")]
 # The two lists leave no command out, for any of the four resources.
 for resource in ("readmodel", "writemodel", "readstore", "writestore"):
     covered = sorted(i for first, last, r in ALLOWED + DENIED if r == resource for i in range(N[first], N[last] + 1))
@@ -89,6 +90,13 @@ EXAMPLES = [
     ("prove clipboard", "deny"),
     ("prove process", "deny"),
     ("audit readstore", "allow"),
+    ("build readmodel", "allow"),
+    ("build readstore", "deny"),        # a build's output is never kept, so never shown again in place of a build
+    ("build writestore", "deny"),
+    ("build network", "deny"),
+    ("verify readmodel", "allow"),
+    ("verify writestore", "deny"),
+    ("verify process", "deny"),
     ("audit network", "deny"),
     ("write writemodel", "allow"),      # six commands change the model, and only those
     ("write network", "deny"),

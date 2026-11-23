@@ -20,7 +20,12 @@ PROGRAMS = {
     "snapshot": "lexlean snapshot: the same executable",
     "prove": "Lean's kernel on the model's guarantees",
     "audit": "the audit view's statuses, from the kernel and the vectors",
+    "build": "prism-code build: check, prove and make the holo, in this tab",
+    "verify": "prism-code verify: judge the holo that was built and replay its examples",
 }
+# The programs whose kept output may stand for a run. build and verify are not among them: what they are asked for is
+# an app made and an app judged, now, and a line of text kept from before is neither.
+REUSED = ["check", "snapshot", "prove", "audit"]
 MORE = {
     "echo": "print its words",
     "pwd": "print the folder paths start from",
@@ -77,7 +82,8 @@ def c(field, op, value):
 WORDS = dict(FIELDS)["command"]
 N = {w: i for i, w in enumerate(WORDS)}
 assert [N[w] for w in CREATES] == list(range(N["append"], N["touch"] + 1)) and N["rm"] == len(WORDS) - 1
-assert [N[w] for w in PROGRAMS] == list(range(N["check"], N["audit"] + 1))
+assert [N[w] for w in PROGRAMS] == list(range(N["check"], N["verify"] + 1))
+assert [N[w] for w in REUSED] == list(range(N["check"], N["audit"] + 1)) and N["build"] == N["audit"] + 1 and N["verify"] == N["build"] + 1
 
 
 def run_of(first, last):
@@ -90,7 +96,7 @@ RULES = [([c("target", EQ, "outside")], "refuse")]
 RULES += [(run_of("append", "touch") + [c("target", EQ, "new")], "builtin")]
 RULES += [([c("target", EQ, "new")], "refuse")]
 RULES += [(run_of("help", "kappa"), "builtin"), (run_of("echo", "rm"), "builtin")]
-RULES += [([c("command", EQ, w), c("stored", EQ, "yes")], "reuse") for w in PROGRAMS]
+RULES += [([c("command", EQ, w), c("stored", EQ, "yes")], "reuse") for w in REUSED]
 RULES += [([c("command", EQ, w), c("bytes", EQ, "pinned")], "run") for w in PROGRAMS]
 # (always?, conditions, answer). No guarantee is stated with "is not": the kernel route does not settle it.
 GUARANTEES = [
@@ -104,8 +110,12 @@ GUARANTEES = [
     (0, run_of("echo", "rm"), "run"),
     (0, run_of("other", "kappa"), "reuse"),
     (0, run_of("echo", "rm"), "reuse"),
-    (0, run_of("check", "audit"), "builtin"),
-    (1, run_of("check", "audit") + [c("target", EQ, "model"), c("bytes", EQ, "pinned"), c("stored", EQ, "no")], "run"),
+    (0, run_of("check", "verify"), "builtin"),
+    (1, run_of("check", "verify") + [c("target", EQ, "model"), c("bytes", EQ, "pinned"), c("stored", EQ, "no")], "run"),
+    # A build or a verification is never answered from a kept output, and always runs when its executable is the
+    # pinned one and its paths are in the model, whatever is kept.
+    (0, run_of("build", "verify"), "reuse"),
+    (1, run_of("build", "verify") + [c("target", EQ, "model"), c("bytes", EQ, "pinned")], "run"),
     (1, run_of("check", "audit") + [c("target", EQ, "model"), c("stored", EQ, "yes")], "reuse"),
     # A path that names no file is refused to every command but the five that make one.
     (1, run_of("other", "test") + [c("target", EQ, "new")], "refuse"),
@@ -136,6 +146,13 @@ EXAMPLES = [
     ("prove model pinned yes", "reuse"),
     ("audit model mismatch no", "refuse"),
     ("audit model pinned no", "run"),
+    ("build none pinned no", "run"),
+    ("build model pinned yes", "run"),            # a kept output never stands for a build
+    ("build none mismatch no", "refuse"),
+    ("build outside pinned no", "refuse"),
+    ("verify none pinned no", "run"),
+    ("verify none pinned yes", "run"),
+    ("verify none absent no", "refuse"),
     ("echo none absent no", "builtin"),
     ("grep model absent no", "builtin"),
     ("cat new absent no", "refuse"),              # a file that is not there cannot be printed

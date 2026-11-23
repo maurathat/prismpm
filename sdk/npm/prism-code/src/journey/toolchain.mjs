@@ -13,6 +13,7 @@
  */
 import { PrismCodeError } from '../errors.mjs';
 import { Blake3, kappa, toHex } from '../blake3.mjs';
+import { rememberSource } from './module-source.mjs';
 
 /** A store that keeps what it is given for as long as the process or page lives. */
 export function memoryStore() {
@@ -70,7 +71,8 @@ export async function compileAdmitted(response, { label, encoding = 'identity', 
   const got = `blake3:${toHex(hasher.digest())}`;
   if (got !== label) throw new PrismCodeError('lexlean.wasm-mismatch', `${what} decodes to ${got}, not the pinned ${label}`);
   const bytes = joined(chunks, size);
-  return { module: compiling ? await compiling : await WebAssembly.compile(bytes), bytes };
+  // The admitted bytes stay with the module, so a run can compile them again if the compiled code breaks.
+  return { module: rememberSource(compiling ? await compiling : await WebAssembly.compile(bytes), bytes), bytes };
 }
 
 /**
@@ -84,7 +86,7 @@ export async function admitModule(pin, { store = null, fetch = null, log = () =>
   const ms = () => Math.round(performance.now() - started);
   const kept = store ? await store.get(pin.kappa) : null;
   // A store's word is not taken: what it returns is hashed again before it is compiled.
-  if (kept && kappa(kept) === pin.kappa) return { module: await WebAssembly.compile(kept), from: 'store', ms: ms() };
+  if (kept && kappa(kept) === pin.kappa) return { module: rememberSource(await WebAssembly.compile(kept), kept), from: 'store', ms: ms() };
   if (!fetch || !pin.url) throw new PrismCodeError('lexlean.wasm-unavailable', `${what} is not in the store, and there is nowhere to fetch it from`);
   log(`Fetching ${what} once; it is checked against its κ-label as it arrives.`);
   const response = await fetch(pin.url);
