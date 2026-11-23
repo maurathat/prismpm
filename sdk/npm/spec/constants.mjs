@@ -359,7 +359,7 @@ export const HOLO_V6 = freeze({
   SOURCES: freeze({
     SCHEMA: 'prism/model-sources/1',
     /** Exact paths and path patterns, forward-slashed: `**` is any number of path segments, `*` any part of one. */
-    PATHS: freeze(['prism.toml', 'lexlean.toml', 'lexlean.lock', 'src/**/*.lex.tex', 'language/**']),
+    PATHS: freeze(['prism.toml', 'lexlean.toml', 'lexlean.lock', 'lakefile.toml', 'lean-toolchain', 'lake-manifest.json', 'src/**/*.lex.tex', 'language/**']),
   }),
 });
 /**

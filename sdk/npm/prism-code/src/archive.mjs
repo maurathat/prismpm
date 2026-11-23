@@ -37,13 +37,15 @@ const MANIFEST_SCHEMA = { 5: MANIFEST_SCHEMA_V5, 6: MANIFEST_SCHEMA_V6 };
 export const OPTIONAL_ROLES_V6 = Object.freeze(['snapshot', 'sources']);
 export const SOURCES_SCHEMA = 'prism/model-sources/1';
 const SNAPSHOT_SOURCE_KIND = 'lexlean-semantic-snapshot';
+/** The single files of a sources object: the project's, LexLean's, and the Lake workspace LexLean needs to run again. */
+const SOURCE_FILES = Object.freeze(['prism.toml', 'lexlean.toml', 'lexlean.lock', 'lakefile.toml', 'lean-toolchain', 'lake-manifest.json']);
 
 /** Whether a sources path is one that decides the model: forward-slashed, confined, and of the stated set. */
 export function isSourcePath(path) {
   if (typeof path !== 'string' || path.length === 0 || path.length > 1024 || path.includes('\\') || /[\u0000-\u001f]/.test(path)) return false;
   const parts = path.split('/');
   if (parts.some((part) => part === '' || part === '.' || part === '..')) return false;
-  if (['prism.toml', 'lexlean.toml', 'lexlean.lock'].includes(path)) return true;
+  if (SOURCE_FILES.includes(path)) return true;
   if (parts[0] === 'src' && parts.length >= 2 && path.endsWith('.lex.tex') && parts[parts.length - 1] !== '.lex.tex') return true;
   return parts[0] === 'language' && parts.length >= 2;
 }

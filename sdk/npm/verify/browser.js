@@ -435,7 +435,7 @@ const __vendor_spec = (() => {
     SOURCES: freeze({
       SCHEMA: 'prism/model-sources/1',
       /** Exact paths and path patterns, forward-slashed: `**` is any number of path segments, `*` any part of one. */
-      PATHS: freeze(['prism.toml', 'lexlean.toml', 'lexlean.lock', 'src/**/*.lex.tex', 'language/**']),
+      PATHS: freeze(['prism.toml', 'lexlean.toml', 'lexlean.lock', 'lakefile.toml', 'lean-toolchain', 'lake-manifest.json', 'src/**/*.lex.tex', 'language/**']),
     }),
   });
   /**
@@ -1257,6 +1257,8 @@ const __holo5 = (() => {
   const OPTIONAL_ROLES = Object.freeze(['snapshot', 'sources']);
   const SOURCES_SCHEMA = 'prism/model-sources/1';
   const SNAPSHOT_SOURCE_KIND = 'lexlean-semantic-snapshot';
+  /** The single files of a sources object: the project's, LexLean's, and the Lake workspace LexLean needs to run again. */
+  const SOURCE_FILES = Object.freeze(['prism.toml', 'lexlean.toml', 'lexlean.lock', 'lakefile.toml', 'lean-toolchain', 'lake-manifest.json']);
 
   /** The optional roles a v6 manifest's `objects` rows list, in OPTIONAL_ROLES order; none for anything unreadable. */
   function optionalRolesOf(manifestBytes) {
@@ -1275,7 +1277,7 @@ const __holo5 = (() => {
     if (typeof path !== 'string' || path.length === 0 || path.length > 1024 || path.includes('\\') || /[\u0000-\u001f]/.test(path)) return false;
     const parts = path.split('/');
     if (parts.some((part) => part === '' || part === '.' || part === '..')) return false;
-    if (['prism.toml', 'lexlean.toml', 'lexlean.lock'].includes(path)) return true;
+    if (SOURCE_FILES.includes(path)) return true;
     if (parts[0] === 'src' && parts.length >= 2 && path.endsWith('.lex.tex') && parts[parts.length - 1] !== '.lex.tex') return true;
     return parts[0] === 'language' && parts.length >= 2;
   }
@@ -1560,9 +1562,32 @@ const __holo5 = (() => {
 
     if (known) for (const [role, index] of Object.entries(CONTENT)) facts.roles[role] = labelOf(index);
 
+    // The optional snapshot and sources hold whether or not the provenance does: they bind to the source manifest, not
+    // to the provenance, so a holo whose provenance fails its schema still has them checked and still reports its sources.
+    const optionalProblems = [];
+    if (known) {
+      const optionalAt = (role) => (optional.includes(role) ? at(ROLES.length + optional.indexOf(role)) : undefined);
+      const snapshot = optionalAt('snapshot');
+      if (snapshot) {
+        // Read from the source manifest's own JSON: the row binds the snapshot whether or not the document meets its schema.
+        const files = at(1) ? decode(at(1).payload).value?.files : undefined;
+        const row = Array.isArray(files) ? files.find((f) => f?.kind === SNAPSHOT_SOURCE_KIND) : undefined;
+        if (!row) optionalProblems.push(`the holo carries a snapshot, and its source manifest names no ${SNAPSHOT_SOURCE_KIND}`);
+        else if (row.sha256 !== sha256Hex(snapshot.payload)) optionalProblems.push(`the snapshot object's sha256 is not the source manifest's ${SNAPSHOT_SOURCE_KIND} ${row.sha256}`);
+      }
+      const sources = optionalAt('sources');
+      if (sources) {
+        const problem = sourcesProblem(sources.payload);
+        if (problem) optionalProblems.push(problem);
+        else facts.sourcesPresent = true;
+      }
+    }
+
     // references: the provenance names the objects in their roles.
-    if (!provenance || !known) skip('documents', 'references', 'not checked: the provenance did not decode');
-    else {
+    if (!provenance || !known) {
+      if (optionalProblems.length > 0) add('documents', 'references', false, optionalProblems.join('; '));
+      else skip('documents', 'references', 'not checked: the provenance did not decode');
+    } else {
       const problems = [];
       for (const [role, recorded, actual] of [
         ['guest', provenance.guest_content_kappa, labelOf(4)],
@@ -1573,21 +1598,7 @@ const __holo5 = (() => {
       }
       const binding = provenance.view_binding;
       if (binding?.tag === 'present' && binding.view_content_kappa !== labelOf(5)) problems.push(`the provenance view ${binding.view_content_kappa} is not the view object ${labelOf(5)}`);
-      const optionalAt = (role) => (optional.includes(role) ? at(ROLES.length + optional.indexOf(role)) : undefined);
-      const snapshot = optionalAt('snapshot');
-      if (snapshot) {
-        // Read from the source manifest's own JSON: the row binds the snapshot whether or not the document meets its schema.
-        const files = at(1) ? decode(at(1).payload).value?.files : undefined;
-        const row = Array.isArray(files) ? files.find((f) => f?.kind === SNAPSHOT_SOURCE_KIND) : undefined;
-        if (!row) problems.push(`the holo carries a snapshot, and its source manifest names no ${SNAPSHOT_SOURCE_KIND}`);
-        else if (row.sha256 !== sha256Hex(snapshot.payload)) problems.push(`the snapshot object's sha256 is not the source manifest's ${SNAPSHOT_SOURCE_KIND} ${row.sha256}`);
-      }
-      const sources = optionalAt('sources');
-      if (sources) {
-        const problem = sourcesProblem(sources.payload);
-        if (problem) problems.push(problem);
-        else facts.sourcesPresent = true;
-      }
+      problems.push(...optionalProblems);
       add('documents', 'references', problems.length === 0, problems.length === 0 ? 'the manifest and the provenance name the same objects' : problems.join('; '));
     }
 

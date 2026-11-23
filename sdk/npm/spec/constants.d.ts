@@ -141,7 +141,7 @@ export declare const HOLO_V6: Readonly<{
   SNAPSHOT_SOURCE_KIND: 'lexlean-semantic-snapshot';
   SOURCES: Readonly<{
     SCHEMA: 'prism/model-sources/1';
-    PATHS: readonly ['prism.toml', 'lexlean.toml', 'lexlean.lock', 'src/**/*.lex.tex', 'language/**'];
+    PATHS: readonly ['prism.toml', 'lexlean.toml', 'lexlean.lock', 'lakefile.toml', 'lean-toolchain', 'lake-manifest.json', 'src/**/*.lex.tex', 'language/**'];
   }>;
 }>;
 

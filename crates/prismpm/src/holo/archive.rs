@@ -867,7 +867,9 @@ pub(crate) fn optional_roles(format: v5::Format, manifest: &[u8]) -> Vec<&'stati
 }
 
 /// Whether a sources path is one that decides the model: forward-slashed,
-/// confined, and one of `prism.toml`, `lexlean.toml`, `lexlean.lock`,
+/// confined, and one of `prism.toml`, `lexlean.toml`, `lexlean.lock`, the Lake
+/// workspace LexLean needs to run again (`lakefile.toml`, `lean-toolchain`,
+/// `lake-manifest.json`),
 /// `src/**/*.lex.tex` or `language/**`.
 pub(crate) fn is_source_path(path: &str) -> bool {
     if path.is_empty()
@@ -881,7 +883,15 @@ pub(crate) fn is_source_path(path: &str) -> bool {
     if parts.iter().any(|part| matches!(*part, "" | "." | "..")) {
         return false;
     }
-    if matches!(path, "prism.toml" | "lexlean.toml" | "lexlean.lock") {
+    if matches!(
+        path,
+        "prism.toml"
+            | "lexlean.toml"
+            | "lexlean.lock"
+            | "lakefile.toml"
+            | "lean-toolchain"
+            | "lake-manifest.json"
+    ) {
         return true;
     }
     if parts[0] == "src"

@@ -197,6 +197,7 @@ const files = [
   { path: 'src/Calculator.lex.tex', bytes: enc.encode('\module{Calculator}\n') },
   { path: 'prism.toml', bytes: enc.encode('name = "calculator"\n') },
   { path: 'lexlean.toml', bytes: enc.encode('[package]\nname = "calculator"\n') },
+  { path: 'lean-toolchain', bytes: enc.encode('leanprover/lean4:v4.19.0') },
   { path: 'session.json', bytes: enc.encode('{}') },
 ];
 const carried = withModelFiles(v6, { snapshot: snapshotBytes, sources: files });
@@ -222,8 +223,8 @@ test('a v6 carries its snapshot and sources after the model, listed in its rows,
   const row = JSON.parse(parsed.metadata.text).files.find((f) => f.kind === 'lexlean-semantic-snapshot');
   assert.equal(row.sha256, sha256Hex(snapshotBytes));
   for (const i of [3, 4, 5, 6]) assert.ok(same(parsed.sections[i].body, parseArchive(v6).sections[i].body));
-  // The writer leaves out a file that does not decide the model, and sorts the rest by their bytes.
-  assert.deepEqual(readSources(parsed.sections[8].body).map((f) => f.path), ['lexlean.toml', 'prism.toml', 'src/Calculator.lex.tex']);
+  // The writer keeps the Lake workspace LexLean needs, leaves out a file that does not decide the model, and sorts by bytes.
+  assert.deepEqual(readSources(parsed.sections[8].body).map((f) => f.path), ['lean-toolchain', 'lexlean.toml', 'prism.toml', 'src/Calculator.lex.tex']);
   // The snapshot and the sources are blobs a statement may name.
   assert.ok(parsed.blobs.some((b) => b.label === `blake3:${blake3Hex(snapshotBytes)}`));
 });
@@ -279,4 +280,14 @@ test('reproved and sources are claims beside the level: run again by the caller,
   assert.equal(matched.sources.matchesSnapshot, true);
   assert.equal((await check(v6, { policy: { minimum: 'P0', require: ['sources'] }, relex })).passed, false, 'no sources object, no sources claim');
   await assert.rejects(check(carried, { policy: { require: ['everything'] } }), { check: 'policy.invalid' });
+});
+
+test('a holo whose provenance fails its schema still has its sources checked and reported', async () => {
+  const { check } = await import('../src/check.mjs');
+  const objects = parseArchive(carried).sections.map((s) => s.body.slice());
+  const provenance = JSON.parse(new TextDecoder().decode(objects[2]));
+  objects[2] = enc.encode(canonicalJson({ ...provenance, unexpected_member: true }));
+  const verdict = await check(reassemble(objects, OPTIONAL_ROLES_V6), { policy: { minimum: 'P0' } });
+  assert.ok(verdict.reasons.some((r) => r.check === 'holo.documents'), 'the provenance fails its schema');
+  assert.equal(verdict.sources?.present, true);
 });
