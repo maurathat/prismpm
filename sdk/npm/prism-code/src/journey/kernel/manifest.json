@@ -41,16 +41,19 @@
  },
  "glue": {
   "file": "lean-kernel.mjs.gz",
+  "kappa": "blake3:ac5db408040227bebf5addb792481c6cad70b3c4e5734e6de5d28f0f4bef5b4d",
   "sha256": "3f482f95c28fb0c74027552d6c4519f8916e48cd1d5b0bd202f318ca8c027a4a",
   "bytes": 62458
  },
  "wasm": {
   "file": "lean-kernel.wasm.gz",
+  "kappa": "blake3:21b2c46df9424cc7f12001f94ea8696f2b773e1cbd30e8e44c593207dc8ea177",
   "sha256": "4b48480b9c03ae4aa3bf1a37256b59bff2d41d6cf452a2f8aa9de41a28ccd118",
   "bytes": 2235906
  },
  "library": {
   "file": "library.ndjson.gz",
+  "kappa": "blake3:1d8b899ed1eb5b7703151fff2bf525c24e9b24768ae6c1c7281fd19c53512b3d",
   "sha256": "a22cb8e581310c1c4a03e120e277dd99d37c66f8159188e866f68177836aa560",
   "bytes": 7834171
  },
