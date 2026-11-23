@@ -18,6 +18,7 @@ import { judgedFacts, proved } from './prism-code/journey/canonical-rules.mjs';
 // The kernel is opened by the package's own function, the one its build uses: one place that starts it, loads its
 // library and lays it back. What is judged, and what counts as proved, stays here.
 import { loaderFromBlob, openKernel } from './prism-code/journey/prove-core.mjs';
+import { kappa } from './prism-code/blake3.mjs';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -30,14 +31,21 @@ async function open() {
   // A fresh copy when the network gives one; asked plainly when that request fails, as in a browser working offline.
   const manifest = await (await fetch(base + 'manifest.json', { cache: 'no-store' }).catch(() => fetch(base + 'manifest.json'))).json();
   const [glue, wasm, library] = await Promise.all([manifest.glue, manifest.wasm, manifest.library].map(async (entry) => unpack(await fetch(base + entry.file))));
+  // Each file is taken only as the bytes its BLAKE3 label names, where the manifest names one (manifest.*.kappa, the
+  // label of the decoded bytes). A manifest from before it had labels names them by SHA-256, and is held to that.
+  const named = [manifest.glue, manifest.wasm, manifest.library];
+  const byLabel = named.every((entry) => typeof entry?.kappa === 'string' && /^blake3:[0-9a-f]{64}$/.test(entry.kappa));
   const [g, w, l] = await Promise.all([glue, wasm, library].map(sha256));
-  if (g !== manifest.glue.sha256 || w !== manifest.wasm.sha256 || l !== manifest.library.sha256) throw Object.assign(new Error('the kernel, its loader or its library is not the pinned one'), { reason: 'mismatch' });
+  const pinned = byLabel
+    ? [glue, wasm, library].every((bytes, i) => kappa(bytes) === named[i].kappa)
+    : g === manifest.glue.sha256 && w === manifest.wasm.sha256 && l === manifest.library.sha256;
+  if (!pinned) throw Object.assign(new Error('the kernel, its loader or its library is not the pinned one'), { reason: 'mismatch' });
   const b = manifest.binding;
   if (!b || b.kernel !== w || b.loader !== g || b.library !== l) throw new Error('there is no record that this kernel judged this library whole');
 
   // Resettable: the kernel as it is once its library is resident is held, and laid back before every batch.
   const k = await openKernel({ factory: await loaderFromBlob(glue), wasm, baseText: dec.decode(library), resettable: true });
-  postMessage({ ready: true, ms: Math.round(performance.now() - started), lean: manifest.lean?.version ?? null });
+  postMessage({ ready: true, ms: Math.round(performance.now() - started), lean: manifest.lean?.version ?? null, admittedBy: byLabel ? 'blake3' : 'sha256' });
   return { lib: readLibrary(k.baseText), check: k.check, reset: k.reset, labels: { kernel: 'sha256:' + w, library: 'sha256:' + l } };
 }
 
