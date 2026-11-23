@@ -1416,7 +1416,8 @@ const __holo5 = (() => {
       else {
         if (manifest.schema !== format.manifest) problems.push(`the manifest names schema ${JSON.stringify(manifest.schema)}`);
         if (typeof manifest.name !== 'string' || manifest.name.length === 0) problems.push('the manifest names no application');
-        if (manifest.basis !== undefined && !KAPPA.test(manifest.basis)) problems.push('the manifest basis is not a κ-label');
+        // The basis names the SDK image by its OCI digest, so it is `sha256:` in either format (ADR-018 §3).
+        if (manifest.basis !== undefined && !FORMATS[5].kappa.test(manifest.basis)) problems.push('the manifest basis is not a κ-label');
         if (!KAPPA.test(manifest.requires)) problems.push('the manifest requires no κ-label');
         // The shape of the layers here; whether their κ name the objects is blob.labels.
         const named = (i) => (Array.isArray(manifest.layers) ? manifest.layers[i]?.kappa : undefined);

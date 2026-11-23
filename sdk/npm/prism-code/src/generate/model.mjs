@@ -69,7 +69,8 @@ export function camel(name) {
 }
 
 const PASCAL = /^[A-Z][A-Za-z0-9]*$/;
-const pascal = (name) => camel(name.replace(/^[a-z]/, (c) => c.toUpperCase()));
+/** `Parking fee tier`, `parking-fee-tier` and `parking_fee_tier` read as `ParkingFeeTier`: a name's words, each capitalized. */
+const pascal = (name) => name.split(/[^A-Za-z0-9]+/).filter(Boolean).map((word) => word[0].toUpperCase() + word.slice(1)).join('');
 
 /**
  * The numeric profile of `prismpm/model-document/1`: a request is
@@ -147,6 +148,7 @@ export async function codeModel(bytes) {
   const wit = readWorld(await worldText(world));
   return {
     world: worldModel(world, wit),
-    application: applicationModel(resolved.modelDocument, inspection.model.digest),
+    // The model's digests are of its bytes in the archive: an inspection does not summarize every model it reads.
+    application: applicationModel(resolved.modelDocument, { blake3: blake3Hex(resolved.model.content), sha256: await sha256Hex(resolved.model.content) }),
   };
 }

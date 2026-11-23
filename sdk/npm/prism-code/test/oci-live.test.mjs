@@ -11,7 +11,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArchive, resolveArchive } from '../src/archive.mjs';
+import { parseArchive, resolveArchive, upgradeToV6 } from '../src/archive.mjs';
+import { blake3Hex } from '../src/blake3.mjs';
 import { readAttestations } from '../src/attestations.mjs';
 import { experimental_attest } from '../src/attest-write.mjs';
 import { PullVerificationError } from '../src/errors.mjs';
@@ -73,6 +74,47 @@ async function waitForRegistry() {
 // Only a holo v5 can be signed (ADR-017).
 const signable = new Uint8Array(readFileSync(new URL('../fixtures/Calculator.v5.holo', import.meta.url)));
 const attested = async () => (await experimental_attest(signable, { type: PROOF, predicate: { accepted: true }, key: privateKey })).holo;
+// The same application as a holo v6 (ADR-018), sealed and named by BLAKE3.
+const signableV6 = upgradeToV6(signable);
+const attestedV6 = async () => (await experimental_attest(signableV6, { type: PROOF, predicate: { accepted: true }, key: privateKey })).holo;
+
+test('a stock registry takes a holo v6, its ?also= included, and gives it back by tag, digest and blake3 κ tag', { skip }, async () => {
+  await waitForRegistry();
+  const repo = repository();
+  const pushed = await experimental_push(signableV6, `${repo}:v1`, { credentials: null });
+  const kappa = `blake3:${blake3Hex(signableV6)}`;
+  assert.equal(pushed.fingerprint, kappa);
+  assert.ok(pushed.tags.includes(`blake3-${blake3Hex(signableV6)}`));
+  const same = (a) => Buffer.from(a).equals(Buffer.from(signableV6));
+  assert.ok(same((await experimental_pull(`${repo}:v1`, { credentials: null })).holo));
+  assert.ok(same((await experimental_pull(`${repo}@${pushed.digest}`, { credentials: null })).holo));
+  assert.ok(same((await experimental_pull(`${repo}@${kappa}`, { credentials: null })).holo));
+});
+
+test('cosign verify-attestation accepts a signed holo v6, whose subjects carry blake3 and sha256', { skip: signing || (hasCosign ? false : 'cosign is not on the PATH') }, async () => {
+  await waitForRegistry();
+  const repo = repository();
+  await experimental_push(await attestedV6(), `${repo}:v1`, { credentials: null, key: privateKey });
+  const verify = (key) => spawnSync('cosign', ['verify-attestation', '--key', key, '--insecure-ignore-tlog', '--allow-http-registry', '--type', PROOF, `${repo}:v1`], { encoding: 'utf8' });
+  const passed = verify(join(dir, 'public.pem'));
+  assert.equal(passed.status, 0, passed.stderr);
+  const statement = JSON.parse(Buffer.from(JSON.parse(passed.stdout.trim().split('\n')[0]).payload, 'base64'));
+  assert.equal(statement.subject[0].name, 'oci-manifest');
+  assert.deepEqual(Object.keys(statement.subject[0].digest), ['sha256'], 'the OCI manifest is named by sha256 alone (ADR-018 §4)');
+  assert.deepEqual(Object.keys(statement.subject[1].digest).sort(), ['blake3', 'sha256'], 'cosign keeps both digests of the v6 object (ADR-018 §4)');
+  writeFileSync(join(dir, 'other-v6.pem'), generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey.export({ type: 'spki', format: 'pem' }));
+  assert.notEqual(verify(join(dir, 'other-v6.pem')).status, 0);
+});
+
+test('a keyed push of a v6: pull checks the signer and returns the same bytes', { skip: signing }, async () => {
+  await waitForRegistry();
+  const repo = repository();
+  const holo = await attestedV6();
+  await experimental_push(holo, `${repo}:v1`, { credentials: null, key: privateKey });
+  const pulled = await experimental_pull(`${repo}:v1`, { credentials: null, key: publicKey, type: PROOF });
+  assert.ok(Buffer.from(pulled.holo).equals(Buffer.from(holo)));
+  assert.deepEqual(pulled.attestations.verified.map((v) => v.source).sort(), ['holo', 'referrer']);
+});
 
 test('a stock registry takes the holo and gives it back byte for byte, by tag, digest and fingerprint', { skip }, async () => {
   await waitForRegistry();

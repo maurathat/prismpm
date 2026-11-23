@@ -801,6 +801,19 @@ fn parse_application_v4(bytes: &[u8]) -> Result<ParsedApplicationArchive, PrismE
 pub const MANIFEST_SCHEMA_V5: &str = "prism/holo/5";
 /// Schema of the v5 model provenance, object 2. Its kappa fields are κ-labels.
 pub(crate) const PROVENANCE_SCHEMA_V5: &str = "prismpm/model-provenance/2";
+/// Schema of the v6 application manifest (ADR-018): v5's, with every κ a
+/// `blake3:` label.
+pub const MANIFEST_SCHEMA_V6: &str = "prism/holo/6";
+/// Schema of the v6 model provenance: v5's, with every κ a `blake3:` label.
+pub(crate) const PROVENANCE_SCHEMA_V6: &str = "prismpm/model-provenance/3";
+
+/// The manifest and provenance schemas of a holo of `format`.
+pub(crate) fn schemas_of(format: v5::Format) -> (&'static str, &'static str) {
+    match format {
+        v5::Format::V5 => (MANIFEST_SCHEMA_V5, PROVENANCE_SCHEMA_V5),
+        v5::Format::V6 => (MANIFEST_SCHEMA_V6, PROVENANCE_SCHEMA_V6),
+    }
+}
 /// Roles of the ordered objects of a v5 application holo, in archive order.
 /// An eighth object, [`ROLE_ATTESTATIONS`], is present only when signed.
 pub const ROLES_V5: [&str; 7] = [
@@ -915,6 +928,17 @@ pub(crate) fn encode_json<T: Serialize>(value: &T) -> Result<Vec<u8>, PrismError
 /// Compose one deterministic, self-contained Wasm + portable-View application
 /// as a holo v5: a UORC archive whose ordered objects are [`ROLES_V5`].
 pub fn compose_application(input: &ApplicationArchiveInput) -> Result<GeneratedHolo, PrismError> {
+    compose_application_as(v5::Format::V5, input)
+}
+
+/// Compose the application as a holo of `format`: v5 (ADR-017), or v6
+/// (ADR-018), whose seal is BLAKE3 and whose every κ is a `blake3:` label.
+pub fn compose_application_as(
+    format: v5::Format,
+    input: &ApplicationArchiveInput,
+) -> Result<GeneratedHolo, PrismError> {
+    let content_kappa = |bytes: &[u8]| v5::label(format, bytes);
+    let (manifest_schema, provenance_schema) = schemas_of(format);
     validate_provenance(&input.provenance)?;
     if input.application_name.is_empty()
         || !input.guest_wasm.starts_with(b"\0asm")
@@ -923,6 +947,7 @@ pub fn compose_application(input: &ApplicationArchiveInput) -> Result<GeneratedH
         || input
             .basis
             .as_deref()
+            // The basis names the SDK image by its OCI digest, so it is `sha256:` in either format (ADR-018 §3).
             .is_some_and(|basis| !v5::is_kappa(basis))
     {
         return Err(PrismError::new(
@@ -937,7 +962,7 @@ pub fn compose_application(input: &ApplicationArchiveInput) -> Result<GeneratedH
         &input.view_bundle,
         &input.model_document,
     ];
-    let [capability_kappa, guest_kappa, view_kappa, model_kappa] = contents.map(content_kappa);
+    let [capability_kappa, guest_kappa, view_kappa, model_kappa] = contents.map(&content_kappa);
     let object_row = |role: &str, bytes: &[u8]| ObjectV5 {
         role: role.to_owned(),
         kappa: content_kappa(bytes),
@@ -950,7 +975,7 @@ pub fn compose_application(input: &ApplicationArchiveInput) -> Result<GeneratedH
         objects.push(object_row(role, bytes));
     }
     let manifest = encode_json(&ManifestV5 {
-        schema: MANIFEST_SCHEMA_V5.to_owned(),
+        schema: manifest_schema.to_owned(),
         name: input.application_name.clone(),
         basis: input.basis.clone(),
         requires: capability_kappa.clone(),
@@ -960,7 +985,7 @@ pub fn compose_application(input: &ApplicationArchiveInput) -> Result<GeneratedH
     let application_kappa = content_kappa(&manifest);
     let provenance = &input.provenance;
     let prism_extension = encode_json(&ModelProvenanceV1 {
-        schema: PROVENANCE_SCHEMA_V5.to_owned(),
+        schema: provenance_schema.to_owned(),
         model_content_kappa: model_kappa.clone(),
         model_id: content_id(&input.model_document),
         source_id: provenance.source_id.clone(),
@@ -992,15 +1017,18 @@ pub fn compose_application(input: &ApplicationArchiveInput) -> Result<GeneratedH
         },
         application_kappa: application_kappa.clone(),
     })?;
-    let bytes = v5::write_objects(&[
-        manifest.as_slice(),
-        &input.source_manifest,
-        &prism_extension,
-        &capability_request,
-        &input.guest_wasm,
-        &input.view_bundle,
-        &input.model_document,
-    ]);
+    let bytes = v5::write_objects_as(
+        format,
+        &[
+            manifest.as_slice(),
+            &input.source_manifest,
+            &prism_extension,
+            &capability_request,
+            &input.guest_wasm,
+            &input.view_bundle,
+            &input.model_document,
+        ],
+    );
     let identities = HoloIdentities {
         guest_content_kappa: guest_kappa,
         view_content_kappa: view_kappa,
@@ -1029,12 +1057,17 @@ fn seal_hex(bytes: &[u8]) -> String {
 }
 
 fn parse_application_v5(bytes: &[u8]) -> Result<ParsedApplicationArchive, PrismError> {
+    // A holo v6 is a holo v5 whose seal is BLAKE3 and whose every κ is `blake3:` (ADR-018).
+    let format = v5::format_of(bytes).unwrap_or(v5::Format::V5);
+    let content_kappa = |bytes: &[u8]| v5::label(format, bytes);
+    let (manifest_schema, provenance_schema) = schemas_of(format);
     let objects = v5::read_objects(bytes, v5::APPLICATION_BUDGET)?;
     if objects.len() != ROLES_V5.len() && objects.len() != ROLES_V5.len() + 1 {
         return Err(PrismError::new(
             "PP3003",
             format!(
-                "a v5 application holo holds {} objects, or {} when signed; this one holds {}",
+                "a v{} application holo holds {} objects, or {} when signed; this one holds {}",
+                format.number(),
                 ROLES_V5.len(),
                 ROLES_V5.len() + 1,
                 objects.len()
@@ -1046,7 +1079,7 @@ fn parse_application_v5(bytes: &[u8]) -> Result<ParsedApplicationArchive, PrismE
         .map_err(|error| PrismError::new("PP3012", format!("holo manifest: {error}")))?;
     let [capabilities, guest, view, model] = [objects[3], objects[4], objects[5], objects[6]];
     let [capability_kappa, guest_kappa, view_kappa, model_kappa] =
-        [capabilities, guest, view, model].map(content_kappa);
+        [capabilities, guest, view, model].map(&content_kappa);
     let mut expected_objects = vec![ObjectV5 {
         role: "source-manifest".to_owned(),
         kappa: content_kappa(objects[1]),
@@ -1062,11 +1095,12 @@ fn parse_application_v5(bytes: &[u8]) -> Result<ParsedApplicationArchive, PrismE
             length: bytes.len() as u64,
         });
     }
-    if manifest.schema != MANIFEST_SCHEMA_V5
+    if manifest.schema != manifest_schema
         || manifest.name.is_empty()
         || manifest
             .basis
             .as_deref()
+            // The basis names the SDK image by its OCI digest, so it is `sha256:` in either format (ADR-018 §3).
             .is_some_and(|basis| !v5::is_kappa(basis))
         || manifest.requires != capability_kappa
         || manifest.layers
@@ -1116,7 +1150,7 @@ fn parse_application_v5(bytes: &[u8]) -> Result<ParsedApplicationArchive, PrismE
         view_model_id,
         browser_sha256,
     ];
-    if provenance.schema != PROVENANCE_SCHEMA_V5
+    if provenance.schema != provenance_schema
         || provenance.core_wasm_contract != declared_contract(&manifest.layers)
         || provenance.application_kappa != application_kappa
         || provenance.guest_content_kappa != guest_kappa
@@ -1260,6 +1294,78 @@ pub fn upgrade_application(bytes: &[u8]) -> Result<Vec<u8>, PrismError> {
 
 /// The unsigned objects of a holo v5 and its attestation payload, if any.
 type SplitV5 = (Vec<Vec<u8>>, Option<Vec<u8>>);
+
+/// Re-emit a verified, unsigned holo v5 as a holo v6 (ADR-018), byte for byte
+/// as prism-code's `upgradeToV6` does. The source manifest and the four content
+/// objects keep their bytes. The manifest and the provenance are v5's with every
+/// κ relabelled `blake3:` over the same bytes, under `prism/holo/6` and
+/// `prismpm/model-provenance/3`, and the provenance names the new manifest. The
+/// build's `*_sha256` fields and LexLean's ids are kept (ADR-018 §7), and so is a
+/// `basis`, the SDK image's OCI digest (ADR-018 §3). A signed holo is refused:
+/// its statements name v5 subjects. A v6 is returned unchanged.
+pub fn upgrade_application_v6(bytes: &[u8]) -> Result<Vec<u8>, PrismError> {
+    match v5::format_of(bytes) {
+        Some(v5::Format::V6) => {
+            validate_application(bytes)?;
+            return Ok(bytes.to_vec());
+        }
+        Some(v5::Format::V5) => {}
+        None => {
+            return Err(PrismError::new(
+                "PP3001",
+                "only a holo v5 is upgraded to v6; rebuild a v4 holo as a v5 first",
+            ))
+        }
+    }
+    parse_application_v5(bytes)?;
+    let objects = v5::read_objects(bytes, v5::APPLICATION_BUDGET)?;
+    if objects.len() != ROLES_V5.len() {
+        return Err(PrismError::new(
+            "PP3016",
+            "a signed holo v5 is not upgraded: its statements name v5 subjects; strip them, upgrade, and sign the holo v6",
+        ));
+    }
+    let relabel = |bytes: &[u8]| v5::label(v5::Format::V6, bytes);
+    let mut manifest: ManifestV5 = serde_json::from_slice(objects[0])
+        .map_err(|error| PrismError::new("PP3012", format!("holo manifest: {error}")))?;
+    // The basis names the SDK image by its OCI digest, not bytes of the holo: it is kept as it is.
+    manifest.schema = MANIFEST_SCHEMA_V6.to_owned();
+    manifest.requires = relabel(objects[3]);
+    for (layer, index) in manifest.layers.iter_mut().zip([4, 5]) {
+        layer.kappa = relabel(objects[index]);
+    }
+    for (row, index) in manifest.objects.iter_mut().zip([1, 3, 4, 5, 6]) {
+        row.kappa = relabel(objects[index]);
+    }
+    let manifest_bytes = encode_json(&manifest)?;
+    let mut provenance: ModelProvenanceV1 = serde_json::from_slice(objects[2])
+        .map_err(|error| PrismError::new("PP3015", format!("model provenance: {error}")))?;
+    provenance.schema = PROVENANCE_SCHEMA_V6.to_owned();
+    provenance.guest_content_kappa = relabel(objects[4]);
+    provenance.model_content_kappa = relabel(objects[6]);
+    if let ViewBinding::Present {
+        view_content_kappa, ..
+    } = &mut provenance.view_binding
+    {
+        *view_content_kappa = relabel(objects[5]);
+    }
+    provenance.application_kappa = relabel(&manifest_bytes);
+    let provenance_bytes = encode_json(&provenance)?;
+    let upgraded = v5::write_objects_as(
+        v5::Format::V6,
+        &[
+            manifest_bytes.as_slice(),
+            objects[1],
+            &provenance_bytes,
+            objects[3],
+            objects[4],
+            objects[5],
+            objects[6],
+        ],
+    );
+    validate_application(&upgraded)?;
+    Ok(upgraded)
+}
 
 /// The unsigned objects of a validated v5 holo and its attestation payload.
 fn split_v5(bytes: &[u8]) -> Result<SplitV5, PrismError> {

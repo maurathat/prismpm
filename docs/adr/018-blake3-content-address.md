@@ -26,6 +26,7 @@ Proposed, 2026-11-21. Supersedes ADR-017 §3 and §4. It amends ADR-017 §1 by a
    - The holo's identity is the κ of its file.
 3. **SHA-256 only at the boundary.**
    - An OCI descriptor's digest is `sha256`, computed when the holo is pushed. The κ travels in the annotation `foundation.uor.prism.digest.blake3`.
+   - The manifest's `basis` names the SDK image by its OCI digest, so it stays `sha256:` in a v6, and an upgrade from v5 keeps it as it is.
    - A push to kappa-registry also stores the blob under its κ (`?also=`).
    - Sigstore message digests are SHA-256.
 4. **Digest sets.**
