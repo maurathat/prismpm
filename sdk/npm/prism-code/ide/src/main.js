@@ -71,7 +71,8 @@ async function loadJudge(recordFile = 'app.rule-app.json') {
   const facts = {
     kappas, kappaMatches,
     holoNamed: record.kernel.holo,
-    holoPinned: await sha256(holo),
+    // A record names its judge by BLAKE3 label; one written before that, by SHA-256.
+    holoPinned: String(record.kernel?.holo ?? '').startsWith('blake3:') ? kappas.holo : await sha256(holo),
     holoVerified: kernel.identities?.verified === true,
     vectorsFailed: (await kernel.acceptance()).failed.length,
     proofVerdict: record.proof?.verdict ?? null,

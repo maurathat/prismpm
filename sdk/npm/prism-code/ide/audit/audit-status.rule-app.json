@@ -3,7 +3,7 @@
  "name": "audit-status",
  "title": "Audit status",
  "kernel": {
-  "holo": "sha256:e775324ea3abf203d3f7cb0b5a31e2c6c2328d751fdddf5fa1c46aae4e0d8cee"
+  "holo": "blake3:9a26402323b5918c8db5568bdec2ebdd5a1579f907d223e9fbbeb2a4bc192af9"
  },
  "fields": [
   {
