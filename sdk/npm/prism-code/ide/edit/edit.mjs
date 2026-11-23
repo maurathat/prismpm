@@ -8,6 +8,8 @@
 // Phase 2b of docs/proposals/prism-ide-phase-2.md, first step: a plain text area, not yet the workbench editor,
 // and checking only. Proving in the tab is phase 2c. Nothing is saved anywhere: a reload brings the project back.
 
+import { modelTar } from './model-tar.mjs';
+
 // The pin of the LexLean executable (commit, BLAKE3 label, encoding), as prism-code states it in
 // src/journey/lexlean-wasm.mjs. That module reads files, so whoever serves the page hands the pin over as pin.json.
 // A fresh copy when the network gives one; when that request fails, as it does in a browser switched to work offline,
@@ -201,11 +203,13 @@ function goTo(line, column) {
   $('gutter').scrollTop = $('source').scrollTop;
 }
 
+const labelOf = (model) => { try { return modelTar(model).label; } catch { return 'not given'; } };
 let latest = 0;
 async function run() {
   const mine = ++latest;
   $('status').textContent = 'Checking…';
-  const reply = await check({ ...files, [entry]: $('source').value });
+  const checked = { ...files, [entry]: $('source').value };
+  const reply = await check(checked);
   if (mine !== latest) return; // a newer edit is already being checked
   state.checks++;
   $('diagnostics').replaceChildren();
@@ -227,7 +231,9 @@ async function run() {
       $('diagnostics').append(item);
     }
     $('status').textContent = result.success
-      ? `The model checks, in ${reply.ms} ms. Its identity is ${result.semantic_id ? 'sha256:' + result.semantic_id.replace(/^sha256:/, '') : 'not given'}.`
+      // The model is named by its UOR content address: the BLAKE3 label of its files as one archive, the label it is
+      // pushed and pulled by (model-tar.mjs). Made here, from the text just checked.
+      ? `The model checks, in ${reply.ms} ms. Its label is ${labelOf(checked)}.`
       : `${result.diagnostics.length} problem${result.diagnostics.length === 1 ? '' : 's'}, found in ${reply.ms} ms.`;
     $('status').dataset.state = result.success ? 'ok' : 'bad';
   }

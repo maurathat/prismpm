@@ -9,6 +9,7 @@
 // page (../../src/model-terminal.js).
 
 import { kappa } from '../prism-code/blake3.mjs';
+import { modelTar } from '../model-tar.mjs';
 import * as rules from '../prism-code/journey/rule-table.mjs';
 import { reuseAdmits } from '../prism-code/journey/kappa-rules.mjs';
 import { createEffects } from './effects.mjs';
@@ -63,6 +64,7 @@ export async function startTerminal(element, { project, check, snapshotOf, prove
 
     let term;
     const line = createCommandLine({
+      modelLabel: (model) => modelTar(model).label,
       tables: published.tables, luts: published.luts, rules, kappa, reuseAdmits, project, check, snapshotOf, prove, held, pin, manifest,
       sink: (bytes, done) => term.write(bytes, done), echo: (text) => term.write(text), clear: () => term.clear(), kept: createKeptIn(store), change,
       // Lines that reach the command line at once without passing the paste handler below are asked about too.
