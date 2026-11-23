@@ -1,0 +1,5 @@
+# Held to their bytes by tools/theme-test.mjs: no line-ending conversion on any machine.
+fonts/OFL.txt -text
+fonts/*.woff2 binary
+hologram-dark.json -text
+hologram-tokens.css -text
