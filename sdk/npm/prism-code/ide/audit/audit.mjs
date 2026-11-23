@@ -74,9 +74,12 @@ function judgeOf(record, kernel) {
 
 // The audit-status model's judge. Its record names the judge archive it needs by hash; an archive is used only if it
 // is that one, verifies, and replays its own vectors. Without it nothing is claimed.
-async function auditJudge(loadArchive, judgeBytes) {
+async function auditJudge(loadArchive, judgeBytes, kappa) {
   const record = await (await fetch(mine('audit-status.rule-app.json'))).json();
-  if (!judgeBytes || record.kernel.holo !== await sha256(judgeBytes)) return { ask: null, kernel: null };
+  // A record names its judge by BLAKE3 label; one written before that names it by SHA-256, and is held to that.
+  const named = record?.kernel?.holo;
+  const is = !judgeBytes || typeof named !== 'string' ? false : named.startsWith('blake3:') ? named === kappa(judgeBytes) : named === await sha256(judgeBytes);
+  if (!is) return { ask: null, kernel: null };
   const kernel = await loadArchive(judgeBytes, { capabilities: null, capabilitySet: undefined, allowUnverified: false });
   const sound = kernel.identities?.verified === true && (await kernel.acceptance()).failed.length === 0;
   return sound ? { ask: judgeOf(record, kernel), kernel } : { ask: null, kernel: null };
@@ -135,7 +138,7 @@ async function auditRuleApp(recordBytes, lib) {
   for (const r of rules) $('rules').append(el('li', `${conditions(record, r.when)} → ${record.outcomes[r.answer]}`));
   $('rules').append(el('li', `otherwise → ${record.outcomes[otherwise]}`));
 
-  const audit = await auditJudge(lib.loadArchive, judgeBytes);
+  const audit = await auditJudge(lib.loadArchive, judgeBytes, lib.kappa);
   const appJudge = audit.kernel ? judgeOf(record, audit.kernel) : null;
   const replay = async () => {
     $('vectors').replaceChildren();
@@ -157,7 +160,8 @@ async function auditRuleApp(recordBytes, lib) {
   const rows = record.guarantees.map((g) => guaranteeRow(`When ${conditions(record, g.when)}, the answer is ${g.always ? 'always' : 'never'} ${record.outcomes[g.outcome]}.`));
   const found = await appFindings();
   // "This model" is the record on show: the frame must have loaded the same bytes this view read.
-  const sameModel = !found.error && found.address === recordLabel.sha256;
+  // The app's page gives its record's address: its BLAKE3 label, or from a page built before that, its SHA-256.
+  const sameModel = !found.error && (found.address === recordLabel.blake3 || found.address === recordLabel.sha256);
   const accepted = Array.isArray(found.proved?.accepted) ? found.proved.accepted : null;
   for (const [i, tr] of rows.entries()) {
     const request = [accepted === null ? 'none' : accepted[i] ? 'accepted' : 'refused', sameModel ? 'this' : 'other', 'none', 'other', found.admitted === false ? 'failed' : replayed];
@@ -222,7 +226,7 @@ async function auditHolo(holoBytes, lib) {
   const verifier = await import(mine('prism-code/vendor/verify.mjs'));
   const label = { sha256: await sha256(holoBytes), blake3: lib.kappa(holoBytes) };
   fingerprint([['Holo', label]]);
-  const audit = await auditJudge(lib.loadArchive, await bytesOrNull(mine('judge/kernel.holo')));
+  const audit = await auditJudge(lib.loadArchive, await bytesOrNull(mine('judge/kernel.holo')), lib.kappa);
 
   // Judge, read and load the holo. Any of the three refusing it is the finding.
   // Loading refuses an altered holo. The verifier gives the level; the copy that runs in a browser does not read a

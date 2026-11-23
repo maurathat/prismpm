@@ -28,6 +28,7 @@ import { compileAdmitted } from './prism-code/journey/toolchain.mjs';
 import { lexleanSnapshot } from './prism-code/journey/lexlean-core.mjs';
 import { kernelProver, openKernelFrom } from './prism-code/journey/prove-core.mjs';
 import { buildFromFiles } from './prism-code/journey/build-core.mjs';
+import { withProofHints } from './prism-code/journey/proof-hints.mjs';
 import { EVALUATOR_GUEST, admitEvaluator } from './prism-code/journey/model-guest.mjs';
 
 const enc = new TextEncoder();
@@ -82,7 +83,9 @@ onmessage = async ({ data }) => {
     }
     k.reset();
     const result = await prove({ files, snapshot: taken.snapshot, lexlean: module });
-    postMessage({ id: data.id, result: { ok: result.ok, theorems: result.theorems, via: result.via, message: result.message }, ms: Math.round(performance.now() - started) });
+    // Where each theorem that is not proved is stated, and what to do about it: the package's own (proof-hints.mjs),
+    // the same a build gives, so the editor marks the same line whether it judged or built.
+    postMessage({ id: data.id, result: { ok: result.ok, theorems: withProofHints(result.theorems, files), via: result.via, message: result.message }, ms: Math.round(performance.now() - started) });
   } catch (e) {
     postMessage({ id: data.id, error: String(e?.message ?? e) });
   }
