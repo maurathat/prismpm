@@ -52,6 +52,11 @@ assert.throws(() => colorsOf({ 'hologram-dark': { color: { background: { $value:
 // the page's own (the workbench is left on VS Code's).
 assert.deepEqual(theme.semanticTokenColors, { keyword: '#569cd6', type: '#4ec9b0', string: '#ce9178', number: '#b5cea8', operator: '#d4d4d4', property: '#9cdcfe', namespace: '#4ec9b0', comment: '#6a9955' });
 assert.equal(theme.colors['editor.foreground'], '#d4d4d4');
+// The code area's ground is Dark+'s too; what is around it is the kit's.
+assert.equal(theme.colors['editor.background'], '#1e1e1e');
+assert.equal(theme.colors['tab.activeBackground'], theme.colors['editor.background'], 'the open tab runs into the code under it');
+assert.equal(theme.colors['sideBar.background'], '#1e1c1b');
+assert.equal(theme.colors['panel.background'], '#151312');
 for (const [name, color] of [['comment', '#6a9955'], ['string', '#ce9178'], ['keyword', '#569cd6'], ['control keyword', '#c586c0'], ['function', '#dcdcaa'], ['variable', '#9cdcfe']]) {
   assert.equal(theme.tokenColors.find((rule) => rule.name === name)?.settings.foreground, color, `${name} as Dark+ has it`);
 }

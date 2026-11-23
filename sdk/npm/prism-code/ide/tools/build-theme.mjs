@@ -14,8 +14,9 @@
 //
 // What the kit does not have: colours for code. It names a ground, text, muted text, borders, three states (success,
 // warning, destructive) and one accent, which it allows once in a view and never as a general highlight. Code is
-// therefore coloured as VS Code's own Dark+ colours it (the owner's choice: code should read as it does in VS Code),
-// on the kit's ground, and the accent is used for one thing: the line over the tab that is open.
+// therefore coloured as VS Code's own Dark+ colours it, on Dark+'s own ground (the owner's choice: the code area
+// should read as it does in VS Code); everything around the code is the kit's. The accent is used for one thing:
+// the line over the tab that is open.
 //
 // Usage: node tools/build-theme.mjs            fetch the pinned tokens and write both files
 //        node tools/build-theme.mjs <file>     the same, from a local copy of the tokens (held to the same label)
@@ -82,6 +83,8 @@ const NONE = '#00000000';
 // Code, as VS Code's Dark+ colours it (extensions/theme-defaults: dark_vs.json and dark_plus.json). These are not the
 // kit's: the kit has no colours for code.
 const DARK_PLUS = {
+  // The code area itself: its ground, the line the cursor is on, and what is selected.
+  ground: '#1e1e1e', lineBorder: '#282828', selection: '#264f78', inactiveSelection: '#3a3d41', selectionHighlight: '#add6ff26',
   text: '#d4d4d4', comment: '#6a9955', string: '#ce9178', number: '#b5cea8', keyword: '#569cd6', control: '#c586c0', type: '#4ec9b0',
   function: '#dcdcaa', variable: '#9cdcfe', constant: '#4fc1ff', regexp: '#d16969', escape: '#d7ba7d', invalid: '#f44747',
 };
@@ -100,10 +103,11 @@ export function themeOf(c) {
     'focusBorder': c.ring, 'selection.background': held, 'widget.shadow': NONE, 'scrollbar.shadow': NONE, 'widget.border': line,
     'textLink.foreground': c.link, 'textLink.activeForeground': c['link-hover'], 'textPreformat.foreground': text, 'textBlockQuote.background': raised, 'textCodeBlock.background': raised,
     // The editor.
-    'editor.background': ground, 'editor.foreground': DARK_PLUS.text, 'editorCursor.foreground': text, 'editorGutter.background': ground,
+    // The code area is Dark+'s, ground included (the owner's choice); everything around it is the kit's.
+    'editor.background': DARK_PLUS.ground, 'editor.foreground': DARK_PLUS.text, 'editorCursor.foreground': text, 'editorGutter.background': DARK_PLUS.ground,
     'editorLineNumber.foreground': faint, 'editorLineNumber.activeForeground': text,
-    'editor.selectionBackground': held, 'editor.inactiveSelectionBackground': c.secondary, 'editor.selectionHighlightBackground': c.secondary, 'editor.wordHighlightBackground': c.secondary,
-    'editor.wordHighlightStrongBackground': held, 'editor.lineHighlightBackground': raised, 'editor.lineHighlightBorder': NONE,
+    'editor.selectionBackground': DARK_PLUS.selection, 'editor.inactiveSelectionBackground': DARK_PLUS.inactiveSelection, 'editor.selectionHighlightBackground': DARK_PLUS.selectionHighlight,
+    'editor.lineHighlightBackground': NONE, 'editor.lineHighlightBorder': DARK_PLUS.lineBorder,
     'editor.findMatchBackground': c['warning-subtle'], 'editor.findMatchBorder': c.warning, 'editor.findMatchHighlightBackground': c['info-border'],
     'editorIndentGuide.background1': hair, 'editorIndentGuide.activeBackground1': line, 'editorWhitespace.foreground': line, 'editorRuler.foreground': hair,
     'editorBracketMatch.background': c.secondary, 'editorBracketMatch.border': c.ring,
@@ -116,7 +120,7 @@ export function themeOf(c) {
     'peekView.border': line, 'peekViewEditor.background': raised, 'peekViewResult.background': side, 'peekViewTitle.background': side,
     'diffEditor.insertedTextBackground': c['success-subtle'], 'diffEditor.removedTextBackground': c['destructive-subtle'],
     // Tabs. The accent's one use: the line over the tab that is open.
-    'tab.activeBackground': ground, 'tab.activeForeground': text, 'tab.inactiveBackground': side, 'tab.inactiveForeground': soft, 'tab.border': hair,
+    'tab.activeBackground': DARK_PLUS.ground, 'tab.activeForeground': text, 'tab.inactiveBackground': side, 'tab.inactiveForeground': soft, 'tab.border': hair,
     'tab.activeBorder': NONE, 'tab.activeBorderTop': c.brand, 'tab.unfocusedActiveBorderTop': line, 'tab.hoverBackground': c.secondary, 'tab.unfocusedActiveForeground': soft,
     // The bars around it.
     'activityBar.background': side, 'activityBar.foreground': text, 'activityBar.inactiveForeground': soft, 'activityBar.border': hair, 'activityBar.activeBorder': text,
@@ -150,7 +154,7 @@ export function themeOf(c) {
     'notifications.background': c.popover, 'notifications.foreground': text, 'notifications.border': line, 'notificationCenterHeader.background': side,
     'notificationsErrorIcon.foreground': c.destructive, 'notificationsWarningIcon.foreground': c.warning, 'notificationsInfoIcon.foreground': c.info,
     'problemsErrorIcon.foreground': c.destructive, 'problemsWarningIcon.foreground': c.warning, 'problemsInfoIcon.foreground': c.info,
-    'breadcrumb.background': ground, 'breadcrumb.foreground': soft, 'breadcrumb.focusForeground': text, 'breadcrumb.activeSelectionForeground': text, 'breadcrumbPicker.background': c.popover,
+    'breadcrumb.background': DARK_PLUS.ground, 'breadcrumb.foreground': soft, 'breadcrumb.focusForeground': text, 'breadcrumb.activeSelectionForeground': text, 'breadcrumbPicker.background': c.popover,
     'settings.headerForeground': text, 'settings.modifiedItemIndicator': soft, 'welcomePage.tileBackground': raised, 'walkThrough.embeddedEditorBackground': raised,
     // The terminal, on the kit's ground. Its sixteen colours are left to VS Code's own, as in Dark+.
     'terminal.background': ground, 'terminal.foreground': text, 'terminalCursor.foreground': text, 'terminal.selectionBackground': held, 'terminal.border': hair,
@@ -216,13 +220,13 @@ export function contrastReport(theme) {
     ['a selected row', k['list.activeSelectionForeground'], k['list.activeSelectionBackground']],
     ['a menu', k['menu.foreground'], k['menu.background']],
     ['selected text in the editor', k['editor.foreground'], k['editor.selectionBackground']],
-    ['text on the line the cursor is on', k['editor.foreground'], k['editor.lineHighlightBackground']],
+    ['muted text over the code (the breadcrumb)', k['breadcrumb.foreground'], k['breadcrumb.background']],
+    ['selected text when the editor is not in use', k['editor.foreground'], k['editor.inactiveSelectionBackground']],
     ['an error\'s text', k.errorForeground, k['editor.background']],
     ['a warning in a list', k['list.warningForeground'], k['sideBar.background']],
     ['a link', k['textLink.foreground'], k['editor.background']],
     ['the terminal', k['terminal.foreground'], k['terminal.background']],
     ...Object.entries(theme.semanticTokenColors).map(([kind, color]) => [`code: ${kind}`, color, k['editor.background']]),
-    ...Object.entries(theme.semanticTokenColors).map(([kind, color]) => [`code: ${kind}, on the cursor's line`, color, k['editor.lineHighlightBackground']]),
     ...theme.tokenColors.map((r) => [`code in other languages: ${r.name}`, r.settings.foreground, k['editor.background']]),
   ].map(([what, color, ground]) => ({ what, color, ground, least: 4.5 }));
   const marks = [
@@ -238,11 +242,13 @@ export function contrastReport(theme) {
   ].map(([what, color, ground]) => ({ what, color, ground, least: 3 }));
   const held = [...text, ...marks].map((pair) => ({ ...pair, ratio: Math.round(contrast(pair.color, pair.ground) * 100) / 100 }));
   const hairlines = [
-    ['a divider', k['panel.border'], k['editor.background']],
-    ['a field\'s edge', k['input.border'], k['editor.background']],
+    ['a divider', k['panel.border'], k['panel.background']],
+    ['a field\'s edge', k['input.border'], k['panel.background']],
     ['an indent guide', k['editorIndentGuide.background1'], k['editor.background']],
   ].map(([what, color, ground]) => ({ what, color, ground, ratio: Math.round(contrast(color, ground) * 100) / 100 }));
-  return { held, failing: held.filter((pair) => pair.ratio < pair.least), hairlines };
+  // Dark+'s own selection colour under Dark+'s own code colours: listed, and held to nothing. It is what VS Code shows.
+  const selected = Object.entries(theme.semanticTokenColors).map(([kind, color]) => ({ what: `code: ${kind}, selected`, color, ground: k['editor.selectionBackground'], ratio: Math.round(contrast(color, k['editor.selectionBackground']) * 100) / 100 }));
+  return { held, failing: held.filter((pair) => pair.ratio < pair.least), hairlines, selected };
 }
 
 /** The tokens as CSS variables, for the page's own strip: the dark set, each colour that is not opaque laid over the ground. */
@@ -272,4 +278,5 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   console.log(`${THEME_NAME}: ${Object.keys(theme.colors).length} colours, ${theme.tokenColors.length} scope rules, ${Object.keys(theme.semanticTokenColors).length} semantic kinds`);
   console.log(`contrast: ${report.held.length} pairs held; the closest to its limit is ${least.what}, ${least.ratio}:1 against ${least.least}:1`);
   console.log(`hairlines, not held: ${report.hairlines.map((h) => `${h.what} ${h.ratio}:1`).join(', ')}`);
+  console.log(`selected code, Dark+'s own colours, not held: ${report.selected.map((h) => `${h.what.slice(6, -10)} ${h.ratio}:1`).join(', ')}`);
 }
