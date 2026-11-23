@@ -63,6 +63,9 @@
   "kernel": "4b48480b9c03ae4aa3bf1a37256b59bff2d41d6cf452a2f8aa9de41a28ccd118",
   "loader": "3f482f95c28fb0c74027552d6c4519f8916e48cd1d5b0bd202f318ca8c027a4a",
   "library": "a22cb8e581310c1c4a03e120e277dd99d37c66f8159188e866f68177836aa560",
+  "kernelKappa": "blake3:21b2c46df9424cc7f12001f94ea8696f2b773e1cbd30e8e44c593207dc8ea177",
+  "loaderKappa": "blake3:ac5db408040227bebf5addb792481c6cad70b3c4e5734e6de5d28f0f4bef5b4d",
+  "libraryKappa": "blake3:1d8b899ed1eb5b7703151fff2bf525c24e9b24768ae6c1c7281fd19c53512b3d",
   "declarations": 2113,
   "sentToTheKernel": 1932,
   "judgedBy": "check_whole, every declaration, in this kernel"
