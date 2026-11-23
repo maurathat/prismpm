@@ -768,16 +768,16 @@ function checkName(name) {
 function checkPolicy(policy) {
   const { LEVELS, DEFAULT_POLICY } = ASSURANCE;
   // `program` is the policy that decides; `minimum` is only ever a caller's override of the default policy's.
-  if (policy === undefined || policy === null) return { name: DEFAULT_POLICY, program: policies.shippedPolicy(DEFAULT_POLICY), minimum: null, digests: {}, world: undefined, capabilities: null, effects: null };
+  if (policy === undefined || policy === null) return { name: DEFAULT_POLICY, program: policies.shippedPolicy(DEFAULT_POLICY), minimum: null, digests: {}, world: undefined, capabilities: null, effects: null, require: [] };
   if (typeof policy !== 'object') throw new VerifyError('policy.invalid', 'the policy must be an object');
   for (const key of Object.keys(policy)) {
-    if (!['name', 'rego', 'minimum', 'digests', 'world', 'capabilities', 'effects', 'replay', 'statements'].includes(key)) throw new VerifyError('policy.invalid', `unknown policy member ${key}; expected name, rego, minimum, digests, world, capabilities or effects`);
+    if (!['name', 'rego', 'minimum', 'digests', 'world', 'capabilities', 'effects', 'replay', 'statements', 'require'].includes(key)) throw new VerifyError('policy.invalid', `unknown policy member ${key}; expected name, rego, minimum, digests, world, capabilities, effects or require`);
   }
   if (policy.rego !== undefined) {
     // A policy file is the whole policy. What it decides, a level or a pin, it says in Rego, where a reader can see it.
     const other = Object.keys(policy).find((key) => !['name', 'rego', 'capabilities', 'replay', 'statements'].includes(key));
     if (other) throw new VerifyError('policy.invalid', `policy.${other} cannot be given with policy.rego; a Rego policy states it itself`);
-    return { name: checkName(policy.name ?? 'policy'), program: parsePolicy(policy.rego), minimum: null, digests: {}, world: undefined, capabilities: checkCapabilities(policy.capabilities), effects: null, replay: policy.replay, statements: policy.statements };
+    return { name: checkName(policy.name ?? 'policy'), program: parsePolicy(policy.rego), minimum: null, digests: {}, world: undefined, capabilities: checkCapabilities(policy.capabilities), effects: null, replay: policy.replay, statements: policy.statements, require: checkRequire(policy.require) };
   }
   const name = checkName(policy.name ?? DEFAULT_POLICY);
   const minimum = policy.minimum ?? null;
@@ -800,7 +800,7 @@ function checkPolicy(policy) {
     if (!Array.isArray(effects) || effects.some((e) => !IMPURE_EFFECTS.includes(e))) throw new VerifyError('policy.invalid', `policy.effects must be an array of ${IMPURE_EFFECTS.join(', ')}`);
     if (new Set(effects).size !== effects.length) throw new VerifyError('policy.invalid', 'policy.effects repeats an effect');
   }
-  return { name, program: policies.shippedPolicy(DEFAULT_POLICY), minimum, digests, world: checkWorldPin(policy.world), capabilities, effects, replay: policy.replay, statements: policy.statements };
+  return { name, program: policies.shippedPolicy(DEFAULT_POLICY), minimum, digests, world: checkWorldPin(policy.world), capabilities, effects, replay: policy.replay, statements: policy.statements, require: checkRequire(policy.require) };
 }
 
 /**
@@ -970,6 +970,69 @@ export async function policyInput(source, options) {
   return inputOf(bytes, evidenceOf(bytes, capabilities, options?.replay, options?.statements), capabilities);
 }
 
+/** The claims a policy requires beside its minimum: none, or a list of ASSURANCE.CLAIMS, each once. */
+function checkRequire(require) {
+  if (require === undefined || require === null) return [];
+  if (!Array.isArray(require) || require.some((claim) => !ASSURANCE.CLAIMS.includes(claim)) || new Set(require).size !== require.length) {
+    throw new VerifyError('policy.invalid', `policy.require must list each of ${ASSURANCE.CLAIMS.join(', ')} at most once`);
+  }
+  return [...require];
+}
+
+const LABEL = /^blake3:[0-9a-f]{64}$/;
+const ID = /^[0-9a-f]{64}$/;
+const orNullOf = (pattern, value) => (typeof value === 'string' && pattern.test(value) ? value : null);
+
+/**
+ * The `reproved` claim from a caller's `reprove(holoBytes)`, in the verdict's shape. Lean's kernel runs in the
+ * caller's function, not in this package, so a function that throws or answers in another shape gives a claim that
+ * did not pass, with the reason, never a verdict that trusts it.
+ */
+async function reprovedOf(reprove, bytes) {
+  const refused = (reason) => ({ passed: false, theorems: [], semantic_id: null, kernel: null, library: null, reason });
+  let result;
+  try {
+    result = await reprove(bytes);
+  } catch (error) {
+    return refused(sentence(`the re-proof did not finish: ${error?.message ?? error}`));
+  }
+  if (!result || typeof result !== 'object' || typeof result.passed !== 'boolean' || !Array.isArray(result.theorems)) {
+    return refused('The re-proof returned no result of the stated shape.');
+  }
+  const theorems = result.theorems.map((t) => ({
+    name: String(t?.name ?? ''),
+    status: ['proved', 'refused', 'unsupported'].includes(t?.status) ? t.status : 'refused',
+    axioms: Array.isArray(t?.axioms) ? [...new Set(t.axioms.map(String))].sort() : [],
+  }));
+  // A pass the theorems do not carry is not a pass: every theorem proved, and at least one theorem.
+  const passed = result.passed === true && theorems.length > 0 && theorems.every((t) => t.status === 'proved');
+  const reason = passed ? null : typeof result.reason === 'string' && result.reason !== '' ? result.reason : 'The kernel did not accept a proof of every theorem.';
+  return { passed, theorems, semantic_id: orNullOf(ID, result.semantic_id), kernel: orNullOf(LABEL, result.kernel), library: orNullOf(LABEL, result.library), reason };
+}
+
+/** The `sources` claim: whether the holo carries sources, and, with a caller's `relex(holoBytes)`, whether they give its snapshot. */
+async function sourcesOf(relex, bytes, present) {
+  const claim = { present, matchesSnapshot: null, semantic_id: null, lexlean: null, reason: present ? null : 'The holo carries no sources object.' };
+  if (typeof relex !== 'function' || !present) return claim;
+  let result;
+  try {
+    result = await relex(bytes);
+  } catch (error) {
+    return { ...claim, matchesSnapshot: false, reason: sentence(`LexLean did not finish on the sources: ${error?.message ?? error}`) };
+  }
+  if (!result || typeof result !== 'object' || typeof result.matchesSnapshot !== 'boolean') {
+    return { ...claim, matchesSnapshot: false, reason: 'LexLean on the sources returned no result of the stated shape.' };
+  }
+  const matches = result.matchesSnapshot === true;
+  return {
+    present,
+    matchesSnapshot: matches,
+    semantic_id: orNullOf(ID, result.semantic_id),
+    lexlean: orNullOf(LABEL, result.lexlean),
+    reason: matches ? null : typeof result.reason === 'string' && result.reason !== '' ? result.reason : "The sources do not give the holo's snapshot.",
+  };
+}
+
 /**
  * Check a holo and return its verdict, a `prism/verdict/1` object
  * (docs/proposals/269-assurance-levels.md). The level is computed from the
@@ -987,10 +1050,17 @@ export async function policyInput(source, options) {
  * format revision this package does not know. Asynchronous so that bundle
  * signature verification (issue #267), which needs WebCrypto, can join without an API change.
  *
+ * The claims beside the level (ASSURANCE.CLAIMS) are checks run again on this machine, by functions the caller
+ * supplies, so this package never loads a kernel or a compiler: `reprove(holoBytes)` runs Lean's kernel on the
+ * holo's carried snapshot and gives the `reproved` member, and `relex(holoBytes)` runs LexLean on its carried sources
+ * and fills `sources.matchesSnapshot`. Without them there is no `reproved` member and `matchesSnapshot` is null, and
+ * a policy that requires the claim fails with a reason that names it.
+ *
  * @param {Uint8Array | ArrayBuffer} source the whole holo
- * @param {{ name?: string, rego?: string, minimum?: 'P0' | 'P1' | 'P2' | 'P3', digests?: Record<string, { sha256?: string, blake3?: string }>, world?: { contract?: string, sha256?: string, blake3?: string } | null }} [policy]
+ * @param {{ name?: string, rego?: string, minimum?: 'P0' | 'P1' | 'P2' | 'P3', digests?: Record<string, { sha256?: string, blake3?: string }>, world?: { contract?: string, sha256?: string, blake3?: string } | null, require?: Array<'reproved' | 'sources'> }} [policy]
+ * @param {{ reprove?: (holo: Uint8Array) => Promise<object>, relex?: (holo: Uint8Array) => Promise<object> }} [options]
  */
-export async function verify(source, policy) {
+export async function verify(source, policy, options = {}) {
   const bytes = asBytes(source);
   const wanted = checkPolicy(policy);
   const evidence = evidenceOf(bytes, wanted.capabilities, wanted.replay, wanted.statements);
@@ -1046,12 +1116,34 @@ export async function verify(source, policy) {
 
   for (const { rule, message } of decision.denials) reasons.push({ check: rule, withholds: null, message: sentence(message) });
 
+  // The claims beside the level: each from its check run again here, never from what the holo records.
+  const reproved = typeof options?.reprove === 'function' ? await reprovedOf(options.reprove, bytes) : undefined;
+  const sources = facts.sourcesPresent || typeof options?.relex === 'function' ? await sourcesOf(options?.relex, bytes, facts.sourcesPresent === true) : undefined;
+  for (const claim of wanted.require) {
+    const held = claim === 'reproved' ? reproved?.passed === true : sources?.matchesSnapshot === true;
+    if (held) continue;
+    passed = false;
+    const why =
+      claim === 'reproved'
+        ? reproved
+          ? reproved.reason
+          : "the verifier did not run Lean's kernel on the holo (no reprove)"
+        : sources?.present
+          ? sources.matchesSnapshot === null
+            ? 'the verifier did not run LexLean on the sources (no relex)'
+            : sources.reason
+          : 'the holo carries no sources object';
+    reasons.push({ check: `policy.${claim}`, withholds: null, message: sentence(`the policy requires ${ASSURANCE.CLAIM_NAMES[claim]}, and ${why}`) });
+  }
+
   return {
     schema: ASSURANCE.VERDICT,
     holo: facts.fingerprint,
     level,
-    policy: { name: wanted.name, minimum },
+    policy: wanted.require.length > 0 ? { name: wanted.name, minimum, require: wanted.require } : { name: wanted.name, minimum },
     passed,
+    ...(reproved ? { reproved } : {}),
+    ...(sources ? { sources } : {}),
     reasons,
   };
 }

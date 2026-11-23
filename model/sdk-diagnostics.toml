@@ -61,6 +61,11 @@ capability = "AL-07"
 statement = "The .holo archive has no model extension, or its model extension names no model_content_kappa, so the model cannot be bound to the archive."
 
 [[error]]
+code = "archive.sources"
+capability = "AL-07"
+statement = "The sources object of a holo v6 does not read, lists no file, names a file that does not decide the model, or holds other bytes than its index names."
+
+[[error]]
 code = "archive.version"
 capability = "AL-07"
 statement = "The .holo archive has a physical version other than the one this version reads."

@@ -102,7 +102,8 @@ jobs:
             // and the model-document/9 schema and revision 2026-11-18 (HO-49, HO-50) in src/vendor and browser.js, 698 KiB measured, so 704 KiB,
             // and BLAKE3 written for speed, ten times the throughput, in src/vendor/blake3.mjs and again in browser.js, 705.1 KiB measured, so 712 KiB,
             // and the holo v6 reader (ADR-018) and the model-provenance/3 schema in src/ and browser.js, 718.1 KiB measured, so 724 KiB.
-            if (pack.unpackedSize > 741376) throw new Error("package exceeds 724 KiB");
+            // and v6's optional snapshot and sources, the reproved and sources claims and the policy's require, in src/ and browser.js (ADR-018), 745.0 KiB measured, so 752 KiB.
+            if (pack.unpackedSize > 770048) throw new Error("package exceeds 752 KiB");
             const paths = pack.files.map((f) => f.path);
             const stray = paths.filter((p) => /^(test|scripts)\//.test(p));
             if (stray.length) throw new Error(`tests or scripts in the package: ${stray}`);

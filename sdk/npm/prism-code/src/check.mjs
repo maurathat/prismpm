@@ -39,7 +39,7 @@ export const LIMITS = Object.freeze([
 ]);
 
 /** The members a JSON policy file may hold. A rule beyond these is written in Rego (#285). */
-const POLICY_MEMBERS = ['name', 'minimum', 'digests', 'world', 'effects'];
+const POLICY_MEMBERS = ['name', 'minimum', 'digests', 'world', 'effects', 'require'];
 
 const noVerdict = (check, message, cause) => new VerificationError(message, { check, cause });
 
@@ -201,7 +201,7 @@ async function signatureOutcome(attestation, signer) {
  * member is the fingerprint of the file as given, computed over its body.
  *
  * @param {string | Uint8Array} path the holo, as a path or its bytes
- * @param {{ policy?: string | object, capabilities?: object | null, replay?: string, env?: object, signer?: object }} [options] `policy` is a shipped policy's name, a file path or an object of the same members; `capabilities` the granted set; `replay` the path of a `prism/replay/v1` statement; `signer` the signer policy of `experimental_verifyBundle` (`key`, or `certificateIdentity` or `certificateIdentityRegexp` with `certificateOidcIssuer`, and `trustedRoot`)
+ * @param {{ policy?: string | object, capabilities?: object | null, replay?: string, env?: object, signer?: object, reprove?: Function, relex?: Function }} [options] `policy` is a shipped policy's name, a file path or an object of the same members; `capabilities` the granted set; `replay` the path of a `prism/replay/v1` statement; `signer` the signer policy of `experimental_verifyBundle` (`key`, or `certificateIdentity` or `certificateIdentityRegexp` with `certificateOidcIssuer`, and `trustedRoot`)
  */
 export async function check(path, options = {}) {
   const policy = options.policy === undefined ? {} : await policyOf(options.policy);
@@ -210,9 +210,14 @@ export async function check(path, options = {}) {
   if (options.replay !== undefined) policy.replay = await readReplay(options.replay);
   const bytes = path instanceof Uint8Array ? path : await holoBytes(path);
   const attested = await attestedEvidence(bytes, options.signer);
+  // The claims' checks read the holo as given, its kernel-proof statement included, though the verdict reads it unsigned.
+  const claims = {
+    ...(typeof options.reprove === 'function' ? { reprove: () => options.reprove(bytes) } : {}),
+    ...(typeof options.relex === 'function' ? { relex: () => options.relex(bytes) } : {}),
+  };
   try {
-    if (!attested) return await experimental_verify(bytes, { ...policy, env: options.env });
-    const verdict = await verifyWithStatements(attested.unsigned, { ...policy, env: options.env }, attested.statements);
+    if (!attested) return await experimental_verify(bytes, { ...policy, ...claims, env: options.env });
+    const verdict = await verifyWithStatements(attested.unsigned, { ...policy, ...claims, env: options.env }, attested.statements);
     return { ...verdict, ...(attested.footerMatches ? {} : withoutIntegrity(verdict, { footer: attested.footer, fingerprint: attested.computed, seal: attested.seal })), holo: attested.fingerprint };
   } catch (error) {
     if (error instanceof PrismError) throw error;

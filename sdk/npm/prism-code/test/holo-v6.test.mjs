@@ -14,7 +14,7 @@ import { experimental_attest, resolveSubjects } from '../src/attest-write.mjs';
 import { blake3Hex } from '../src/blake3.mjs';
 import { ANNOTATION, holoManifest } from '../src/oci-manifest.mjs';
 import { experimental_pull, experimental_push } from '../src/push-pull.mjs';
-import { formatOf, readObjects } from '../src/uorc.mjs';
+import { formatOf, readObjects, writeObjects } from '../src/uorc.mjs';
 import { startRegistry } from './support/registry.mjs';
 
 process.env.PRISM_IMAGES ??= mkdtempSync(join(tmpdir(), 'prism-images-store-'));
@@ -187,4 +187,107 @@ test('check reaches the same verdict on a v6 holo as on its v5, and names the v6
   const broken = await check(planted);
   assert.equal(broken.level, 'P0');
   assert.match(broken.reasons[0].message, /BLAKE3/);
+});
+
+// The optional snapshot and sources objects, and the claims beside the level (ADR-018).
+const { OPTIONAL_ROLES_V6, readSources, sourcesArchive, withModelFiles } = await import('../src/archive.mjs');
+const enc = new TextEncoder();
+const snapshotBytes = enc.encode('{"schema":"lexlean/semantic-snapshot/2","semantic_id":"75956b94d3183b6a527cc8684de8410e0ad931f584a81b090223733e3e6791e4"}');
+const files = [
+  { path: 'src/Calculator.lex.tex', bytes: enc.encode('\module{Calculator}\n') },
+  { path: 'prism.toml', bytes: enc.encode('name = "calculator"\n') },
+  { path: 'lexlean.toml', bytes: enc.encode('[package]\nname = "calculator"\n') },
+  { path: 'lean-toolchain', bytes: enc.encode('leanprover/lean4:v4.19.0') },
+  { path: 'session.json', bytes: enc.encode('{}') },
+];
+const carried = withModelFiles(v6, { snapshot: snapshotBytes, sources: files });
+
+/** The objects of a v6 put back together with the manifest's rows and the provenance's application κ made true again. */
+function reassemble(objects, optional) {
+  const label = (bytes) => `blake3:${blake3Hex(bytes)}`;
+  const manifest = JSON.parse(new TextDecoder().decode(objects[0]));
+  manifest.objects = [1, 3, 4, 5, 6, ...optional.map((_, i) => 7 + i)].map((i) => ({ kappa: label(objects[i]), length: objects[i].length, role: [...ROLES_V5, ...optional][i] }));
+  objects[0] = enc.encode(canonicalJson(manifest));
+  const provenance = JSON.parse(new TextDecoder().decode(objects[2]));
+  objects[2] = enc.encode(canonicalJson({ ...provenance, application_kappa: label(objects[0]) }));
+  return writeObjects(objects, 6);
+}
+
+test('a v6 carries its snapshot and sources after the model, listed in its rows, and still verifies', () => {
+  const parsed = parseArchive(carried);
+  assert.deepEqual(parsed.optional, OPTIONAL_ROLES_V6);
+  assert.equal(parsed.sections.length, ROLES_V5.length + 2);
+  assert.equal(parsed.optionalProblem, null);
+  assert.equal(resolveArchive(parsed).identities.verified, true);
+  // The snapshot is the source manifest's row; every other content object keeps its bytes.
+  const row = JSON.parse(parsed.metadata.text).files.find((f) => f.kind === 'lexlean-semantic-snapshot');
+  assert.equal(row.sha256, sha256Hex(snapshotBytes));
+  for (const i of [3, 4, 5, 6]) assert.ok(same(parsed.sections[i].body, parseArchive(v6).sections[i].body));
+  // The writer keeps the Lake workspace LexLean needs, leaves out a file that does not decide the model, and sorts by bytes.
+  assert.deepEqual(readSources(parsed.sections[8].body).map((f) => f.path), ['lean-toolchain', 'lexlean.toml', 'prism.toml', 'src/Calculator.lex.tex']);
+  // The snapshot and the sources are blobs a statement may name.
+  assert.ok(parsed.blobs.some((b) => b.label === `blake3:${blake3Hex(snapshotBytes)}`));
+});
+
+test('a snapshot that is not its row, and sources naming a file outside the set, are refused', async () => {
+  const objects = parseArchive(carried).sections.map((s) => s.body.slice());
+  const wrongSnapshot = reassemble([...objects.slice(0, 7), enc.encode('{"another":"snapshot"}'), objects[8]], OPTIONAL_ROLES_V6);
+  assert.match(parseArchive(wrongSnapshot).optionalProblem, /sha256 is not the source manifest/);
+  assert.equal(resolveArchive(parseArchive(wrongSnapshot)).identities.verified, false);
+  const index = { files: [{ kappa: `blake3:${blake3Hex(enc.encode('{}'))}`, length: 2, path: 'session.json' }], schema: 'prism/model-sources/1' };
+  const outside = writeObjects([enc.encode(canonicalJson(index)), enc.encode('{}')], 6);
+  assert.throws(() => readSources(outside), { code: 'archive.sources' });
+  const wrongSources = reassemble([...objects.slice(0, 8), outside], OPTIONAL_ROLES_V6);
+  assert.match(parseArchive(wrongSources).optionalProblem, /not a file that decides the model/);
+  assert.throws(() => sourcesArchive([{ path: 'session.json', bytes: enc.encode('{}') }]), { code: 'archive.sources' }, 'an empty set is not a sources object');
+  const { inspect } = await import('../src/inspect.mjs');
+  assert.equal((await inspect(wrongSources)).verification.cross_references, false);
+});
+
+test('reproved and sources are claims beside the level: run again by the caller, required by name', async () => {
+  const { check } = await import('../src/check.mjs');
+  const policy = { minimum: 'P0', require: ['reproved'] };
+  const without = await check(carried, { policy });
+  assert.equal(without.passed, false);
+  assert.equal(without.reproved, undefined);
+  assert.ok(without.reasons.some((r) => r.check === 'policy.reproved'));
+  assert.deepEqual(without.sources, { present: true, matchesSnapshot: null, semantic_id: null, lexlean: null, reason: null });
+
+  const kernel = `blake3:${'1'.repeat(64)}`;
+  const library = `blake3:${'2'.repeat(64)}`;
+  const seen = [];
+  const reprove = async (bytes) => {
+    seen.push(bytes);
+    return { passed: true, theorems: [{ name: 'Calculator.adds', status: 'proved', axioms: [] }], semantic_id: '7'.repeat(64), kernel, library, reason: null };
+  };
+  const proved = await check(carried, { policy, reprove });
+  assert.equal(proved.passed, true);
+  assert.deepEqual(proved.reproved, { passed: true, theorems: [{ name: 'Calculator.adds', status: 'proved', axioms: [] }], semantic_id: '7'.repeat(64), kernel, library, reason: null });
+  assert.ok(same(seen[0], carried), 'the hook reads the holo as given');
+  assert.equal(proved.level, without.level, 'a claim never moves the level');
+
+  // A pass the theorems do not carry is not a pass, and a hook that throws gives a claim that did not pass.
+  const refused = await check(carried, { policy, reprove: async () => ({ passed: true, theorems: [{ name: 'Calculator.adds', status: 'refused', axioms: [] }] }) });
+  assert.equal(refused.passed, false);
+  assert.equal(refused.reproved.passed, false);
+  const thrown = await check(carried, { policy, reprove: async () => { throw new Error('no kernel'); } });
+  assert.equal(thrown.reproved.passed, false);
+  assert.match(thrown.reproved.reason, /no kernel/);
+
+  const relex = async () => ({ matchesSnapshot: true, semantic_id: '7'.repeat(64), lexlean: `blake3:${'3'.repeat(64)}` });
+  const matched = await check(carried, { policy: { minimum: 'P0', require: ['sources'] }, relex });
+  assert.equal(matched.passed, true);
+  assert.equal(matched.sources.matchesSnapshot, true);
+  assert.equal((await check(v6, { policy: { minimum: 'P0', require: ['sources'] }, relex })).passed, false, 'no sources object, no sources claim');
+  await assert.rejects(check(carried, { policy: { require: ['everything'] } }), { check: 'policy.invalid' });
+});
+
+test('a holo whose provenance fails its schema still has its sources checked and reported', async () => {
+  const { check } = await import('../src/check.mjs');
+  const objects = parseArchive(carried).sections.map((s) => s.body.slice());
+  const provenance = JSON.parse(new TextDecoder().decode(objects[2]));
+  objects[2] = enc.encode(canonicalJson({ ...provenance, unexpected_member: true }));
+  const verdict = await check(reassemble(objects, OPTIONAL_ROLES_V6), { policy: { minimum: 'P0' } });
+  assert.ok(verdict.reasons.some((r) => r.check === 'holo.documents'), 'the provenance fails its schema');
+  assert.equal(verdict.sources?.present, true);
 });

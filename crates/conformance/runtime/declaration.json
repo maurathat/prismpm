@@ -58,6 +58,7 @@
     "load.damage.guest-label-refused": "The Rust runtime has no load operation yet (#298).",
     "load.reference-v5.opens": "The Rust runtime has no load operation yet (#298).",
     "load.reference-v6.opens": "The Rust runtime has no load operation yet (#298).",
+    "load.reference-v6-carried.opens": "The Rust runtime has no load operation yet (#298).",
     "load.reference.opens": "The Rust runtime has no load operation yet (#298).",
     "load.refuse.bad-flags": "The Rust runtime has no load operation yet (#298).",
     "load.refuse.bad-magic": "The Rust runtime has no load operation yet (#298).",
@@ -81,7 +82,8 @@
     "world.checkpoint.loaded": "The Rust runtime has no load operation yet (#298).",
     "world.checkpoint-v5.loaded": "The Rust runtime has no load operation yet (#298).",
     "world.reference.loaded": "The Rust runtime has no load operation yet (#298).",
-    "world.session.loaded": "The Rust runtime has no load operation yet (#298)."
+    "world.session.loaded": "The Rust runtime has no load operation yet (#298).",
+    "verify.reference-v6-carried.sources": "The Rust verdict does not report the sources claim yet (ADR-018)."
   },
   "notApplicable": {}
 }

@@ -12,21 +12,24 @@
 
 use super::{
     attestation, document_object, holoview_version, model_schema_finding, model_sha256_finding,
-    wire, world_finding, Analysis, Finding, ModelProvenanceV1, NoVerdict, Row, ViewBinding,
-    BINARY_MODEL_DOCUMENT_SCHEMA, CHECK_ORDER, FORMAT_REVISION, HOLOVIEW_VERSION,
+    model_sha256_of, wire, world_finding, Analysis, Finding, ModelProvenanceV1, NoVerdict, Row,
+    ViewBinding, BINARY_MODEL_DOCUMENT_SCHEMA, CHECK_ORDER, FORMAT_REVISION, HOLOVIEW_VERSION,
     KIND_APP_MANIFEST, KIND_CONTENT_BLOB, KIND_EXTENSION, KIND_METADATA, MODEL_DOCUMENT_SCHEMAS,
     REVISION_2026_11_18, SOURCE_MANIFEST_VERSION,
 };
 use crate::holo::archive::{
-    declared_contract, encode_json, layers_v5, schemas_of, v5_entry, ManifestV5, ObjectV5,
-    CONTENT_OBJECTS, ROLES_V5, ROLE_ATTESTATIONS,
+    declared_contract, encode_json, evaluator_provenance as evaluator_provenance_of,
+    is_evaluator_provenance, layers_v5, optional_roles, schemas_of, snapshot_problem,
+    sources_problem, v5_entry, EvaluatorObjects, ManifestV5, ObjectV5, CONTENT_OBJECTS,
+    EVALUATOR_PROVENANCE_SCHEMA, ROLES_V5, ROLE_ATTESTATIONS,
 };
 use crate::holo::v5;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-fn row(format: v5::Format, index: usize, role: &str, bytes: &[u8]) -> Row {
-    let content = CONTENT_OBJECTS.contains(&index);
+fn row(format: v5::Format, index: usize, role: &str, bytes: &[u8], optional: usize) -> Row {
+    let content = CONTENT_OBJECTS.contains(&index)
+        || (ROLES_V5.len()..ROLES_V5.len() + optional).contains(&index);
     let kind = match index {
         0 => KIND_APP_MANIFEST,
         1 => KIND_METADATA,
@@ -58,13 +61,25 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
     let format = v5::format_of(bytes).unwrap_or(v5::Format::V5);
     let (manifest_schema, provenance_schema) = schemas_of(format);
     let seal_name = format.seal_name();
-    let roles_of = |index: usize| ROLES_V5.get(index).copied().unwrap_or(ROLE_ATTESTATIONS);
+    // A v6 may carry the optional snapshot and sources after `model`; its manifest's rows say which (ADR-018).
+    let optional = objects
+        .first()
+        .map(|manifest| optional_roles(format, manifest))
+        .unwrap_or_default();
+    let base = ROLES_V5.len() + optional.len();
+    let roles_of = |index: usize| {
+        ROLES_V5
+            .get(index)
+            .copied()
+            .or_else(|| optional.get(index - ROLES_V5.len()).copied())
+            .unwrap_or(ROLE_ATTESTATIONS)
+    };
     let rows = objects
         .iter()
         .enumerate()
-        .map(|(index, bytes)| row(format, index, roles_of(index), bytes))
+        .map(|(index, bytes)| row(format, index, roles_of(index), bytes, optional.len()))
         .collect::<Vec<_>>();
-    let layout_known = rows.len() == ROLES_V5.len() || rows.len() == ROLES_V5.len() + 1;
+    let layout_known = rows.len() == base || rows.len() == base + 1;
     let at = |index: usize| layout_known.then(|| &rows[index]);
 
     let mut findings = Vec::new();
@@ -158,8 +173,9 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         // object but the provenance.
         let expected = [1, 3, 4, 5, 6]
             .into_iter()
+            .chain(ROLES_V5.len()..base)
             .map(|index| ObjectV5 {
-                role: ROLES_V5[index].to_owned(),
+                role: roles_of(index).to_owned(),
                 kappa: kappa(index),
                 length: rows[index].bytes.len() as u64,
             })
@@ -203,8 +219,40 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         },
     );
 
-    // provenance.schema: the model provenance object.
+    // provenance.schema: the model provenance object, or in a v6 built with
+    // nothing compiled, the evaluator provenance (ADR-018).
+    let evaluator =
+        format == v5::Format::V6 && at(2).is_some_and(|row| is_evaluator_provenance(&row.bytes));
+    let evaluator_provenance = evaluator.then(|| {
+        let manifest_contract = document_object("the holo manifest", at(0))
+            .ok()
+            .and_then(|value| serde_json::from_value::<ManifestV5>(value).ok())
+            .map(|manifest| declared_contract(&manifest.layers))
+            .unwrap_or_default();
+        let snapshot_kappa = optional
+            .iter()
+            .position(|role| *role == "snapshot")
+            .map(|i| kappa(ROLES_V5.len() + i));
+        let bytes_at = |index: usize| at(index).map(|row| &row.bytes[..]).unwrap_or_default();
+        evaluator_provenance_of(
+            bytes_at(2),
+            &EvaluatorObjects {
+                contract: &manifest_contract,
+                application_kappa: &kappa(0),
+                guest_kappa: &kappa(4),
+                view_kappa: &kappa(5),
+                model_kappa: &kappa(6),
+                snapshot_kappa: snapshot_kappa.as_deref(),
+                guest: bytes_at(4),
+                view: bytes_at(5),
+                model: bytes_at(6),
+            },
+        )
+    });
     let provenance = document_object("the model provenance", at(2)).and_then(|value| {
+        if evaluator {
+            return Err("an evaluator provenance".to_owned());
+        }
         if value.get("schema").and_then(Value::as_str) != Some(provenance_schema) {
             return Err(format!(
                 "the model provenance names schema {}, which no known format revision packs into a holo",
@@ -219,29 +267,65 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
             format!("the model provenance does not have the {provenance_schema} shape: {error}")
         })
     });
-    add(
-        "provenance.schema",
-        provenance.is_ok(),
-        match &provenance {
-            Ok(_) => format!("the model provenance matches {provenance_schema}"),
-            Err(problem) => problem.clone(),
-        },
-    );
+    match &evaluator_provenance {
+        Some(Ok(_)) => add(
+            "provenance.schema",
+            true,
+            format!("the evaluator provenance matches {EVALUATOR_PROVENANCE_SCHEMA} and names the archive's objects"),
+        ),
+        Some(Err(problem)) => add("provenance.schema", false, problem.clone()),
+        None => add(
+            "provenance.schema",
+            provenance.is_ok(),
+            match &provenance {
+                Ok(_) => format!("the model provenance matches {provenance_schema}"),
+                Err(problem) => problem.clone(),
+            },
+        ),
+    }
+    let evaluator_ok = matches!(evaluator_provenance, Some(Ok(_)));
 
     // model.schema: the model object.
     let model_row = at(6);
-    if let (Ok(_), Some(row)) = (&provenance, model_row) {
+    if let (true, Some(row)) = (provenance.is_ok() || evaluator_ok, model_row) {
         let (ok, detail) = model_schema_finding(row);
         add("model.schema", ok, detail);
     }
 
     // references: the provenance names the objects in their roles.
     let mut roles = BTreeMap::new();
-    let contract = provenance
-        .as_ref()
-        .ok()
-        .map(|provenance| provenance.core_wasm_contract.clone());
-    if let Ok(provenance) = &provenance {
+    let contract = match &evaluator_provenance {
+        Some(Ok(evaluator)) => Some(evaluator.core_wasm_contract.clone()),
+        _ => provenance
+            .as_ref()
+            .ok()
+            .map(|provenance| provenance.core_wasm_contract.clone()),
+    };
+    // The optional snapshot and sources bind to the source manifest, not to the
+    // provenance, so they are checked whether or not the provenance holds.
+    let mut optional_problems = Vec::new();
+    if layout_known {
+        for (i, role) in optional.iter().enumerate() {
+            let object = &rows[ROLES_V5.len() + i].bytes;
+            let problem = match *role {
+                "snapshot" => snapshot_problem(&rows[1].bytes, object),
+                _ => sources_problem(object),
+            };
+            optional_problems.extend(problem);
+        }
+    }
+    if evaluator_ok || (evaluator && !optional_problems.is_empty()) {
+        // The evaluator provenance check already held it to the objects in their roles.
+        add(
+            "references",
+            optional_problems.is_empty(),
+            if optional_problems.is_empty() {
+                "the manifest and the provenance name the same objects".to_owned()
+            } else {
+                optional_problems.join("; ")
+            },
+        );
+    } else if let Ok(provenance) = &provenance {
         let mut problems = Vec::new();
         let named = [
             ("guest", &provenance.guest_content_kappa, kappa(4)),
@@ -266,6 +350,7 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
                 ));
             }
         }
+        problems.extend(optional_problems);
         add(
             "references",
             problems.is_empty(),
@@ -287,6 +372,10 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         let (ok, detail) = model_sha256_finding(provenance, row, &source_manifest);
         add("model.sha256", ok, detail);
     }
+    if let (Some(Ok(evaluator)), Some(row)) = (&evaluator_provenance, model_row) {
+        let (ok, detail) = model_sha256_of(&evaluator.model_id, row, &source_manifest);
+        add("model.sha256", ok, detail);
+    }
     if let Some((ok, detail)) = world_finding(contract.as_deref(), at(4)) {
         add("world.contract", ok, detail);
     }
@@ -297,8 +386,8 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         differences.push(format!(
             "the archive holds {} objects, expected {} or {} when signed",
             rows.len(),
-            ROLES_V5.len(),
-            ROLES_V5.len() + 1
+            base,
+            base + 1
         ));
     }
     // An archive carries no date: it is of the first revision whose
@@ -377,7 +466,7 @@ pub(super) fn analyze(bytes: &[u8]) -> Result<Analysis, NoVerdict> {
         .iter()
         .filter_map(|row| Some((row.label.clone()?, row.content.clone())))
         .collect::<BTreeMap<_, _>>();
-    let attestations = match rows.get(ROLES_V5.len()) {
+    let attestations = match rows.get(base) {
         Some(row) if layout_known => {
             attestation::decode_section(&row.bytes, &blob_map).map_err(|error| error.message)
         }

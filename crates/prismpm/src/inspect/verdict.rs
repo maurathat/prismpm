@@ -1241,12 +1241,20 @@ fn model_sha256_finding(
     row: &Row,
     source_manifest: &Result<Value, String>,
 ) -> (bool, String) {
+    model_sha256_of(&provenance.model_id, row, source_manifest)
+}
+
+/// The model.sha256 finding for a provenance's `model_id`, whichever provenance names it.
+fn model_sha256_of(
+    model_id: &str,
+    row: &Row,
+    source_manifest: &Result<Value, String>,
+) -> (bool, String) {
     let actual = sha256_hex(&row.content);
     let mut problems = Vec::new();
-    if provenance.model_id != actual {
+    if model_id != actual {
         problems.push(format!(
-            "the provenance model_id {} differs from the model document's sha256 {actual}",
-            provenance.model_id
+            "the provenance model_id {model_id} differs from the model document's sha256 {actual}"
         ));
     }
     let listed = source_manifest
@@ -2558,10 +2566,19 @@ pub(super) fn inspection_v5(bytes: &[u8]) -> Result<Value, PrismError> {
     };
     let kappa_of = |content: &[u8]| uorc::label(format, content);
     let base = bytes.as_ptr() as usize;
+    let optional = objects
+        .first()
+        .map(|manifest| crate::holo::archive::optional_roles(format, manifest))
+        .unwrap_or_default();
     let role_of = |index: usize| {
         crate::holo::archive::ROLES_V5
             .get(index)
             .copied()
+            .or_else(|| {
+                optional
+                    .get(index - crate::holo::archive::ROLES_V5.len())
+                    .copied()
+            })
             .unwrap_or(crate::holo::archive::ROLE_ATTESTATIONS)
     };
     let sections = objects

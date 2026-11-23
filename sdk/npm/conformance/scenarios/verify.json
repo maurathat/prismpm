@@ -165,6 +165,121 @@
       }
     },
     {
+      "id": "verify.reference-v6-carried.default-policy",
+      "title": "A holo v6 that carries its semantic snapshot and sources after the model gets the verdict of the same holo without them, named by its blake3 κ (ADR-018).",
+      "op": "verify",
+      "archive": "reference-v6-carried",
+      "expect": {
+        "ok": true,
+        "result": {
+          "schema": "prism/verdict/1",
+          "holo": "blake3:0d221b47acee5e4e336678fa9c5eb9fc91d47286bc31b7c8952fff5a05cf5776",
+          "level": "P0",
+          "policy": {
+            "name": "default",
+            "minimum": "P2"
+          },
+          "passed": false,
+          "reasons": {
+            "$contains": [
+              {
+                "check": "provenance.statement",
+                "withholds": "P1"
+              },
+              {
+                "check": "proof.statement",
+                "withholds": "P2"
+              },
+              {
+                "check": "replay.statement",
+                "withholds": "P3"
+              },
+              {
+                "check": "policy.level",
+                "code": "PP5601",
+                "withholds": null
+              }
+            ],
+            "$excludes": [
+              {
+                "check": "holo.integrity"
+              },
+              {
+                "check": "holo.documents"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "verify.reference-v6-carried.sources",
+      "title": "A holo v6 that carries a sources object that reads has a sources claim, present, not compared with its snapshot when no LexLean was run (ADR-018).",
+      "op": "verify",
+      "archive": "reference-v6-carried",
+      "expect": {
+        "ok": true,
+        "result": {
+          "sources": {
+            "present": true,
+            "matchesSnapshot": null
+          }
+        }
+      }
+    },
+    {
+      "id": "verify.reference-v6-wrong-snapshot.integrity",
+      "title": "A holo v6 whose snapshot object is not the bytes its source manifest names fails an integrity check that withholds P1 (ADR-018).",
+      "op": "verify",
+      "archive": "reference-v6-wrong-snapshot",
+      "input": {
+        "policy": {
+          "minimum": "P1"
+        }
+      },
+      "expect": {
+        "ok": true,
+        "result": {
+          "level": "P0",
+          "passed": false,
+          "reasons": {
+            "$contains": [
+              {
+                "check": "holo.integrity",
+                "withholds": "P1"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "verify.reference-v6-outside-sources.integrity",
+      "title": "A holo v6 whose sources name a file that does not decide the model fails an integrity check that withholds P1 (ADR-018).",
+      "op": "verify",
+      "archive": "reference-v6-outside-sources",
+      "input": {
+        "policy": {
+          "minimum": "P1"
+        }
+      },
+      "expect": {
+        "ok": true,
+        "result": {
+          "level": "P0",
+          "passed": false,
+          "reasons": {
+            "$contains": [
+              {
+                "check": "holo.integrity",
+                "withholds": "P1"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
       "id": "verify.reference.minimum-p0",
       "title": "A P0 policy accepts the reference holo.",
       "op": "verify",

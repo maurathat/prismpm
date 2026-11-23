@@ -135,8 +135,14 @@ export declare const HOLO_V6: Readonly<{
   MANIFEST_SCHEMA: 'prism/holo/6';
   PROVENANCE_SCHEMA: 'prismpm/model-provenance/3';
   ROLES: readonly ['manifest', 'source-manifest', 'provenance', 'capabilities', 'guest', 'view', 'model'];
+  OPTIONAL_ROLES: readonly ['snapshot', 'sources'];
   ROLE_ATTESTATIONS: 'attestations';
   KAPPA_PREFIX: 'blake3:';
+  SNAPSHOT_SOURCE_KIND: 'lexlean-semantic-snapshot';
+  SOURCES: Readonly<{
+    SCHEMA: 'prism/model-sources/1';
+    PATHS: readonly ['prism.toml', 'lexlean.toml', 'lexlean.lock', 'lakefile.toml', 'lean-toolchain', 'lake-manifest.json', 'src/**/*.lex.tex', 'language/**'];
+  }>;
 }>;
 
 export declare const PROVENANCE: Readonly<{

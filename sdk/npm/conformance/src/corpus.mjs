@@ -275,12 +275,54 @@ function readV5(bytes) {
     return object;
   });
 }
+// A holo v6 is the same framing with profile 2, sealed by plain BLAKE3, its κ-labels `blake3:` (ADR-018).
+const UORC_MAGIC_V6 = Uint8Array.of(0x55, 0x4f, 0x52, 0x43, 0x02, 0x02);
+const kappaV6 = (bytes) => `blake3:${hex(blake3(bytes))}`;
+function writeV6(objects) {
+  const header = [UORC_MAGIC_V6, Uint8Array.of(0, 0), ulebV5(objects.length), ...objects.map((o) => ulebV5(o.length)), ulebV5(objects.reduce((n, o) => n + o.length, 0))];
+  const preimage = concat([...header, ...objects]);
+  return concat([preimage, blake3(preimage)]);
+}
 const canonicalV5 = (value) =>
   Array.isArray(value)
     ? `[${value.map(canonicalV5).join(',')}]`
     : value !== null && typeof value === 'object'
       ? `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonicalV5(value[k])}`).join(',')}}`
       : JSON.stringify(value);
+
+/**
+ * The reference holo v6 carrying its model's semantic snapshot and sources after `model` (ADR-018), as a v6 build
+ * writes them: the snapshot named by the source manifest's lexlean-semantic-snapshot row, the sources a nested v6
+ * container with a prism/model-sources/1 index, both listed in the manifest's rows, the provenance naming the new
+ * manifest. `wrongSnapshot` puts other bytes in the snapshot object than its row names; `outsideSources` lists a file
+ * that does not decide the model. Every κ, length and seal is recomputed, so each is otherwise well formed.
+ */
+function v6Carried({ wrongSnapshot = false, outsideSources = false } = {}) {
+  const objects = readV5(new Uint8Array(readFileSync(REFERENCE_V6_PATH)));
+  const json = (i) => JSON.parse(new TextDecoder().decode(objects[i]));
+  const bytesOf = (value) => enc.encode(canonicalV5(value));
+  const snapshotOf = (id) => bytesOf({ schema: 'lexlean/semantic-snapshot/2', semantic_id: id });
+  const snapshot = snapshotOf('75956b94d3183b6a527cc8684de8410e0ad931f584a81b090223733e3e6791e4');
+  const files = outsideSources
+    ? [{ path: 'session.json', bytes: enc.encode('{}') }]
+    : [
+        { path: 'lexlean.toml', bytes: enc.encode('[package]\nname = "calculator"\n') },
+        { path: 'prism.toml', bytes: enc.encode('name = "calculator"\n') },
+        { path: 'src/Calculator.lex.tex', bytes: enc.encode('\\module{Calculator}\n') },
+      ];
+  const index = { files: files.map((f) => ({ kappa: kappaV6(f.bytes), length: f.bytes.length, path: f.path })), schema: 'prism/model-sources/1' };
+  const sources = writeV6([bytesOf(index), ...files.map((f) => f.bytes)]);
+  const source = json(1);
+  source.files = [...source.files, { kind: 'lexlean-semantic-snapshot', sha256: sha256Hex(snapshot) }];
+  objects[1] = bytesOf(source);
+  const carried = [...objects, wrongSnapshot ? snapshotOf('0'.repeat(64)) : snapshot, sources];
+  const roles = ['manifest', 'source-manifest', 'provenance', 'capabilities', 'guest', 'view', 'model', 'snapshot', 'sources'];
+  const manifest = json(0);
+  manifest.objects = [1, 3, 4, 5, 6, 7, 8].map((i) => ({ kappa: kappaV6(carried[i]), length: carried[i].length, role: roles[i] }));
+  carried[0] = bytesOf(manifest);
+  carried[2] = bytesOf({ ...json(2), application_kappa: kappaV6(carried[0]) });
+  return writeV6(carried);
+}
 
 /**
  * The reference holo v5 with `guest` under `contract` and `modelDocument` in
@@ -337,6 +379,11 @@ export const ARCHIVES = Object.freeze({
   // The same application as a holo v6, sealed and named by BLAKE3 (ADR-018). Committed, not derived: prism-code's
   // upgradeToV6 wrote it from reference-v5, keeping every content object and relabelling every κ blake3:.
   'reference-v6': () => new Uint8Array(readFileSync(REFERENCE_V6_PATH)),
+  // Carrying the model's snapshot and sources after `model` (ADR-018); then with a snapshot its row does not name,
+  // and with sources naming a file that does not decide the model.
+  'reference-v6-carried': () => v6Carried(),
+  'reference-v6-wrong-snapshot': () => v6Carried({ wrongSnapshot: true }),
+  'reference-v6-outside-sources': () => v6Carried({ outsideSources: true }),
   // One byte of its model object flipped: the BLAKE3 seal no longer matches.
   'reference-v6-seal-broken': () => {
     const bytes = new Uint8Array(readFileSync(REFERENCE_V6_PATH));

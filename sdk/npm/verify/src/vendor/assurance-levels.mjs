@@ -40,6 +40,17 @@ export const ASSURANCE = freeze({
     proof: 'https://uor.foundation/prism/proof/v1',
     replay: 'https://uor.foundation/prism/replay/v1',
   }),
+  /**
+   * Claims reported beside the level, never rungs on it: each is on its own axis, and a policy requires it by name
+   * (`require`), independent of `minimum`. Each is granted only by the check run again on the verifier's machine,
+   * never from a record the holo carries. `reproved`: Lean's kernel accepted, just now, a proof of every theorem the
+   * holo's snapshot states, within its declared axioms. `sources`: LexLean, run on the holo's sources, gave the
+   * holo's snapshot.
+   */
+  CLAIMS: freeze(['reproved', 'sources']),
+  CLAIM_NAMES: freeze({ reproved: 're-proved by the kernel', sources: 'sources give the snapshot' }),
+  /** The predicate type of the statement a claim's check reads: the kernel-proof statement a `reprove` re-checks. */
+  CLAIM_PREDICATES: freeze({ reproved: 'https://uor.foundation/prism/kernel-proof/v1' }),
   /** The default policy: this level or above, and the declared world within the granted capabilities. */
   DEFAULT_MINIMUM: 'P2',
   DEFAULT_POLICY: 'default',

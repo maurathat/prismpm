@@ -21,7 +21,8 @@
  */
 import { DigestMismatchError, fail } from './errors.mjs';
 import { blake3Hex, kappa as v4Label } from './blake3.mjs';
-import { isUorc, labelOf, layout, writeObjects } from './uorc.mjs';
+import { isUorc, labelOf, layout, readObjects, writeObjects } from './uorc.mjs';
+import { sha256HexSync } from './sha256.mjs';
 
 export const MAGIC = 'HOLO';
 export const VERSION = 4;
@@ -32,6 +33,79 @@ export const PROVENANCE_SCHEMA_V5 = 'prismpm/model-provenance/2';
 export const MANIFEST_SCHEMA_V6 = 'prism/holo/6';
 export const PROVENANCE_SCHEMA_V6 = 'prismpm/model-provenance/3';
 const MANIFEST_SCHEMA = { 5: MANIFEST_SCHEMA_V5, 6: MANIFEST_SCHEMA_V6 };
+/** A holo v6's optional objects after `model`, in this order, present when the manifest's rows list them (ADR-018). */
+export const OPTIONAL_ROLES_V6 = Object.freeze(['snapshot', 'sources']);
+export const SOURCES_SCHEMA = 'prism/model-sources/1';
+const SNAPSHOT_SOURCE_KIND = 'lexlean-semantic-snapshot';
+/** The single files of a sources object: the project's, LexLean's, and the Lake workspace LexLean needs to run again. */
+const SOURCE_FILES = Object.freeze(['prism.toml', 'lexlean.toml', 'lexlean.lock', 'lakefile.toml', 'lean-toolchain', 'lake-manifest.json']);
+
+/** Whether a sources path is one that decides the model: forward-slashed, confined, and of the stated set. */
+export function isSourcePath(path) {
+  if (typeof path !== 'string' || path.length === 0 || path.length > 1024 || path.includes('\\') || /[\u0000-\u001f]/.test(path)) return false;
+  const parts = path.split('/');
+  if (parts.some((part) => part === '' || part === '.' || part === '..')) return false;
+  if (SOURCE_FILES.includes(path)) return true;
+  if (parts[0] === 'src' && parts.length >= 2 && path.endsWith('.lex.tex') && parts[parts.length - 1] !== '.lex.tex') return true;
+  return parts[0] === 'language' && parts.length >= 2;
+}
+
+const byBytes = (a, b) => {
+  const x = new TextEncoder().encode(a);
+  const y = new TextEncoder().encode(b);
+  for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i] - y[i];
+  return x.length - y.length;
+};
+
+/** The files a holo v6's sources object holds, `[{ path, bytes }]` in index order; anything else throws `archive.sources`. */
+export function readSources(bytes) {
+  let objects;
+  try {
+    // One index and up to 4096 files: a model's sources are not bounded by the application's sixteen objects.
+    objects = readObjects(bytes, { objects: 4097, bytes: 2 ** 28 });
+  } catch (cause) {
+    fail('archive.sources', `the sources object does not read: ${cause.message}`);
+  }
+  if (bytes[5] !== 2) fail('archive.sources', 'the sources object is not a holo v6 container');
+  let index;
+  try {
+    index = JSON.parse(decoder.decode(objects[0]));
+  } catch {
+    fail('archive.sources', 'the sources index is not JSON');
+  }
+  if (canonicalJson(index) !== decoder.decode(objects[0]) || index?.schema !== SOURCES_SCHEMA || !Array.isArray(index.files) || Object.keys(index).length !== 2) {
+    fail('archive.sources', `the sources index is not canonical ${SOURCES_SCHEMA}`);
+  }
+  if (index.files.length === 0) fail('archive.sources', 'the sources index lists no file');
+  if (index.files.length !== objects.length - 1) fail('archive.sources', 'the sources index and the container hold different numbers of files');
+  return index.files.map((file, i) => {
+    if (!file || typeof file !== 'object' || Object.keys(file).sort().join() !== 'kappa,length,path') fail('archive.sources', `sources file ${i} is not { path, kappa, length }`);
+    if (!isSourcePath(file.path)) fail('archive.sources', `sources file ${JSON.stringify(file.path)} is not a file that decides the model`);
+    if (i > 0 && byBytes(index.files[i - 1].path, file.path) >= 0) fail('archive.sources', 'the sources paths are not unique and sorted by their bytes');
+    const content = objects[i + 1];
+    if (file.kappa !== labelOf(6, content) || file.length !== content.length) fail('archive.sources', `sources file ${file.path} is not the bytes the index names`);
+    return { path: file.path, bytes: content };
+  });
+}
+
+/**
+ * A holo v6 sources object from the files that decide a model, `[{ path, bytes }]`: a nested v6 container whose object
+ * 0 is the canonical `prism/model-sources/1` index and whose objects 1..n are the files in path order. A file outside
+ * the stated set is left out, as a writer must (ADR-018); none left is refused, since an empty set is no sources object.
+ */
+export function sourcesArchive(files) {
+  const kept = files.filter((file) => isSourcePath(file.path)).sort((a, b) => byBytes(a.path, b.path));
+  if (kept.length === 0) fail('archive.sources', 'no file that decides the model: an empty set is not a sources object');
+  for (let i = 1; i < kept.length; i++) if (kept[i - 1].path === kept[i].path) fail('archive.sources', `the path ${kept[i].path} is given twice`);
+  const index = { files: kept.map((file) => ({ kappa: labelOf(6, file.bytes), length: file.bytes.length, path: file.path })), schema: SOURCES_SCHEMA };
+  return writeObjects([encoder.encode(canonicalJson(index)), ...kept.map((file) => file.bytes)], 6);
+}
+
+/** The optional roles a v6 manifest's `objects` rows list, in OPTIONAL_ROLES_V6 order. */
+function optionalRolesOf(manifest) {
+  const listed = new Set(Array.isArray(manifest?.objects) ? manifest.objects.map((row) => row?.role) : []);
+  return OPTIONAL_ROLES_V6.filter((role) => listed.has(role));
+}
 const PROVENANCE_SCHEMA = { 5: PROVENANCE_SCHEMA_V5, 6: PROVENANCE_SCHEMA_V6 };
 export const ROLES_V5 = Object.freeze(['manifest', 'source-manifest', 'provenance', 'capabilities', 'guest', 'view', 'model']);
 export const ROLE_ATTESTATIONS = 'attestations';
@@ -229,10 +303,20 @@ const hexOf = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0'
 function parseArchiveV5(bytes) {
   const { format, objects, sealed, seal, preimage } = layout(bytes);
   const kappa = (object) => labelOf(format, object);
-  if (objects.length !== ROLES_V5.length && objects.length !== ROLES_V5.length + 1) {
-    fail('archive.bounds', `a v${format} application holo holds ${ROLES_V5.length} objects, or ${ROLES_V5.length + 1} when signed; this one holds ${objects.length}`);
+  // A v6 may carry the optional snapshot and sources after `model`; its manifest's rows say which (ADR-018).
+  let optional = [];
+  if (format === 6 && objects.length > 0) {
+    try {
+      optional = optionalRolesOf(JSON.parse(decoder.decode(objects[0].bytes)));
+    } catch {
+      optional = [];
+    }
   }
-  const roles = [...ROLES_V5, ROLE_ATTESTATIONS];
+  const base = ROLES_V5.length + optional.length;
+  if (objects.length !== base && objects.length !== base + 1) {
+    fail('archive.bounds', `a v${format} application holo holds ${base} objects, or ${base + 1} when signed; this one holds ${objects.length}`);
+  }
+  const roles = [...ROLES_V5, ...optional, ROLE_ATTESTATIONS];
   const sections = objects.map((object, index) => ({ index, kind: roles[index], offset: object.offset, length: object.length, body: object.bytes }));
   const text = (slice, what) => {
     try {
@@ -253,19 +337,21 @@ function parseArchiveV5(bytes) {
   if (holoManifest?.schema !== MANIFEST_SCHEMA[format]) fail('archive.manifest', `the manifest schema is ${JSON.stringify(holoManifest?.schema)}, expected ${MANIFEST_SCHEMA[format]}`);
   const layer = (kind) => (Array.isArray(holoManifest.layers) ? holoManifest.layers.find((l) => l.kind === kind) : undefined);
   const labels = [holoManifest.requires, layer('wasm')?.kappa, layer('view')?.kappa];
-  const blobs = [3, 4, 5, 6].map((index) => ({ label: kappa(objects[index].bytes), content: objects[index].bytes, section: index }));
+  // The capability set, guest, view and model, then the optional objects: each a blob a statement may name.
+  const blobs = [3, 4, 5, 6, ...optional.map((_, i) => ROLES_V5.length + i)].map((index) => ({ label: kappa(objects[index].bytes), content: objects[index].bytes, section: index }));
   const extensions = [
     { name: MODEL_EXTENSION, payload: objects[2].bytes, text: text(objects[2].bytes, 'the provenance object'), section: 2 },
   ];
-  if (objects.length > ROLES_V5.length) {
-    const payload = objects[ROLES_V5.length].bytes;
-    extensions.push({ name: 'https://uor.foundation/extension/attestation-bundle/v1', payload, text: text(payload, 'the attestation object'), section: ROLES_V5.length });
+  if (objects.length > base) {
+    const payload = objects[base].bytes;
+    extensions.push({ name: 'https://uor.foundation/extension/attestation-bundle/v1', payload, text: text(payload, 'the attestation object'), section: base });
   }
+  const metadataText = text(objects[1].bytes, 'the source manifest');
   const listed = Array.isArray(holoManifest.objects) ? holoManifest.objects : [];
-  const expected = [1, 3, 4, 5, 6].map((index) => ({ role: ROLES_V5[index], kappa: kappa(objects[index].bytes), length: objects[index].length }));
+  const expected = [1, 3, 4, 5, 6, ...optional.map((_, i) => ROLES_V5.length + i)].map((index) => ({ role: roles[index], kappa: kappa(objects[index].bytes), length: objects[index].length }));
   const labelMismatches = expected
     .filter((row, i) => listed[i]?.role !== row.role || listed[i]?.kappa !== row.kappa || listed[i]?.length !== row.length)
-    .map((row) => ({ section: ROLES_V5.indexOf(row.role), label: listed.find((l) => l.role === row.role)?.kappa ?? null, actual: row.kappa }));
+    .map((row) => ({ section: roles.indexOf(row.role), label: listed.find((l) => l.role === row.role)?.kappa ?? null, actual: row.kappa }));
   if (listed.length !== expected.length) labelMismatches.push({ section: null, label: null, actual: null });
   const fingerprint = hexOf(seal);
   return {
@@ -277,12 +363,14 @@ function parseArchiveV5(bytes) {
     sections,
     manifest: { uri: MANIFEST_SCHEMA[format], labels, section: 0 },
     holoManifest,
-    metadata: { text: text(objects[1].bytes, 'the source manifest'), section: 1 },
+    metadata: { text: metadataText, section: 1 },
     extensions,
     blobs,
     footer: fingerprint,
     fingerprint: sealed ? fingerprint : null,
     kappa: kappa(bytes),
+    optional,
+    optionalProblem: optionalProblemOf(optional, objects, metadataText),
     verification: {
       footer: sealed,
       seal: sealed,
@@ -290,6 +378,31 @@ function parseArchiveV5(bytes) {
       labelMismatches,
     },
   };
+}
+
+/** The problem with a v6's optional objects, or null: the snapshot is the source manifest's row, the sources object holds. */
+function optionalProblemOf(optional, objects, metadataText) {
+  const at = (role) => (optional.includes(role) ? objects[ROLES_V5.length + optional.indexOf(role)].bytes : null);
+  const snapshot = at('snapshot');
+  if (snapshot) {
+    let row;
+    try {
+      row = JSON.parse(metadataText)?.files?.find((file) => file.kind === SNAPSHOT_SOURCE_KIND);
+    } catch {
+      row = undefined;
+    }
+    if (!row) return `the holo carries a snapshot, and its source manifest names no ${SNAPSHOT_SOURCE_KIND}`;
+    if (row.sha256 !== sha256HexSync(snapshot)) return `the snapshot object's sha256 is not the source manifest's ${SNAPSHOT_SOURCE_KIND}`;
+  }
+  const sources = at('sources');
+  if (sources) {
+    try {
+      readSources(sources);
+    } catch (error) {
+      return error.message;
+    }
+  }
+  return null;
 }
 
 function blake3HexOf(bytes) {
@@ -408,7 +521,8 @@ function resolveArchiveV5(parsed) {
     provenance.model_content_kappa === model.label &&
     provenance.view_binding?.view_content_kappa === view.label &&
     provenance.application_kappa === applicationKappa &&
-    canonicalJson(provenance) === parsed.extensions.find((e) => e.name === MODEL_EXTENSION).text;
+    canonicalJson(provenance) === parsed.extensions.find((e) => e.name === MODEL_EXTENSION).text &&
+    !parsed.optionalProblem;
   let modelDocument;
   try {
     modelDocument = JSON.parse(decoder.decode(model.content));
@@ -491,4 +605,41 @@ export function upgradeToV6(source) {
   objects[0] = manifestBytes;
   objects[2] = encoder.encode(canonicalJson(provenance.value));
   return writeObjects(objects, 6);
+}
+
+/**
+ * A verified, unsigned holo v6 with its model's semantic snapshot and sources added (ADR-018): the snapshot and the
+ * sources object after `model`, listed in the manifest's rows; the source manifest's lexlean-semantic-snapshot row
+ * set to the snapshot's sha256; the provenance naming the new manifest. Either may be left out. Every other object
+ * keeps its bytes. A holo that already carries either, or is signed, is refused: build it again.
+ *
+ * @param {Uint8Array | ArrayBuffer | object} source a holo v6
+ * @param {{ snapshot?: Uint8Array, sources?: Array<{ path: string, bytes: Uint8Array }> }} added
+ * @returns {Uint8Array}
+ */
+export function withModelFiles(source, { snapshot, sources } = {}) {
+  const parsed = source && typeof source === 'object' && Array.isArray(source.sections) ? source : parseArchive(asBytes(source));
+  if (parsed.format !== 6) fail('archive.version', 'only a holo v6 carries a snapshot or sources');
+  if (parsed.sections.length !== ROLES_V5.length) fail('attestation.format', 'a signed holo, or one that already carries a snapshot or sources, is not changed: build it again');
+  const resolved = resolveArchive(parsed);
+  if (!resolved.identities.verified) fail('archive.manifest', 'only a holo v6 that verifies is given a snapshot or sources');
+  const objects = parsed.sections.map((section) => section.body);
+  const extra = [];
+  const source_ = JSON.parse(decoder.decode(objects[1]));
+  if (snapshot) {
+    const row = { kind: SNAPSHOT_SOURCE_KIND, sha256: sha256HexSync(snapshot) };
+    source_.files = [...(source_.files ?? []).filter((file) => file.kind !== SNAPSHOT_SOURCE_KIND), row];
+    extra.push(['snapshot', snapshot]);
+  }
+  if (sources) extra.push(['sources', sourcesArchive(sources)]);
+  if (extra.length === 0) return parsed.bytes.slice();
+  objects[1] = encoder.encode(canonicalJson(source_));
+  const row = (role, bytes) => ({ kappa: labelOf(6, bytes), length: bytes.length, role });
+  const manifest = {
+    ...resolved.manifest,
+    objects: [row('source-manifest', objects[1]), ...[3, 4, 5, 6].map((i) => row(ROLES_V5[i], objects[i])), ...extra.map(([role, bytes]) => row(role, bytes))],
+  };
+  objects[0] = encoder.encode(canonicalJson(manifest));
+  objects[2] = encoder.encode(canonicalJson({ ...resolved.provenance, application_kappa: labelOf(6, objects[0]) }));
+  return writeObjects([...objects, ...extra.map(([, bytes]) => bytes)], 6);
 }

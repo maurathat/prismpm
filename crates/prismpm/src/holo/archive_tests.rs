@@ -525,3 +525,48 @@ fn a_v6_composition_and_a_v5_upgraded_to_v6_keep_the_basis_an_oci_digest() {
     let v5 = compose_application(&input).unwrap();
     assert_eq!(upgrade_application_v6(&v5.bytes).unwrap(), composed.bytes);
 }
+
+#[test]
+fn an_evaluator_provenance_is_held_to_the_archive_objects() {
+    let bytes = include_bytes!("../../testdata/evaluator-proof-record.v6.holo");
+    let objects = v5::read_objects(bytes, v5::APPLICATION_BUDGET).unwrap();
+    assert!(is_evaluator_provenance(objects[2]));
+    let manifest: ManifestV5 = serde_json::from_slice(objects[0]).unwrap();
+    let contract = declared_contract(&manifest.layers);
+    let label = |b: &[u8]| v5::label(v5::Format::V6, b);
+    let optional = optional_roles(v5::Format::V6, objects[0]);
+    let snapshot = optional
+        .iter()
+        .position(|role| *role == "snapshot")
+        .map(|i| label(objects[ROLES_V5.len() + i]));
+    let (application, guest, view, model) = (
+        label(objects[0]),
+        label(objects[4]),
+        label(objects[5]),
+        label(objects[6]),
+    );
+    let held = |guest_kappa: &str| {
+        evaluator_provenance(
+            objects[2],
+            &EvaluatorObjects {
+                contract: &contract,
+                application_kappa: &application,
+                guest_kappa,
+                view_kappa: &view,
+                model_kappa: &model,
+                snapshot_kappa: snapshot.as_deref(),
+                guest: objects[4],
+                view: objects[5],
+                model: objects[6],
+            },
+        )
+    };
+    let provenance = held(&guest).unwrap();
+    assert_eq!(provenance.builder.guest, guest);
+    let other = format!("blake3:{}", "0".repeat(64));
+    let refused = held(&other).unwrap_err();
+    assert!(
+        refused.contains("guest_content_kappa") && refused.contains("builder.guest"),
+        "{refused}"
+    );
+}

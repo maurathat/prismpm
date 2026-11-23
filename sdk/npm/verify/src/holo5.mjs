@@ -29,7 +29,71 @@ const FORMATS = Object.freeze({
 export const ROLES = Object.freeze(['manifest', 'source-manifest', 'provenance', 'capabilities', 'guest', 'view', 'model']);
 export const ROLE_ATTESTATIONS = 'attestations';
 const CONTENT = Object.freeze({ capabilities: 3, guest: 4, view: 5, model: 6 });
+/** A holo v6's optional objects after `model`, in this order, present when the manifest's rows list them (ADR-018). */
+export const OPTIONAL_ROLES = Object.freeze(['snapshot', 'sources']);
+const SOURCES_SCHEMA = 'prism/model-sources/1';
+const SNAPSHOT_SOURCE_KIND = 'lexlean-semantic-snapshot';
+/** The single files of a sources object: the project's, LexLean's, and the Lake workspace LexLean needs to run again. */
+const SOURCE_FILES = Object.freeze(['prism.toml', 'lexlean.toml', 'lexlean.lock', 'lakefile.toml', 'lean-toolchain', 'lake-manifest.json']);
+
+/** The optional roles a v6 manifest's `objects` rows list, in OPTIONAL_ROLES order; none for anything unreadable. */
+function optionalRolesOf(manifestBytes) {
+  try {
+    const rows = JSON.parse(utf8.decode(manifestBytes))?.objects;
+    if (!Array.isArray(rows)) return [];
+    const listed = new Set(rows.map((row) => row?.role));
+    return OPTIONAL_ROLES.filter((role) => listed.has(role));
+  } catch {
+    return [];
+  }
+}
+
+/** Whether a sources path is one that decides the model: forward-slashed, confined, and of the stated set. */
+export function isSourcePath(path) {
+  if (typeof path !== 'string' || path.length === 0 || path.length > 1024 || path.includes('\\') || /[\u0000-\u001f]/.test(path)) return false;
+  const parts = path.split('/');
+  if (parts.some((part) => part === '' || part === '.' || part === '..')) return false;
+  if (SOURCE_FILES.includes(path)) return true;
+  if (parts[0] === 'src' && parts.length >= 2 && path.endsWith('.lex.tex') && parts[parts.length - 1] !== '.lex.tex') return true;
+  return parts[0] === 'language' && parts.length >= 2;
+}
+
+const compareBytes = (a, b) => {
+  const x = new TextEncoder().encode(a);
+  const y = new TextEncoder().encode(b);
+  for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i] - y[i];
+  return x.length - y.length;
+};
+
+/**
+ * The problem with a holo v6's sources object, or null when it holds: a sealed v6 container whose object 0 is the
+ * canonical `prism/model-sources/1` index, every path confined to the stated set, unique and sorted by its bytes,
+ * and every file's κ and length those of the object at its place. An empty index is not a sources object.
+ */
+export function sourcesProblem(bytes) {
+  if (versionOf(bytes) !== 6) return 'the sources object is not a holo v6 container';
+  const nested = readArchive(bytes, SOURCES_BUDGET);
+  if (nested.problem) return `the sources object does not read: ${nested.problem}`;
+  if (!nested.sealed) return 'the sources object\'s BLAKE3 seal does not match';
+  const decoded = decode(nested.objects[0].bytes);
+  if (decoded.error) return `the sources index ${decoded.error}`;
+  const index = decoded.value;
+  if (canonical(index) !== utf8.decode(nested.objects[0].bytes)) return 'the sources index is not canonical JSON';
+  if (index.schema !== SOURCES_SCHEMA || !Array.isArray(index.files) || Object.keys(index).length !== 2) return `the sources index is not ${SOURCES_SCHEMA}`;
+  if (index.files.length === 0) return 'the sources index lists no file';
+  if (index.files.length !== nested.objects.length - 1) return `the sources index lists ${index.files.length} files and the container holds ${nested.objects.length - 1}`;
+  for (const [i, file] of index.files.entries()) {
+    if (!file || typeof file !== 'object' || Object.keys(file).sort().join() !== 'kappa,length,path') return `sources file ${i} is not { path, kappa, length }`;
+    if (!isSourcePath(file.path)) return `sources file ${JSON.stringify(file.path)} is not a file that decides the model`;
+    if (i > 0 && compareBytes(index.files[i - 1].path, file.path) >= 0) return 'the sources paths are not unique and sorted by their bytes';
+    const content = nested.objects[i + 1].bytes;
+    if (file.kappa !== kappa(content, 6) || file.length !== content.length) return `sources file ${file.path} is not the bytes the index names`;
+  }
+  return null;
+}
 const BUDGET = Object.freeze({ objects: 16, bytes: 2 ** 30 });
+/** A sources object's budget: one index and up to 4096 files, not the application's sixteen objects. */
+const SOURCES_BUDGET = Object.freeze({ objects: 4097, bytes: 2 ** 28 });
 const SEAL_LENGTH = 32;
 const TAG = Uint8Array.from('UORC-SHA256-CHAIN-v1\0', (c) => c.charCodeAt(0));
 const utf8 = new TextDecoder('utf-8', { fatal: true });
@@ -85,7 +149,7 @@ function readUleb(bytes, at) {
  * with each object `{ index, offset, length, bytes }`, or `{ problem, check }`
  * when its header cannot be read. The seal is reported, not enforced.
  */
-export function readArchive(bytes) {
+export function readArchive(bytes, budget = BUDGET) {
   const refuse = (problem, check = 'archive.table') => ({ problem, check });
   const version = versionOf(bytes);
   if (version === null) return refuse('a holo v5 or v6 file is a UORC archive (format 2, profile 1 or 2)', 'archive.version');
@@ -96,7 +160,7 @@ export function readArchive(bytes) {
   let read = readUleb(preimage, 8);
   if (!read) return refuse('the object count is not a ULEB128');
   const [count] = read;
-  if (count === 0 || count > BUDGET.objects) return refuse(`the archive declares ${count} objects; a holo holds 1 to ${BUDGET.objects}`);
+  if (count === 0 || count > budget.objects) return refuse(`the archive declares ${count} objects; a holo holds 1 to ${budget.objects}`);
   let at = read[1];
   const lengths = [];
   let total = 0;
@@ -104,7 +168,7 @@ export function readArchive(bytes) {
     read = readUleb(preimage, at);
     if (!read) return refuse('an object length is not a ULEB128');
     total += read[0];
-    if (total > BUDGET.bytes) return refuse('the archive exceeds the decode budget');
+    if (total > budget.bytes) return refuse('the archive exceeds the decode budget');
     lengths.push(read[0]);
     at = read[1];
   }
@@ -194,10 +258,14 @@ export function analyzeV5(bytes, context) {
     archive.sealed ? `the seal is the ${format.seal} of the archive, ${archive.seal}` : `the seal ${archive.seal} is not the ${format.seal} of the archive: the archive was altered`,
   );
 
-  const known = archive.objects.length === ROLES.length || archive.objects.length === ROLES.length + 1;
-  const contentRoles = new Map(Object.entries(CONTENT).map(([role, index]) => [index, role]));
+  // A v6 may carry the optional snapshot and sources after `model`; its manifest's rows say which (ADR-018).
+  const optional = version === 6 ? optionalRolesOf(archive.objects[0]?.bytes ?? new Uint8Array()) : [];
+  const base = ROLES.length + optional.length;
+  const known = archive.objects.length === base || archive.objects.length === base + 1;
+  const contentRoles = new Map([...Object.entries(CONTENT).map(([role, index]) => [index, role]), ...optional.map((role, i) => [ROLES.length + i, role])]);
+  const roleAt = (index) => ROLES[index] ?? (index < base ? optional[index - ROLES.length] : ROLE_ATTESTATIONS);
   facts.sections = archive.objects.map((object) => {
-    const role = ROLES[object.index] ?? ROLE_ATTESTATIONS;
+    const role = roleAt(object.index);
     const section = { index: object.index, kind: null, kindName: role, role, offset: object.offset, length: object.length, payload: object.bytes };
     if (contentRoles.has(object.index)) {
       section.label = kappa(object.bytes, version);
@@ -233,7 +301,7 @@ export function analyzeV5(bytes, context) {
     add('documents', 'manifest.wire', problems.length === 0, problems.length === 0 ? `the holo manifest is canonical ${format.manifest}` : problems.join('; '));
     if (manifest && problems.length === 0) {
       // The provenance names the manifest, so the manifest lists every object but the provenance.
-      const expected = [1, 3, 4, 5, 6].map((i) => ({ kappa: labelOf(i), length: at(i).length, role: ROLES[i] }));
+      const expected = [1, 3, 4, 5, 6, ...optional.map((_, i) => ROLES.length + i)].map((i) => ({ kappa: labelOf(i), length: at(i).length, role: roleAt(i) }));
       const ok = canonical(manifest.objects) === canonical(expected) && manifest.requires === labelOf(3) && canonical(manifest.layers) === canonical(layersOf(labelOf(4), labelOf(5), manifest.layers[0]?.contract));
       add('archive', 'blob.labels', ok, ok ? `all ${expected.length} objects match the κ the manifest gives them` : "the manifest's κ-labels and lengths are not those of the objects in their roles");
     } else skip('archive', 'blob.labels', 'not checked: manifest.wire failed');
@@ -270,9 +338,32 @@ export function analyzeV5(bytes, context) {
 
   if (known) for (const [role, index] of Object.entries(CONTENT)) facts.roles[role] = labelOf(index);
 
+  // The optional snapshot and sources hold whether or not the provenance does: they bind to the source manifest, not
+  // to the provenance, so a holo whose provenance fails its schema still has them checked and still reports its sources.
+  const optionalProblems = [];
+  if (known) {
+    const optionalAt = (role) => (optional.includes(role) ? at(ROLES.length + optional.indexOf(role)) : undefined);
+    const snapshot = optionalAt('snapshot');
+    if (snapshot) {
+      // Read from the source manifest's own JSON: the row binds the snapshot whether or not the document meets its schema.
+      const files = at(1) ? decode(at(1).payload).value?.files : undefined;
+      const row = Array.isArray(files) ? files.find((f) => f?.kind === SNAPSHOT_SOURCE_KIND) : undefined;
+      if (!row) optionalProblems.push(`the holo carries a snapshot, and its source manifest names no ${SNAPSHOT_SOURCE_KIND}`);
+      else if (row.sha256 !== sha256Hex(snapshot.payload)) optionalProblems.push(`the snapshot object's sha256 is not the source manifest's ${SNAPSHOT_SOURCE_KIND} ${row.sha256}`);
+    }
+    const sources = optionalAt('sources');
+    if (sources) {
+      const problem = sourcesProblem(sources.payload);
+      if (problem) optionalProblems.push(problem);
+      else facts.sourcesPresent = true;
+    }
+  }
+
   // references: the provenance names the objects in their roles.
-  if (!provenance || !known) skip('documents', 'references', 'not checked: the provenance did not decode');
-  else {
+  if (!provenance || !known) {
+    if (optionalProblems.length > 0) add('documents', 'references', false, optionalProblems.join('; '));
+    else skip('documents', 'references', 'not checked: the provenance did not decode');
+  } else {
     const problems = [];
     for (const [role, recorded, actual] of [
       ['guest', provenance.guest_content_kappa, labelOf(4)],
@@ -283,6 +374,7 @@ export function analyzeV5(bytes, context) {
     }
     const binding = provenance.view_binding;
     if (binding?.tag === 'present' && binding.view_content_kappa !== labelOf(5)) problems.push(`the provenance view ${binding.view_content_kappa} is not the view object ${labelOf(5)}`);
+    problems.push(...optionalProblems);
     add('documents', 'references', problems.length === 0, problems.length === 0 ? 'the manifest and the provenance name the same objects' : problems.join('; '));
   }
 
@@ -314,7 +406,7 @@ export function analyzeV5(bytes, context) {
       const differences = [];
       if (!known) differences.push(`the archive holds ${archive.objects.length} objects, expected ${ROLES.length} or ${ROLES.length + 1} when signed`);
       // As for v4: this package judges the unsigned holo, and `check` reads the attestations and strips them first.
-      if (archive.objects.length === ROLES.length + 1) differences.push(`the archive carries an ${ROLE_ATTESTATIONS} object, which this package does not read; check reads it`);
+      if (archive.objects.length === base + 1) differences.push(`the archive carries an ${ROLE_ATTESTATIONS} object, which this package does not read; check reads it`);
       if (contract && !revision.coreWasmContracts.includes(contract)) differences.push(`the guest contract is ${contract}, expected one of ${revision.coreWasmContracts.join(', ')}`);
       const modelDocument = facts.documents.modelDocument;
       if (modelDocument?.schema && !revision.modelDocumentSchemas.includes(modelDocument.schema)) differences.push(`the model document schema ${modelDocument.schema} is not packed by this revision`);
@@ -339,7 +431,7 @@ export function analyzeV5(bytes, context) {
       if (date === spec.FORMAT_REVISION) differences = found;
     }
     // A signed holo has no layout revision, so verdict refuses it as for v4; check strips the attestations first.
-    if (known && archive.objects.length === ROLES.length) facts.layoutRevision = matched ?? spec.FORMAT_REVISION;
+    if (known && archive.objects.length === base) facts.layoutRevision = matched ?? spec.FORMAT_REVISION;
     if (matched !== null) {
       facts.revision = matched;
       differences = [];

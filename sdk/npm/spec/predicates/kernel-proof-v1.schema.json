@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uor.foundation/prism/kernel-proof/v1/schema.json",
+  "title": "KernelProofPredicateV1",
+  "description": "The predicate of an in-toto Statement v1 with predicateType https://uor.foundation/prism/kernel-proof/v1: Lean's kernel's verdict on every theorem a model states, as a build judged it, in a holo v6 (ADR-018). The statement's subjects are the model document and the semantic snapshot objects of the holo, and the sources object when the holo carries one, each named by blake3 and sha256 over the same bytes. The statement is written unsigned. It is a record of what was judged, never evidence on its own: a verifier grants the reproved claim only when the kernel, run again on its own machine, accepts a proof of each theorem from the carried snapshot. It holds no clock, so the same judgment writes the same bytes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["semantic_id", "kernel", "library", "lowering", "theorems"],
+  "properties": {
+    "semantic_id": {
+      "description": "LexLean's semantic_id of the snapshot the theorems were judged from: 64 lowercase hex, as LexLean writes it.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "kernel": {
+      "description": "The BLAKE3 label of the Lean kernel module that judged the proofs.",
+      "$ref": "#/$defs/Label"
+    },
+    "library": {
+      "description": "The BLAKE3 label of the base library the kernel loaded.",
+      "$ref": "#/$defs/Label"
+    },
+    "lowering": {
+      "description": "The BLAKE3 label of the code that lowered the snapshot to kernel declarations and found the proofs.",
+      "$ref": "#/$defs/Label"
+    },
+    "theorems": {
+      "description": "Every theorem the snapshot states, each once, sorted by name.",
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "axioms"],
+        "properties": {
+          "name": {
+            "description": "The theorem's fully qualified name in the snapshot.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "status": {
+            "description": "proved: the kernel accepted a proof within its declared axioms. refused: the kernel rejected the proof. unsupported: the proof's kind is one this build does not prove, so nothing was judged.",
+            "enum": ["proved", "refused", "unsupported"]
+          },
+          "axioms": {
+            "description": "The axioms the accepted proof uses, sorted. Empty unless the status is proved.",
+            "type": "array",
+            "maxItems": 256,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Label": {
+      "type": "string",
+      "pattern": "^blake3:[0-9a-f]{64}$"
+    }
+  }
+}

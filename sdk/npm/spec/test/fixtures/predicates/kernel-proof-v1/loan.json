@@ -1,0 +1,11 @@
+{
+  "kernel": "blake3:3f1e2d4c5b6a79881726354a5b6c7d8e9fa0b1c2d3e4f5061728394a5b6c7d8e",
+  "library": "blake3:9a8b7c6d5e4f30211203f4e5d6c7b8a9f0e1d2c3b4a5968778695a4b3c2d1e0f",
+  "lowering": "blake3:0f1e2d3c4b5a69788796a5b4c3d2e1f00112233445566778899aabbccddeeff0",
+  "semantic_id": "75956b94d3183b6a527cc8684de8410e0ad931f584a81b090223733e3e6791e4",
+  "theorems": [
+    { "axioms": [], "name": "LoanApproval.approved_within_limit", "status": "proved" },
+    { "axioms": ["propext"], "name": "LoanApproval.declined_over_limit", "status": "proved" },
+    { "axioms": [], "name": "LoanApproval.score_monotone", "status": "unsupported" }
+  ]
+}

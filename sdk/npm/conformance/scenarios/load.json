@@ -64,6 +64,26 @@
       }
     },
     {
+      "id": "load.reference-v6-carried.opens",
+      "title": "The reference holo v6 carrying its semantic snapshot and sources opens with the same name, limits and vectors (ADR-018).",
+      "op": "load",
+      "archive": "reference-v6-carried",
+      "expect": {
+        "ok": true,
+        "result": {
+          "kind": "holo",
+          "name": "Calculator",
+          "verified": true,
+          "limits": {
+            "request": 52,
+            "response": 27,
+            "guestAllocation": 65536
+          },
+          "vectors": 22
+        }
+      }
+    },
+    {
       "id": "load.refuse.empty",
       "title": "An empty file is refused.",
       "op": "load",

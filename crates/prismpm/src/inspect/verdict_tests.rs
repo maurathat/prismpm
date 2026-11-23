@@ -973,3 +973,23 @@ fn the_inspection_of_a_v6_lists_both_digests_and_its_blake3_labels() {
         );
     }
 }
+
+/// A holo v6 built by prism-code with nothing compiled: evaluator provenance,
+/// snapshot, sources and an unsigned kernel-proof statement (ADR-018).
+const EVALUATOR_V6: &[u8] = include_bytes!("../../testdata/evaluator-proof-record.v6.holo");
+
+#[test]
+fn an_evaluator_built_v6_has_its_documents_and_objects_accepted() {
+    crate::holo::archive::validate_application(EVALUATOR_V6).unwrap();
+    let verdict = verify(EVALUATOR_V6, &p0()).unwrap();
+    assert_valid(&verdict);
+    let failing = checks(&verdict);
+    for check in ["holo.documents", "holo.integrity", "holo.format"] {
+        assert!(
+            !failing.contains(&check),
+            "{check} failed: {:?}",
+            verdict.reasons
+        );
+    }
+    assert!(verdict.passed, "{:?}", verdict.reasons);
+}
