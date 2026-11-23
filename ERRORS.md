@@ -982,6 +982,7 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `container.running` |  | `DK-43` | The container is running and cannot be removed. |
 | `container.state` |  | `DK-43` | The container was read back from its store, which does not keep its input, so it cannot be started again; run the holo again. |
 | `container.store` |  | `DK-43` | The container store directory cannot be created or written; set PRISM_HOME to a directory that can be written. |
+| `contract.artifact` |  | `DK-51` | An authority in a template register names a committed artifact that is missing, is not regular files, or whose recomputed SHA-256 is not the checksum its row records. |
 | `contract.authority` |  | `DK-41` | A some-true claim cites an authority the workspace does not name, or an authority is realized by an ID that is not registered (R2). |
 | `contract.conformance` |  | `DK-41` | The generated conformance document does not list an ID the register holds (R1). |
 | `contract.duplicate` |  | `DK-41` | One ID is registered twice, in model/ids.toml or across it and model/ledger.toml (R2). |
