@@ -900,6 +900,8 @@ fn is_uri(text: &str) -> bool {
 struct ResolvedSubject {
     name: String,
     sha256: String,
+    /// The object's blake3, for a holo v6, whose κ it is (ADR-018 §4); `None` for a v5.
+    blake3: Option<String>,
 }
 
 /// The subjects of a statement over content blobs of the holo.
@@ -935,7 +937,7 @@ fn resolve_subjects(
                 _ => Some(parsed.capability_kappa.clone()),
             }
         } else if target.len() == 71
-            && target.starts_with("sha256:")
+            && (target.starts_with("sha256:") || target.starts_with("blake3:"))
             && target[7..]
                 .bytes()
                 .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
@@ -971,6 +973,9 @@ fn resolve_subjects(
                 }
             }),
             sha256: der::hex(&crypto::sha256(content)),
+            blake3: label
+                .starts_with("blake3:")
+                .then(|| blake3::hash(content).to_hex().to_string()),
         });
     }
     let names = subjects
@@ -1008,15 +1013,21 @@ pub fn attest(holo: &[u8], request: &AttestRequest) -> Result<Attested, PrismErr
     let parsed = parse_application(holo)?;
     let subjects = resolve_subjects(&parsed, &request.subjects)?;
     // The statement text in the member order the JavaScript signer writes, so both read alike.
-    // Each subject is named by its κ alone (ADR-017).
+    // A v5 subject is named by its κ alone (ADR-017); a v6 subject by blake3 and sha256 (ADR-018 §4).
     let subject_text = subjects
         .iter()
         .map(|subject| {
-            format!(
-                r#"{{"name":{},"digest":{{"sha256":"{}"}}}}"#,
-                serde_json::to_string(&subject.name).expect("a string serializes"),
-                subject.sha256,
-            )
+            let name = serde_json::to_string(&subject.name).expect("a string serializes");
+            match &subject.blake3 {
+                Some(blake3) => format!(
+                    r#"{{"name":{name},"digest":{{"blake3":"{blake3}","sha256":"{}"}}}}"#,
+                    subject.sha256,
+                ),
+                None => format!(
+                    r#"{{"name":{name},"digest":{{"sha256":"{}"}}}}"#,
+                    subject.sha256
+                ),
+            }
         })
         .collect::<Vec<_>>()
         .join(",");

@@ -77,12 +77,12 @@ test('planted defects: a changed guest, a changed model member, and a changed by
   // The guest's program changed and the file sealed again: the manifest names another guest.
   const guest = objects[4].slice();
   guest[guest.length - 8] ^= 1;
-  const resealed = writeObjects([...objects.slice(0, 4), guest, ...objects.slice(5)]);
+  const resealed = writeObjects([...objects.slice(0, 4), guest, ...objects.slice(5)], 6);
   await assert.rejects(loadArchive(resealed, {}));
   assert.equal((await loadArchive(resealed, { allowUnverified: true })).identities.verified, false);
   // The model document changed and the file sealed again.
   const model = enc.encode(dec.decode(objects[6]).replace('"response_maximum":', '"response_maximum" :'));
-  assert.equal((await loadArchive(writeObjects([...objects.slice(0, 6), model]), { allowUnverified: true })).identities.verified, false);
+  assert.equal((await loadArchive(writeObjects([...objects.slice(0, 6), model], 6), { allowUnverified: true })).identities.verified, false);
 });
 
 test('a model with no acceptance vectors is not built', { skip }, async () => {
