@@ -37,25 +37,26 @@
   #draft { padding: .35rem .75rem; border-bottom: 1px solid var(--hg-border-solid); color: var(--hg-muted-foreground); }
   #draft button { font: inherit; color: inherit; background: none; border: 1px solid currentColor; border-radius: 3px; padding: 0 .4rem; cursor: pointer; }
   #match[data-state="same"] { color: var(--hg-success); } #match[data-state="other"] { color: var(--hg-destructive); font-weight: 600; }
-  /* The workbench fills the window under one top line, as VS Code does. Notes are one line each and open on a click;
-     the app this model builds, and push and pull, sit in a pane at the side, which the App button hides. */
+  /* The workbench fills the window under one top line, as VS Code does. Notes are one line each and open on a click.
+     The app this model builds is shown as VS Code shows a preview: in an editor tab, "Preview <app>", opened to the
+     side of the code. Its page, its requests and push and pull live in that tab (src/model-editor.js, PreviewPane). */
   #main { flex: 1; min-height: 0; display: flex; }
   #workbench { flex: 1; min-width: 0; min-height: 0; position: relative; }
-  #side { width: min(34vw, 460px); min-width: 260px; display: flex; flex-direction: column; border-left: 1px solid var(--hg-border-solid); overflow: auto; }
-  body.sideHidden #side { display: none; }
-  .sideHead { display: flex; align-items: center; justify-content: space-between; padding: .2rem .5rem .2rem .75rem; border-bottom: 1px solid var(--hg-border-solid); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--hg-muted-foreground); }
-  .sideHead button { font: inherit; font-size: 15px; line-height: 1; color: inherit; background: none; border: 0; cursor: pointer; padding: .1rem .35rem; }
-  #side #run { max-height: none; border-bottom: 1px solid var(--hg-border-solid); }
-  #side #runView { height: 46vh; }
+  .prism-preview { height: 100%; display: flex; flex-direction: column; overflow: auto; background: var(--hg-background); color: var(--hg-foreground); font: 13px/1.4 var(--hg-font-sans), system-ui, sans-serif; }
+  .prism-preview #run { flex: 1; display: flex; flex-direction: column; min-height: 0; max-height: none; border-bottom: 1px solid var(--hg-border-solid); }
+  .prism-preview #run[hidden] { display: none; }
+  .prism-preview #runView { flex: 1; min-height: 240px; height: auto; }
+  .prism-preview #runLog { max-height: 25%; overflow: auto; }
+  .prism-preview .empty { padding: 1rem .75rem; color: var(--hg-muted-foreground); }
+  .prism-preview:has(#run:not([hidden])) .empty { display: none; }
   #publish summary { padding: .35rem .75rem; cursor: pointer; color: var(--hg-muted-foreground); }
   #publish #pushForm { border-bottom: 0; }
   #notes > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; padding-block: .2rem; }
   #notes > .open { white-space: normal; overflow-wrap: anywhere; }
-  #sideToggle[aria-pressed="false"] { opacity: .7; }
 </style>
 </head>
 <body>
-<div id="top"><div id="strip" role="status">Starting…</div><span id="starters"><a href="?project=../app/model/" title="The one template every Prism app starts from: the app prism-code init and build write, with theorems of its own">Start a new app</a><button id="openFolder" type="button" title="Open a project folder from this computer, one that npx prism-code init wrote. Its files are read into the project's own holospace in this browser; nothing is sent anywhere.">Open folder</button></span><button id="build" type="button" title="Check, prove and build this model into a holo, here in this tab">Build</button><button id="sideToggle" type="button" title="Show or hide the app this model builds, and push and pull" aria-pressed="true">App</button><label id="liveLabel" title="After each edit that checks and whose theorems are all proved, build the model and show the app that was built. An edit that is not fully proved changes nothing that is running."><input id="live" type="checkbox" checked> Live</label><button id="download" type="button" title="The model as it stands in the editor, as one tar archive">Download model</button></div>
+<div id="top"><div id="strip" role="status">Starting…</div><span id="starters"><a href="?project=../app/model/" title="The one template every Prism app starts from: the app prism-code init and build write, with theorems of its own">Start a new app</a><button id="openFolder" type="button" title="Open a project folder from this computer, one that npx prism-code init wrote. Its files are read into the project's own holospace in this browser; nothing is sent anywhere.">Open folder</button></span><button id="build" type="button" title="Check, prove and build this model into a holo, here in this tab">Build</button><button id="sideToggle" type="button" title="Open Preview to the Side (Ctrl+K V): the app this model builds, beside the code">Preview</button><label id="liveLabel" title="After each edit that checks and whose theorems are all proved, build the model and show the app that was built. An edit that is not fully proved changes nothing that is running."><input id="live" type="checkbox" checked> Live</label><button id="download" type="button" title="The model as it stands in the editor, as one tar archive">Download model</button></div>
 
 
 
@@ -68,8 +69,7 @@
 </div>
 <div id="main">
 <div id="workbench"></div>
-<aside id="side" aria-label="The app and publishing">
-<div class="sideHead"><span>App</span><button id="sideClose" type="button" title="Hide this pane (the App button shows it again)" aria-label="Hide the app pane">×</button></div>
+<div id="previewHolder" hidden>
 <div id="run" hidden>
   <div id="runVerdict" role="status"></div>
   <form id="runForm" hidden>
@@ -90,7 +90,7 @@
   <span id="pushSaid" role="status"></span>
 </form>
 </details>
-</aside>
+</div>
 </div>
 <script type="module" src="./src/model-editor.js"></script>
 </body>

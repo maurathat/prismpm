@@ -44,6 +44,9 @@ import getAccessibilityOverride from '@codingame/monaco-vscode-accessibility-ser
 import '@codingame/monaco-vscode-theme-defaults-default-extension';
 import { registerExtension, ExtensionHostKind } from '@codingame/monaco-vscode-api/extensions';
 import { Action2, MenuId, registerAction2 } from '@codingame/monaco-vscode-api/vscode/vs/platform/actions/common/actions';
+import { ContextKeyExpr } from '@codingame/monaco-vscode-api/vscode/vs/platform/contextkey/common/contextkey';
+import { Codicon } from '@codingame/monaco-vscode-api/vscode/vs/base/common/codicons';
+import { SimpleEditorInput, SimpleEditorPane, registerEditorPane } from '@codingame/monaco-vscode-workbench-service-override';
 // The workbench's own theme, from the Hologram brand kit (tools/build-theme.mjs, tools/brand-pins.json).
 import hologramThemeUrl from './theme/hologram-dark.json?url';
 import './theme/focus.css';
@@ -532,28 +535,70 @@ async function commandLine(io) {
   });
 }
 
-// The page's own layout around the workbench (model.html): the side pane with the app, and one-line notes.
+// The page's own layout around the workbench (model.html): one-line notes, and the workbench told when its room changes.
 {
-  const side = document.getElementById('sideToggle');
-  let hidden = false;
-  try { hidden = localStorage.getItem('prism-ide-side') === 'hidden'; } catch { /* no storage: shown */ }
-  const show = (on) => {
-    hidden = !on;
-    document.body.classList.toggle('sideHidden', hidden);
-    side.setAttribute('aria-pressed', String(on));
-    try { localStorage.setItem('prism-ide-side', hidden ? 'hidden' : 'shown'); } catch { /* not remembered */ }
-  };
-  show(!hidden);
-  side.addEventListener('click', () => show(hidden));
-  document.getElementById('sideClose').addEventListener('click', () => show(false));
   // A note opens to its whole text on a click, and folds back on the next; a click on its own button is the button's.
   for (const note of document.querySelectorAll('#notes > *')) note.addEventListener('click', (event) => { if (!event.target.closest('button, a')) note.classList.toggle('open'); });
   // VS Code lays its workbench out when the window is resized; the pane changes its room without that, so it is told.
   const bench = document.getElementById('workbench');
   let last = 0;
   new ResizeObserver(() => { const w = bench.clientWidth * 10000 + bench.clientHeight; if (w !== last) { last = w; window.dispatchEvent(new Event('resize')); } }).observe(bench);
-  window.prismModel.layout = () => ({ workbench: [bench.clientWidth, bench.clientHeight], side: !hidden });
+  window.prismModel.layout = () => ({ workbench: [bench.clientWidth, bench.clientHeight], preview: previewShown });
 }
+
+// The app's preview, as VS Code shows a preview: an editor tab named "Preview <app>", opened to the side of the code
+// with "Open Preview to the Side" (Ctrl+K V) or the preview button in the editor's title bar, and closed like any tab.
+// It holds the app's own page (in its sandboxed frame), the requests sent to it, and push and pull. The workbench's
+// own editor-pane registry gives it a place among the editors; nothing is added to the page's packages.
+const PREVIEW = 'prism.appPreview';
+let previewShown = false;
+let previewName = 'Preview';
+const previewParts = () => [document.getElementById('run'), document.getElementById('publish')];
+class PreviewInput extends SimpleEditorInput {
+  constructor() { super(URI.from({ scheme: 'prism-preview', path: '/app' })); this.setName(previewName); }
+  get typeId() { return PREVIEW; }
+  get editorId() { return PREVIEW; }
+  matches(other) { return other instanceof PreviewInput; }
+}
+class PreviewPane extends SimpleEditorPane {
+  constructor(group) { super(PREVIEW, group); }
+  initialize() {
+    this.host = document.createElement('div');
+    this.host.className = 'prism-preview';
+    return this.host;
+  }
+  async renderInput() {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = 'Nothing is built yet. The app this model builds is shown here once it is proved and built.';
+    this.host.replaceChildren(empty, ...previewParts());
+    previewShown = true;
+    return { dispose: () => { document.getElementById('previewHolder').append(...previewParts()); previewShown = false; } };
+  }
+}
+registerEditorPane(PREVIEW, 'Preview', PreviewPane, [PreviewInput]);
+// A closed tab disposes its input, so a new one is made when the preview is opened again.
+let previewInput = new PreviewInput();
+const SIDE_GROUP = -2;
+let editorServiceForPreview = null;
+async function openPreview({ focus = false } = {}) {
+  editorServiceForPreview ??= await getService(IEditorService);
+  if (previewInput.isDisposed()) previewInput = new PreviewInput();
+  await editorServiceForPreview.openEditor(previewInput, { pinned: true, preserveFocus: !focus }, SIDE_GROUP);
+}
+window.prismModel.openPreview = openPreview;
+document.getElementById('sideToggle').addEventListener('click', () => openPreview({ focus: true }).catch(() => {}));
+registerAction2(class extends Action2 {
+  constructor() {
+    super({
+      id: 'prism.openPreviewToSide', title: { value: 'Open Preview to the Side', original: 'Open Preview to the Side' }, category: { value: 'Prism', original: 'Prism' },
+      f1: true, icon: Codicon.openPreview,
+      keybinding: { primary: monaco.KeyMod.chord(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, monaco.KeyCode.KeyV), weight: 200 },
+      menu: { id: MenuId.EditorTitle, group: 'navigation', when: ContextKeyExpr.equals('resourceLangId', 'lexlean') },
+    });
+  }
+  run() { return openPreview({ focus: false }); }
+});
 
 window.MonacoEnvironment = {
   getWorkerUrl: (_moduleId, label) => (label === 'extensionHostWorkerMain' ? extHostWorkerUrl : editorWorkerUrl),
@@ -693,6 +738,7 @@ try {
   const runKeep = document.getElementById('runKeep');
   const runLog = document.getElementById('runLog');
   let running = null;
+  let previewOpenedOnce = false;
   let runningLabel = null; // the BLAKE3 label of the holo that is running
   let lastSent = null; // the last request typed in the box, sent again to the next build when Live is on
   // The app's own page, when its holo carries one: the View's files made into one document by Holospace's library
@@ -755,6 +801,10 @@ try {
         runVerdict.textContent = `Ready to run ${opened.name ?? 'the app'}: its holo was judged verified in this tab${replayed}. Each request is one call on a fresh instance.`;
       }
       runForm.hidden = false;
+      // The preview tab takes the app's name, and opens to the side the first time an app runs on this page.
+      previewName = `Preview ${opened.name ?? 'app'}`;
+      previewInput.setName(previewName);
+      if (!previewOpenedOnce) { previewOpenedOnce = true; openPreview().catch(() => {}); }
       // A View that cannot be shown does not stop the app being run by request.
       try { state.run.view = await showView(opened); } catch (error) { state.run.view = { shown: false, why: String(error?.message ?? error) }; }
       if (state.run.view?.shown) runVerdict.textContent += ' Its own page is shown below, in a frame that can reach nothing but the app.';
