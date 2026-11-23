@@ -42,6 +42,7 @@ Read the files a workspace already has for their exact shape, and follow it. Do 
 | `contract.negative` | R5 | A failure's `negative` is not a registered `build` ID, or the failure is not the text of a refusal. |
 | `contract.refusal-unreplayed` | R5 | No acceptance vector is answered with exactly the failure's text. |
 | `contract.policy-drift` | | A universal policy file does not have the label `template.lock` binds. It changes only with a template release. |
+| `contract.artifact` | R6 | An authority's committed artifact is missing, or its recomputed SHA-256 is not the checksum its row records. |
 | `contract.spec` | | The register names a template spec this prism-code does not read. |
 | `contract.register` | | A register cannot be read. |
 

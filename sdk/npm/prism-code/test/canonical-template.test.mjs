@@ -4,7 +4,8 @@
 // kernel's part is the standalone journeys (standalone.test.mjs).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -113,6 +114,33 @@ test('a universal policy file a checkout rewrote to CRLF is refused, and the ref
   assert.equal(drift.length, 1);
   assert.match(drift[0].message, /AGENTS\.md has CRLF line endings, and template\.lock binds its LF bytes/);
   assert.equal(readFileSync(join(dir, '.gitattributes'), 'utf8').trim().split('\n').at(-1), '* -text', 'the template keeps every file as committed');
+});
+
+test('R6: an authority\'s committed artifact is recomputed, a file by its bytes and a directory by its manifest', () => {
+  const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
+  const dir = written();
+  const authority = (artifact, checksum) => edit(dir, 'model/authorities.toml', (s) => s.replace(/\nauthority = \[\]\n?$/, '\n') + `\n[[authority]]\nid = "AU-01"\ncitation = "A cited corpus."\nartifact = "${artifact}"\nchecksum = "${checksum}"\nrealized_by = []\n`);
+  const artifactCodes = () => checkContract(dir).diagnostics.filter((d) => d.code === 'contract.artifact').map((d) => d.message);
+  // The corpus the template's contract-1 checker was tested on: three files, one in a folder.
+  mkdirSync(join(dir, 'data', 'corpus', 'sub'), { recursive: true });
+  const corpus = [['a.json', '[]'], ['n_b.json', '[1,'], ['sub/c.json', '{}']];
+  for (const [path, text] of corpus) writeFileSync(join(dir, 'data', 'corpus', ...path.split('/')), text);
+  const manifest = corpus.map(([path, text]) => `${sha(text)}  ${path}\n`).join('');
+  authority('data/corpus', sha(manifest));
+  assert.deepEqual(artifactCodes(), [], 'the directory gives the checksum its row records');
+  writeFileSync(join(dir, 'data', 'corpus', 'n_b.json'), '[1,]');
+  assert.match(artifactCodes()[0] ?? '', /records the checksum .* and its committed bytes give/);
+  writeFileSync(join(dir, 'data', 'corpus', 'n_b.json'), '[1,');
+  assert.deepEqual(artifactCodes(), [], 'restored');
+  // A file artifact, and a row whose checksum is not one.
+  const file = written();
+  writeFileSync(join(file, 'standard.txt'), 'The text of a standard.\n');
+  edit(file, 'model/authorities.toml', (s) => s.replace(/\nauthority = \[\]\n?$/, '\n') + `\n[[authority]]\nid = "AU-01"\ncitation = "A standard."\nartifact = "standard.txt"\nchecksum = "${sha('The text of a standard.\n')}"\nrealized_by = []\n`);
+  assert.deepEqual(checkContract(file).diagnostics.filter((d) => d.code === 'contract.artifact'), []);
+  edit(file, 'model/authorities.toml', (s) => s.replace(/checksum = "[0-9a-f]{64}"/, 'checksum = "sha256:abc"'));
+  assert.match(checkContract(file).diagnostics.find((d) => d.code === 'contract.artifact')?.message ?? '', /is not a SHA-256 of 64 lowercase hex digits/);
+  edit(file, 'model/authorities.toml', (s) => s.replace('artifact = "standard.txt"', 'artifact = "missing.txt"'));
+  assert.match(checkContract(file).diagnostics.find((d) => d.code === 'contract.artifact')?.message ?? '', /is not committed/);
 });
 
 test('R3: a named theorem the model does not state, or the kernel did not prove, is refused', () => {

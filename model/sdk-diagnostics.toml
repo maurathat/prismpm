@@ -308,6 +308,11 @@ capability = "DK-43"
 statement = "The container store directory cannot be created or written; set PRISM_HOME to a directory that can be written."
 
 [[error]]
+code = "contract.artifact"
+capability = "DK-51"
+statement = "An authority in a template register names a committed artifact that is missing, is not regular files, or whose recomputed SHA-256 is not the checksum its row records."
+
+[[error]]
 code = "contract.authority"
 capability = "DK-41"
 statement = "A some-true claim cites an authority the workspace does not name, or an authority is realized by an ID that is not registered (R2)."
