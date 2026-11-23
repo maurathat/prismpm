@@ -84,14 +84,15 @@ jobs:
                    audit/judge/kernel.holo audit/prism-code/index.mjs audit/prism-code/blake3.mjs audit/prism-code/vendor/verify.mjs audit/site.json; do
             test -s "$site/$f" || { echo "missing: $f"; exit 1; }
           done
-          # The rule judge archive is the one the audit-status record names.
-          python3 - "$site" <<'PY'
-          import hashlib, json, sys
-          site = sys.argv[1]
-          want = json.load(open(f'{site}/audit/audit-status.rule-app.json'))['kernel']['holo']
-          got = 'sha256:' + hashlib.sha256(open(f'{site}/audit/judge/kernel.holo', 'rb').read()).hexdigest()
-          assert got == want, f'the judge archive is {got}, the audit-status record names {want}'
-          PY
+          # The rule judge archive is the one the audit-status record names, by its BLAKE3 label.
+          node --input-type=module - "$site" <<'JS'
+          import { readFileSync } from 'node:fs';
+          import { kappa } from './src/blake3.mjs';
+          const site = process.argv[2];
+          const want = JSON.parse(readFileSync(`${site}/audit/audit-status.rule-app.json`, 'utf8')).kernel.holo;
+          const got = kappa(new Uint8Array(readFileSync(`${site}/audit/judge/kernel.holo`)));
+          if (got !== want) throw new Error(`the judge archive is ${got}, the audit-status record names ${want}`);
+          JS
       # The workbench is the one thing compiled, from the packages the lock pins. No install script runs.
       - name: Build the workbench editor
         working-directory: sdk/npm/prism-code/ide
