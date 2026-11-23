@@ -22,11 +22,11 @@
  * Experimental until the v0.6 freeze, hence the `experimental_` prefix.
  */
 import { readFile } from 'node:fs/promises';
-import { createHash, createPublicKey, KeyObject } from 'node:crypto';
-import { SignatureInvalidError, IdentityMismatchError, TransparencyError, SubjectMismatchError, AttestationNotFoundError, TrustRootError, VerificationError, PrismError } from './errors.mjs';
+import { createPublicKey, KeyObject } from 'node:crypto';
+import { SignatureInvalidError, IdentityMismatchError, TransparencyError, AttestationNotFoundError, TrustRootError, VerificationError, PrismError } from './errors.mjs';
 import { parseArchive, asBytes } from './archive.mjs';
-import { blake3Hex } from './blake3.mjs';
 import { readAttestations } from './attestations.mjs';
+import { checkSubjects } from './outgoing.mjs';
 import { verifyTransparency } from './vendor/verify.mjs';
 
 /** The Fulcio-issued certificates of GitHub Actions workflows name this issuer. */
@@ -51,8 +51,6 @@ async function sigstore() {
   })();
   return loaded;
 }
-
-const sha256Hex = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -145,16 +143,8 @@ function policyOf(options) {
   return { keyed, entries, timestamps };
 }
 
-/** The objects a bundle's subjects name must be in this holo, named by their κ; otherwise a typed error. */
-export function checkSubjects(parsed, attestation) {
-  for (const subject of attestation.subjects) {
-    const blob = subject.blob === null ? null : parsed.blobs.find((b) => b.label === subject.blob);
-    if (!blob) throw new SubjectMismatchError(`subject ${subject.name} is not a content blob of this holo`, { check: 'attestation.subject' });
-    if (sha256Hex(blob.content) !== subject.digest.sha256 || (subject.digest.blake3 !== undefined && blake3Hex(blob.content) !== subject.digest.blake3)) {
-      throw new SubjectMismatchError(`subject ${subject.name} names ${subject.blob} but its digests are not the blob's`, { check: 'attestation.subject' });
-    }
-  }
-}
+// `checkSubjects` is outgoing.mjs's, where a page can load it; it is exported from here as before.
+export { checkSubjects };
 
 function mapSigstoreError(error) {
   const code = error?.code;

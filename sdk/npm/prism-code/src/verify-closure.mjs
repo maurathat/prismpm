@@ -21,7 +21,8 @@ import { holoDigest, parseArchive } from './archive.mjs';
 import { blake3Hex } from './blake3.mjs';
 import { sealName } from './uorc.mjs';
 import { readAttestations, DSSE_PAYLOAD_TYPE } from './attestations.mjs';
-import { checkSubjects, experimental_verifyAttestations, experimental_verifyBundle } from './attest.mjs';
+import { experimental_verifyAttestations, experimental_verifyBundle } from './attest.mjs';
+import { checkSubjects, verifyOutgoing } from './outgoing.mjs';
 import { check, policyOf } from './check.mjs';
 import { MINIMUM_LEVEL_ENV } from './verify.mjs';
 import { errorFromVerdict, AttestationNotFoundError, DigestMismatchError, PrismCodeError, PrismError, PullVerificationError, VerificationError } from './errors.mjs';
@@ -35,22 +36,8 @@ export const SIGNER_OPTIONS = Object.freeze(['key', 'certificateIdentity', 'cert
 const signerOptions = (options) => Object.fromEntries(['type', ...SIGNER_OPTIONS, 'trustedRoot', 'entries', 'timestamps', 'tufMirrorUrl', 'tufRoot', 'tufCache'].filter((name) => options[name] !== undefined).map((name) => [name, options[name]]));
 const namesSigner = (options) => SIGNER_OPTIONS.some((name) => options[name] !== undefined);
 
-/**
- * Push, step 1: nothing corrupt leaves this machine. The holo's footer and
- * labels verify, and every attestation's subjects are blobs of this holo.
- *
- * @param {Uint8Array} holo
- * @returns {{ parsed: object, attestations: object[] }}
- */
-export function verifyOutgoing(holo) {
-  const parsed = parseArchive(holo);
-  if (!parsed.verification.footer || !parsed.verification.labels) {
-    throw new VerificationError('the holo does not verify: its footer or a content label differs from the bytes', { check: 'holo.integrity' });
-  }
-  const attestations = readAttestations(parsed);
-  for (const attestation of attestations) checkSubjects(parsed, attestation);
-  return { parsed, attestations };
-}
+// Push, step 1 (`verifyOutgoing`) is outgoing.mjs's, where a page can load it; it is exported from here as before.
+export { verifyOutgoing };
 
 /**
  * Pull, steps 4 and 5: the bytes are a holo, and every BLAKE3 claim about it,
