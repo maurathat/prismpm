@@ -547,6 +547,44 @@ try {
     state.pushed = { label: 'blake3:' + result.blake3, where: result.reference, digest: result.digest, tags: result.tags, uploaded: result.layer.uploaded, referrers: result.referrers.length };
     return state.pushed;
   };
+  // Pull: the holo a reference names is fetched with the package's registry client, which takes the manifest and
+  // the layer only as the bytes their digests name. If a BLAKE3 label was asked for, the bytes must derive to it.
+  // Then it is judged here as any holo is before it runs: by Holospace's library, in this tab (its seal, its
+  // members, its examples replayed). Nothing is proved again by a pull, and no proof term is produced: a holo does
+  // not carry a proof record yet, so what is said of its theorems is nothing.
+  window.prismModel.pull = async (target, { label = null, username = '', password = '' } = {}) => {
+    const [{ createRegistryClient }, { parseReference }, { holoLayerOf }, { kappa }] = await Promise.all(
+      ['oci-registry.mjs', 'oci-reference.mjs', 'oci-manifest.mjs', 'blake3.mjs'].map((name) => import(/* @vite-ignore */ EDIT + 'prism-code/' + name)));
+    const reference = parseReference(target);
+    if (reference.kind !== 'registry') throw new Error('a page pulls from a registry: name it as registry.example/name:tag');
+    const asked = username !== '' || password !== '';
+    const client = createRegistryClient(reference, { resolveCredentials: asked ? () => ({ username, password }) : undefined });
+    const manifest = await client.getManifest(reference.digest ?? reference.tag);
+    const layer = holoLayerOf(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(manifest.bytes)));
+    if (!layer || typeof layer.digest !== 'string' || !Number.isSafeInteger(layer.size) || layer.size < 0) throw new Error('what is at that address is not a holo: its manifest does not have exactly one holo layer');
+    if (layer.size > 64 * 1024 * 1024) throw new Error(`the holo there is ${layer.size} bytes, more than a page takes`);
+    const bytes = await client.getBlob(layer.digest, layer.size);
+    const got = kappa(bytes);
+    if (label !== null && got !== label) throw new Error(`the holo there is ${got}, not the ${label} that was asked for`);
+    window.prismModel.holo = () => bytes;
+    await openRun(bytes);
+    state.pulled = { label: got, from: target, digest: manifest.digest, bytes: bytes.length, judged: state.run?.verdict ?? null, reproved: null, termsProduced: 0 };
+    return state.pulled;
+  };
+  document.getElementById('pullButton').addEventListener('click', async () => {
+    const target = document.getElementById('pushTarget').value.trim();
+    if (target === '') return;
+    const secret = document.getElementById('pushSecret');
+    pushSaid.textContent = 'Pulling…';
+    try {
+      const pulled = await window.prismModel.pull(target, { username: document.getElementById('pushUser').value, password: secret.value });
+      pushSaid.textContent = `Pulled ${pulled.label}, ${pulled.bytes} bytes, and judged here: ${pulled.judged ?? 'not judged'}. Its theorems were not proved again; nothing says they hold but the build that made it.`;
+      document.getElementById('pushButton').disabled = false;
+    } catch (error) {
+      state.pulled = { error: String(error?.code ?? ''), message: String(error?.message ?? error) };
+      pushSaid.textContent = state.pulled.error === 'registry_auth_failed' ? 'Not pulled: the registry asks for a user name and a password or token.' : `Not pulled: ${state.pulled.message}`;
+    } finally { secret.value = ''; }
+  });
   pushForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const target = document.getElementById('pushTarget').value.trim();
@@ -586,7 +624,7 @@ try {
       diagnostics: (built.diagnostics ?? []).length, holo: built.holo ? { label: built.holo.label, name: built.holo.name, bytes: built.holo.bytes.length, semanticId: built.holo.semanticId } : null };
     // The bytes are kept for whoever runs or saves the holo next; a failed build keeps none.
     window.prismModel.holo = built.holo ? () => built.holo.bytes : null;
-    pushForm.hidden = !built.holo;
+    document.getElementById('pushButton').disabled = !built.holo;
     pushSaid.textContent = '';
     await openRun(built.holo ? built.holo.bytes : null);
     if (!built.holo) {
