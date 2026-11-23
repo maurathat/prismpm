@@ -207,6 +207,8 @@ jobs:
         run: node ide/tools/gate-facts-test.mjs
       - name: An earlier build of the site opens by its label after the next is published
         run: node ide/tools/kappa-store-test.mjs
+      - name: What a holospace answers is said as it answered it
+        run: node ide/tools/host-words-test.mjs
       - name: A folder a person opens is read as the package reads a project
         run: node ide/tools/folder-model-test.mjs
       - name: The workbench's theme is what the brand kit's tokens generate, with the contrast asked
