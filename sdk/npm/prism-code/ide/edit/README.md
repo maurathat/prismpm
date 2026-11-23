@@ -233,7 +233,7 @@ Tried by hand in one browser (Chromium), on the assembled site served from one m
 
 | Step | Shown |
 |---|---|
-| Build the stateful starter | "Built in this tab in 2322 ms, with nothing compiled: Dinner seats.holo, 69734 bytes, blake3:2ce8cb52…. Proved: Lean's kernel accepted all 10 of its theorems. Tested: 59 of 59 examples give their recorded answer through it." |
+| Build the stateful starter | "Built in this tab in 2322 ms, with nothing compiled: Dinner seats.holo, 69734 bytes, blake3:dd299756…. Proved: Lean's kernel accepted all 10 of its theorems. Tested: 59 of 59 examples give their recorded answer through it." |
 | Let a booking pass 12 seats, build (planted defect) | "Not built (stopped at prove): 2 of 10 theorems are not proved"; no holo is kept |
 | Undo, build | the same holo again: the same 69734 bytes under the same label |
 | Build the decision starter | Parking fee tier.holo, 41686 bytes; 3 of 3 theorems; 25 of 25 examples; 924 ms |
@@ -296,9 +296,8 @@ Limits of a workspace:
 Limits of the build:
 
 - It builds text applications. A rule table is proved in the page and not built here.
-- The holo is format v5, as the package's builder writes it.
+- The holo is format v6, as the package's builder writes it: sealed and named by BLAKE3, so the label the build reports is the holo's own. The label above was measured on the published page at commit `a6f12a58`; it moves whenever what a build writes changes, as it will when a holo gains its proof record.
 - The holo is kept only in the page: a reload loses it.
-- For a theorem with no proof the reason shown can be "no proof found (process is not defined)". The verdict is right, nothing is called proved; the reason is the proof finder (`src/vendor/kernel-path/emit.mjs`) reading `process.env`, which a browser does not have. Whether that also hides a proof Node would find is not known.
 
 Limits of the workbench page:
 
