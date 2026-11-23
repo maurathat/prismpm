@@ -103,6 +103,26 @@ const asked = HOST ? hostedModel() : new URLSearchParams(location.search).get('p
 const PROJECT = asked ? new URL(asked.replace(/\/?$/, '/'), location.href).href : null;
 const files = {};
 let listing, pin;
+// Which file of a model is opened first is part of its listing, which the app publishes. Under a host it is kept in
+// the app's own storage beside the model, so the model can be opened again with its site out of reach.
+const LISTING_KEPT = '/prism-ide/project.json';
+async function rememberListing(of) {
+  try { await HOST.space.storage.writeFile(LISTING_KEPT, new TextEncoder().encode(JSON.stringify({ entry: of.entry, files: of.files }))); } catch { /* storage that refuses keeps nothing; the next visit asks the app's site again */ }
+}
+/** The model as the app's holospace holds it, `{ listing, files }`, or null when it holds none or its listing is not kept. */
+async function heldModel() {
+  try {
+    const workspace = HOST.space.workspace;
+    const there = (await walkProvider(workspace)).filter((entry) => !entry.dir).map((entry) => entry.path);
+    if (there.length === 0) return null;
+    const kept = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await HOST.space.storage.readFile(LISTING_KEPT)));
+    if (typeof kept?.entry !== 'string' || !there.includes(kept.entry)) return null;
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    const held = {};
+    for (const path of there) held['/' + path] = decoder.decode(await workspace.readFile('/' + path));
+    return { listing: { entry: kept.entry, files: there.slice().sort() }, files: held };
+  } catch { return null; }
+}
 // ?model=blake3:<label>&registry=<address>&namespace=<name> opens a model by its content: the archive "Download
 // model" makes, fetched from a kappa-registry under its BLAKE3 label and taken only if its bytes are that label.
 const wanted = new URLSearchParams(location.search);
@@ -123,12 +143,23 @@ if (BY_LABEL) {
     throw error;
   }
 } else try {
-  [listing, pin] = await Promise.all([json(PROJECT ? PROJECT + 'project.json' : EDIT + 'project.json'), json(EDIT + 'pin.json')]);
-  await Promise.all(listing.files.map(async (path) => {
-    const response = await fresh((PROJECT ?? EDIT + 'project/') + path);
-    if (!response.ok) throw new Error(path + ' answered ' + response.status);
-    files['/' + path] = await response.text();
-  }));
+  pin = await json(EDIT + 'pin.json');
+  // Under a host the model is opened from the app's holospace when it is already there, with nothing fetched: the
+  // app's own site is asked only on the first visit, when the holospace is empty. So a second visit needs no network.
+  const held = HOST ? await heldModel() : null;
+  if (held) {
+    listing = held.listing;
+    Object.assign(files, held.files);
+    state.source = { kind: 'holospace', files: listing.files.length };
+  } else {
+    listing = await json(PROJECT ? PROJECT + 'project.json' : EDIT + 'project.json');
+    await Promise.all(listing.files.map(async (path) => {
+      const response = await fresh((PROJECT ?? EDIT + 'project/') + path);
+      if (!response.ok) throw new Error(path + ' answered ' + response.status);
+      files['/' + path] = await response.text();
+    }));
+    if (HOST) await rememberListing(listing);
+  }
 } catch (error) {
   // A browser gives no reason when another site's files may not be read, so the likely ones are named.
   state.error = String(error?.message ?? error);
