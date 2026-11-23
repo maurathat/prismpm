@@ -32,6 +32,8 @@ on:
       - sdk/npm/prism-code/ide/tools/build-audit-site.mjs
       - sdk/npm/prism-code/ide/tools/build-edit-site.mjs
       - sdk/npm/prism-code/ide/tools/build-offline-site.mjs
+      - sdk/npm/prism-code/ide/tools/build-kappa-store.mjs
+      - sdk/npm/prism-code/ide/tools/kept-labels.json
       - sdk/npm/prism-code/ide/tools/holospace-pins.json
       - sdk/npm/prism-code/ide/offline/**
       - sdk/npm/prism-code/ide/tools/edit-project.mjs
@@ -165,6 +167,32 @@ jobs:
           if (label.kappa !== listed) throw new Error(`ide.json names ${label.kappa}, and offline.json is ${listed}`);
           if (label.entry !== 'edit/ide/index.html') throw new Error('ide.json does not name the page the IDE starts at');
           console.log(`${paths.length} files listed, each the bytes its label names`);
+          JS
+      # A path holds the newest build only. So each build is also kept by label, with the builds the published site
+      # already keeps, read back from it: a label named for the IDE keeps resolving after the next build. A published
+      # site that cannot be read stops this job; history is not dropped quietly.
+      - name: Keep this build and the earlier ones by label
+        run: node ide/tools/build-kappa-store.mjs "$RUNNER_TEMP/audit-site" --from "https://uor-foundation.github.io/prismpm/"
+      - name: This build opens by its label alone, from the store
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - "$RUNNER_TEMP/audit-site" <<'JS'
+          import { readFileSync } from 'node:fs';
+          import { kappa } from './src/blake3.mjs';
+          const site = process.argv[2];
+          const named = JSON.parse(readFileSync(`${site}/ide.json`, 'utf8'));
+          if (named.store !== 'kappa/') throw new Error('ide.json does not name the store');
+          const at = (label) => `${site}/kappa/${label.slice(7)}`;
+          const listingBytes = new Uint8Array(readFileSync(at(named.kappa)));
+          if (kappa(listingBytes) !== named.kappa) throw new Error('the store does not hold this build under its label');
+          const listing = JSON.parse(new TextDecoder().decode(listingBytes));
+          for (const [path, entry] of Object.entries(listing.files)) {
+            if (kappa(new Uint8Array(readFileSync(at(entry.kappa)))) !== entry.kappa) throw new Error(`${path} is not in the store as the bytes its label names`);
+          }
+          const builds = JSON.parse(readFileSync(`${site}/kappa/index.json`, 'utf8')).builds;
+          if (builds[0].label !== named.kappa) throw new Error('the store does not list this build first');
+          console.log(`${Object.keys(listing.files).length} files open by label; ${builds.length} build(s) kept`);
           JS
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9

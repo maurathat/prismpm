@@ -85,7 +85,8 @@ export function offlineListing(out, commit) {
       const path = relative(out, at).split('\\').join('/');
       // A static host publishes no dot-file, and the worker cannot be the one to check itself or its listing.
       // Nor can the listing hold the file that names the listing by its label.
-      if (path === 'offline.json' || path === 'ide.json' || path === 'sw.js' || path.split('/').some((part) => part.startsWith('.'))) continue;
+      // Nor the store by label (tools/build-kappa-store.mjs): it holds this listing and earlier ones.
+      if (path === 'offline.json' || path === 'ide.json' || path === 'sw.js' || path.startsWith('kappa/') || path.split('/').some((part) => part.startsWith('.'))) continue;
       const bytes = readFileSync(at);
       files[path] = { kappa: kappa(bytes), bytes: bytes.length };
     }

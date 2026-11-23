@@ -1,0 +1,5 @@
+{
+ "schema": "prism-ide/kept-labels/1",
+ "note": "Builds of the IDE's site that are kept in its kappa/ store however old they are. tools/build-kappa-store.mjs keeps the newest builds by count; a label here is kept beyond that, so a label someone pins, such as the default IDE a holospace shell names, is not dropped by count alone. A label is added by a pull request, and only while the published site still keeps it.",
+ "labels": []
+}
