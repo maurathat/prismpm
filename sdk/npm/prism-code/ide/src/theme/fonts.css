@@ -1,4 +1,0 @@
-/* Geist Mono, from the Hologram brand kit (brand/fonts/web), under the SIL Open Font License 1.1: fonts/OFL.txt,
- * which is published beside the font. Held to the kit's bytes by tools/theme-test.mjs. */
-@font-face { font-family: 'Geist Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/GeistMono-Regular.woff2') format('woff2'); }
-@font-face { font-family: 'Geist Mono'; font-style: normal; font-weight: 500 700; font-display: swap; src: url('./fonts/GeistMono-Medium.woff2') format('woff2'); }

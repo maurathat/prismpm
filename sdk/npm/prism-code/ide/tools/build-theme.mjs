@@ -5,17 +5,17 @@
 // label names. Nothing of the kit is copied by hand. This file says which token colours which part of the workbench,
 // and writes:
 //
-//   src/theme/hologram-dark.json     a VS Code colour theme: the workbench's colours, the scopes other languages are
-//                                    coloured by, and the semantic tokens LexLean is coloured by
+//   src/theme/hologram-dark.json     a VS Code colour theme: the workbench's colours from the kit, and code coloured
+//                                    as Dark+ colours it (the scopes of other languages, LexLean's semantic tokens)
 //   src/theme/hologram-tokens.css    the same tokens as CSS variables, for the strip above the workbench (model.html)
 //
 // Both are committed, so building the workbench needs no network; tools/theme-test.mjs holds them to what this file
 // generates from the pinned tokens, and to the contrast the kit asks for.
 //
 // What the kit does not have: colours for code. It names a ground, text, muted text, borders, three states (success,
-// warning, destructive) and one accent, which it allows once in a view and never as a general highlight. So code is
-// coloured from the text tokens, by weight and slant more than by hue, and the accent is used for one thing: the
-// line over the tab that is open.
+// warning, destructive) and one accent, which it allows once in a view and never as a general highlight. Code is
+// therefore coloured as VS Code's own Dark+ colours it (the owner's choice: code should read as it does in VS Code),
+// on the kit's ground, and the accent is used for one thing: the line over the tab that is open.
 //
 // Usage: node tools/build-theme.mjs            fetch the pinned tokens and write both files
 //        node tools/build-theme.mjs <file>     the same, from a local copy of the tokens (held to the same label)
@@ -79,6 +79,13 @@ export function contrast(color, ground) {
 
 const NONE = '#00000000';
 
+// Code, as VS Code's Dark+ colours it (extensions/theme-defaults: dark_vs.json and dark_plus.json). These are not the
+// kit's: the kit has no colours for code.
+const DARK_PLUS = {
+  text: '#d4d4d4', comment: '#6a9955', string: '#ce9178', number: '#b5cea8', keyword: '#569cd6', control: '#c586c0', type: '#4ec9b0',
+  function: '#dcdcaa', variable: '#9cdcfe', constant: '#4fc1ff', regexp: '#d16969', escape: '#d7ba7d', invalid: '#f44747',
+};
+
 /** The theme: which token colours what. `c` is colorsOf(tokens). */
 export function themeOf(c) {
   const need = ['background', 'foreground', 'card', 'popover', 'primary', 'primary-foreground', 'primary-hover', 'secondary', 'muted-foreground', 'muted-foreground-subtle', 'brand',
@@ -93,14 +100,13 @@ export function themeOf(c) {
     'focusBorder': c.ring, 'selection.background': held, 'widget.shadow': NONE, 'scrollbar.shadow': NONE, 'widget.border': line,
     'textLink.foreground': c.link, 'textLink.activeForeground': c['link-hover'], 'textPreformat.foreground': text, 'textBlockQuote.background': raised, 'textCodeBlock.background': raised,
     // The editor.
-    'editor.background': ground, 'editor.foreground': text, 'editorCursor.foreground': text, 'editorGutter.background': ground,
+    'editor.background': ground, 'editor.foreground': DARK_PLUS.text, 'editorCursor.foreground': text, 'editorGutter.background': ground,
     'editorLineNumber.foreground': faint, 'editorLineNumber.activeForeground': text,
     'editor.selectionBackground': held, 'editor.inactiveSelectionBackground': c.secondary, 'editor.selectionHighlightBackground': c.secondary, 'editor.wordHighlightBackground': c.secondary,
     'editor.wordHighlightStrongBackground': held, 'editor.lineHighlightBackground': raised, 'editor.lineHighlightBorder': NONE,
     'editor.findMatchBackground': c['warning-subtle'], 'editor.findMatchBorder': c.warning, 'editor.findMatchHighlightBackground': c['info-border'],
     'editorIndentGuide.background1': hair, 'editorIndentGuide.activeBackground1': line, 'editorWhitespace.foreground': line, 'editorRuler.foreground': hair,
     'editorBracketMatch.background': c.secondary, 'editorBracketMatch.border': c.ring,
-    'editorBracketHighlight.foreground1': soft, 'editorBracketHighlight.foreground2': soft, 'editorBracketHighlight.foreground3': soft,
     'editorError.foreground': c.destructive, 'editorWarning.foreground': c.warning, 'editorInfo.foreground': c.info, 'editorHint.foreground': soft,
     'editorOverviewRuler.border': NONE, 'editorOverviewRuler.errorForeground': c.destructive, 'editorOverviewRuler.warningForeground': c.warning, 'editorOverviewRuler.infoForeground': c.info,
     'editorWidget.background': c.popover, 'editorWidget.foreground': text, 'editorWidget.border': line,
@@ -146,46 +152,34 @@ export function themeOf(c) {
     'problemsErrorIcon.foreground': c.destructive, 'problemsWarningIcon.foreground': c.warning, 'problemsInfoIcon.foreground': c.info,
     'breadcrumb.background': ground, 'breadcrumb.foreground': soft, 'breadcrumb.focusForeground': text, 'breadcrumb.activeSelectionForeground': text, 'breadcrumbPicker.background': c.popover,
     'settings.headerForeground': text, 'settings.modifiedItemIndicator': soft, 'welcomePage.tileBackground': raised, 'walkThrough.embeddedEditorBackground': raised,
-    // The terminal. Its colours are the state tokens; the kit has no blue, magenta or cyan, so those three are greys.
+    // The terminal, on the kit's ground. Its sixteen colours are left to VS Code's own, as in Dark+.
     'terminal.background': ground, 'terminal.foreground': text, 'terminalCursor.foreground': text, 'terminal.selectionBackground': held, 'terminal.border': hair,
-    'terminal.ansiBlack': raised, 'terminal.ansiRed': c.destructive, 'terminal.ansiGreen': c.success, 'terminal.ansiYellow': c.warning,
-    'terminal.ansiBlue': c['chart-2'], 'terminal.ansiMagenta': c['chart-3'], 'terminal.ansiCyan': soft, 'terminal.ansiWhite': text,
-    'terminal.ansiBrightBlack': faint, 'terminal.ansiBrightRed': c.destructive, 'terminal.ansiBrightGreen': c.success, 'terminal.ansiBrightYellow': c.warning,
-    'terminal.ansiBrightBlue': text, 'terminal.ansiBrightMagenta': c['chart-2'], 'terminal.ansiBrightCyan': text, 'terminal.ansiBrightWhite': text,
   };
-  // Code. Hue is kept for what a reader must not miss: a string is the success green, the one hue the kit has that
-  // is not a warning. The rest is told apart by weight and slant on the text tokens.
-  const code = {
-    comment: { foreground: soft, fontStyle: 'italic' },
-    keyword: { foreground: text, fontStyle: 'bold' },
-    type: { foreground: c['primary-hover'], fontStyle: 'italic' },
-    string: { foreground: c.success, fontStyle: '' },
-    number: { foreground: c['chart-2'], fontStyle: '' },
-    operator: { foreground: soft, fontStyle: '' },
-    property: { foreground: c['chart-2'], fontStyle: '' },
-    namespace: { foreground: soft, fontStyle: 'italic' },
-  };
-  const scopes = {
-    comment: ['comment', 'punctuation.definition.comment'],
-    keyword: ['keyword', 'storage', 'storage.type', 'storage.modifier', 'keyword.control'],
-    type: ['entity.name.type', 'entity.name.class', 'support.type', 'support.class', 'entity.other.inherited-class'],
-    string: ['string', 'string.quoted', 'string.template', 'constant.other.symbol'],
-    number: ['constant.numeric', 'constant.language', 'constant.character'],
-    operator: ['keyword.operator', 'punctuation', 'meta.brace'],
-    property: ['variable.other.property', 'support.type.property-name', 'entity.other.attribute-name', 'meta.object-literal.key', 'entity.name.tag'],
-    namespace: ['entity.name.namespace', 'entity.name.module', 'support.module'],
-  };
+  const d = DARK_PLUS;
+  const rule = (name, scope, foreground, fontStyle) => ({ name, scope, settings: { foreground, ...(fontStyle ? { fontStyle } : {}) } });
   const tokenColors = [
-    ...Object.entries(scopes).map(([kind, scope]) => ({ name: kind, scope, settings: { foreground: code[kind].foreground, ...(code[kind].fontStyle ? { fontStyle: code[kind].fontStyle } : {}) } })),
-    { name: 'function', scope: ['entity.name.function', 'support.function', 'meta.function-call'], settings: { foreground: text } },
-    { name: 'variable', scope: ['variable', 'variable.parameter', 'meta.definition.variable'], settings: { foreground: text } },
-    { name: 'invalid', scope: ['invalid', 'invalid.illegal'], settings: { foreground: c.destructive } },
-    { name: 'markup heading', scope: ['markup.heading', 'entity.name.section'], settings: { foreground: text, fontStyle: 'bold' } },
-    { name: 'markup', scope: ['markup.inserted'], settings: { foreground: c.success } },
-    { name: 'markup deleted', scope: ['markup.deleted'], settings: { foreground: c.destructive } },
+    rule('comment', ['comment', 'punctuation.definition.comment'], d.comment),
+    rule('string', ['string', 'string.quoted', 'string.template', 'meta.embedded.assembly'], d.string),
+    rule('regular expression', ['string.regexp'], d.regexp),
+    rule('escape', ['constant.character.escape'], d.escape),
+    rule('number', ['constant.numeric', 'keyword.other.unit'], d.number),
+    rule('keyword', ['keyword', 'storage', 'storage.type', 'storage.modifier', 'constant.language', 'meta.preprocessor', 'entity.name.tag', 'variable.language'], d.keyword),
+    rule('control keyword', ['keyword.control', 'keyword.operator.new', 'keyword.other.using', 'keyword.other.operator'], d.control),
+    rule('operator', ['keyword.operator', 'punctuation', 'meta.brace'], d.text),
+    rule('type', ['entity.name.type', 'entity.name.class', 'entity.name.namespace', 'entity.name.scope-resolution', 'support.type', 'support.class', 'entity.other.inherited-class'], d.type),
+    rule('function', ['entity.name.function', 'support.function', 'support.constant.handlebars'], d.function),
+    rule('variable', ['variable', 'meta.definition.variable.name', 'support.variable', 'entity.name.variable', 'entity.other.attribute-name', 'support.type.property-name', 'meta.object-literal.key'], d.variable),
+    rule('constant', ['variable.other.constant', 'variable.other.enummember'], d.constant),
+    rule('invalid', ['invalid', 'invalid.illegal'], d.invalid),
+    rule('markup heading', ['markup.heading', 'entity.name.section'], d.keyword, 'bold'),
+    rule('markup bold', ['markup.bold'], d.keyword, 'bold'),
+    rule('markup italic', ['markup.italic'], d.text, 'italic'),
+    rule('markup inserted', ['markup.inserted'], d.number),
+    rule('markup deleted', ['markup.deleted'], d.string),
   ];
-  // LexLean is coloured by semantic tokens (src/lexlean-language.js gives these eight kinds).
-  const semanticTokenColors = Object.fromEntries(Object.entries(code).map(([kind, style]) => [kind, { foreground: style.foreground, bold: style.fontStyle.includes('bold'), italic: style.fontStyle.includes('italic') }]));
+  // LexLean is coloured by semantic tokens (src/lexlean-language.js gives these eight kinds), each as Dark+ colours
+  // the same kind in any language.
+  const semanticTokenColors = { keyword: d.keyword, type: d.type, string: d.string, number: d.number, operator: d.text, property: d.variable, namespace: d.type, comment: d.comment };
   return {
     $schema: 'vscode://schemas/color-theme',
     name: THEME_NAME,
@@ -227,9 +221,9 @@ export function contrastReport(theme) {
     ['a warning in a list', k['list.warningForeground'], k['sideBar.background']],
     ['a link', k['textLink.foreground'], k['editor.background']],
     ['the terminal', k['terminal.foreground'], k['terminal.background']],
-    ...['Red', 'Green', 'Yellow', 'Blue', 'Magenta', 'Cyan', 'White'].map((name) => [`the terminal's ${name.toLowerCase()}`, k['terminal.ansi' + name], k['terminal.background']]),
-    ...Object.entries(theme.semanticTokenColors).map(([kind, style]) => [`code: ${kind}`, style.foreground, k['editor.background']]),
-    ...Object.entries(theme.semanticTokenColors).map(([kind, style]) => [`code: ${kind}, on the cursor's line`, style.foreground, k['editor.lineHighlightBackground']]),
+    ...Object.entries(theme.semanticTokenColors).map(([kind, color]) => [`code: ${kind}`, color, k['editor.background']]),
+    ...Object.entries(theme.semanticTokenColors).map(([kind, color]) => [`code: ${kind}, on the cursor's line`, color, k['editor.lineHighlightBackground']]),
+    ...theme.tokenColors.map((r) => [`code in other languages: ${r.name}`, r.settings.foreground, k['editor.background']]),
   ].map(([what, color, ground]) => ({ what, color, ground, least: 4.5 }));
   const marks = [
     ['the cursor', k['editorCursor.foreground'], k['editor.background']],

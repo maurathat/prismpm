@@ -34,10 +34,8 @@ import getKeybindingsOverride from '@codingame/monaco-vscode-keybindings-service
 import getQuickAccessOverride from '@codingame/monaco-vscode-quickaccess-service-override';
 import '@codingame/monaco-vscode-theme-defaults-default-extension';
 import { registerExtension, ExtensionHostKind } from '@codingame/monaco-vscode-api/extensions';
-// The workbench's own theme and font, from the Hologram brand kit (tools/build-theme.mjs, tools/brand-pins.json).
+// The workbench's own theme, from the Hologram brand kit (tools/build-theme.mjs, tools/brand-pins.json).
 import hologramThemeUrl from './theme/hologram-dark.json?url';
-import geistMonoLicenceUrl from './theme/fonts/OFL.txt?url';
-import './theme/fonts.css';
 import extHostWorkerUrl from '@codingame/monaco-vscode-api/workers/extensionHost.worker?worker&url';
 import editorWorkerUrl from '@codingame/monaco-vscode-api/workers/editor.worker?worker&url';
 import { LEXLEAN, registerLexLean, tokenTypes } from './lexlean-language.js';
@@ -429,12 +427,9 @@ try {
     contributes: { themes: [{ id: HOLOGRAM_THEME, label: HOLOGRAM_THEME, uiTheme: 'vs-dark', path: './hologram-dark.json' }] } }, ExtensionHostKind.LocalProcess, { system: true });
   hologram.registerFileUrl('./hologram-dark.json', hologramThemeUrl);
   const theme = new URLSearchParams(location.search).get('theme') || HOLOGRAM_THEME;
-  // Geist Mono, the kit's, shipped beside the page with its licence; the system's own after it, should it not load.
-  const mono = "'Geist Mono', ui-monospace, Consolas, 'Courier New', monospace";
-  state.font = { family: 'Geist Mono', licence: geistMonoLicenceUrl };
+  // The editor's font and its size are VS Code's own, untouched: code reads as it does there.
   // No minimap: it is one more thing drawn on every keystroke, and the files here are short.
-  await initUserConfiguration(JSON.stringify({ 'editor.semanticHighlighting.enabled': true, 'workbench.colorTheme': theme, 'editor.minimap.enabled': false,
-    'editor.fontFamily': mono, 'editor.fontLigatures': false, 'terminal.integrated.fontFamily': mono }));
+  await initUserConfiguration(JSON.stringify({ 'editor.semanticHighlighting.enabled': true, 'workbench.colorTheme': theme, 'editor.minimap.enabled': false }));
 
   await initialize({
     ...getExtensionsOverride({ enableWorkerExtensionHost: true }), ...getFilesOverride(), ...getConfigurationOverride(),
