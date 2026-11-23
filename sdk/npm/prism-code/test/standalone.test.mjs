@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readSession, startApp, writeSession } from '../src/journey/project.mjs';
+import { kappa } from '../src/blake3.mjs';
 
 const PACKAGE = fileURLToPath(new URL('../', import.meta.url));
 const bin = join(PACKAGE, 'bin', 'prism-code.mjs');
@@ -308,6 +309,9 @@ for (const [starter, theorem, input] of [['decision-app', 'ParkingFeeTierProofs.
     const built = JSON.parse(build.out).summary;
     assert.ok(built.theoremsDeclared > 0 && built.theoremsVerified === built.theoremsDeclared && built.vectorsPassed === built.vectorsTotal && built.vectorsTotal > 0);
     assert.doesNotMatch(built.artifact, /template-contract/, 'the holo is named for the app, not the template');
+    // The app's address is its UOR content address: the BLAKE3 kappa-label of the holo's bytes, and nothing else.
+    assert.match(built.address, /^blake3:[0-9a-f]{64}$/);
+    assert.equal(built.address, kappa(new Uint8Array(readFileSync(join(root, built.artifact)))));
     const verify = run(['verify', '--json'], { cwd: root, env: OFFLINE });
     assert.equal(verify.code, 0, verify.out);
     const ran = run(['run', '--input', input, '--rm'], { cwd: root, env: OFFLINE });
@@ -316,6 +320,42 @@ for (const [starter, theorem, input] of [['decision-app', 'ParkingFeeTierProofs.
     assert.ok(ran.out.length > 0, 'the app answered');
   });
 }
+
+test('init gives each project an ID of its own, keeps it, and no build reads it', { timeout: 600000 }, () => {
+  const idOf = (root) => /^id = "([0-9a-f]{64})"$/m.exec(readFileSync(join(root, 'prism.project'), 'utf8'))?.[1];
+  const [one, two] = [join(scratch(), 'app'), join(scratch(), 'app')];
+  for (const root of [one, two]) {
+    mkdirSync(root);
+    const init = run(['init', root], { cwd: root });
+    assert.equal(init.code, 0, init.err);
+    assert.match(init.out, /prism\.project +a new project ID/);
+  }
+  // Two projects of one name, from the one template: two IDs.
+  assert.ok(idOf(one) && idOf(two) && idOf(one) !== idOf(two));
+  // The ID is kept by a second init, and by --force, which writes the template again.
+  const first = idOf(one);
+  assert.match(run(['init', one], { cwd: one }).out, /prism\.project +the project ID, kept/);
+  assert.equal(run(['init', one, '--force'], { cwd: one }).code, 0);
+  assert.equal(idOf(one), first);
+  // No build reads it: the two projects build the same bytes, and so the same address, and neither holo holds an ID.
+  const built = [one, two].map((root) => {
+    const build = run(['build', '--json'], { cwd: root, env: OFFLINE });
+    assert.equal(build.code, 0, build.out);
+    return JSON.parse(build.out).summary;
+  });
+  assert.equal(built[0].address, built[1].address);
+  // And that address is the UOR content address of the bytes: their BLAKE3 kappa-label, recomputed here.
+  assert.match(built[0].address, /^blake3:[0-9a-f]{64}$/);
+  for (const [root, id] of [[one, idOf(one)], [two, idOf(two)]]) {
+    const holo = readFileSync(join(root, 'app', '.prism', 'build', readdirSync(join(root, 'app', '.prism', 'build')).find((f) => f.endsWith('.holo'))));
+    assert.equal(holo.includes(Buffer.from(id)), false, 'the holo does not hold the project ID');
+    assert.equal(kappa(new Uint8Array(holo)), built[0].address);
+  }
+  // A file that states no ID is left as it is, and init says so.
+  writeFileSync(join(two, 'prism.project'), 'id = "not an id"\n');
+  assert.match(run(['init', two], { cwd: two }).out, /prism\.project +states no project ID; left as it is/);
+  assert.equal(readFileSync(join(two, 'prism.project'), 'utf8'), 'id = "not an id"\n');
+});
 
 test('lock writes the lock again after the project changes, and only what LexLean accepts', { timeout: 600000 }, () => {
   const root = scratch();

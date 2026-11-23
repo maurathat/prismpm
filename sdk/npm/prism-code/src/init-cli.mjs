@@ -20,8 +20,10 @@
  *
  * Exit codes: 0 scaffolded, 2 refused (a file exists, a bad name), 64 usage.
  */
-import { existsSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { PROJECT_FILE, projectFileText, projectIdOf } from './journey/project-id.mjs';
 import { nameFromDirectory, nextSteps } from './init.mjs';
 import { PrismCodeError } from './errors.mjs';
 import { parseManifest } from './manifest.mjs';
@@ -73,6 +75,19 @@ async function writeSkill(directory) {
   });
 }
 
+/**
+ * The project's ID (journey/project-id.mjs): the one `prism.project` holds, or a new one, from 32 random bytes, written
+ * there when the folder has none. A file that states no well-formed ID is left as it is and reported, never replaced.
+ * Returns `{ id, made }`, `id` null when the file is there and states none.
+ */
+export function ensureProjectId(directory) {
+  const file = join(directory, PROJECT_FILE);
+  if (existsSync(file)) return { id: projectIdOf(readFileSync(file, 'utf8')), made: false };
+  const id = randomBytes(32).toString('hex');
+  writeFileSync(file, projectFileText(id));
+  return { id, made: true };
+}
+
 /** The app's prism.toml: named `name`, its model in the template's app, deny by default. Throws `manifest.invalid` for a name the manifest refuses. */
 export function templateManifest(name) {
   const text = [
@@ -111,6 +126,12 @@ export async function runInit(argv, { out = process.stdout, err = process.stderr
   const shown = positional[0] ?? '.';
   const directory = resolve(cwd, shown);
   const name = options.name ?? nameFromDirectory(directory);
+  // The project's ID is made once and kept, by a second init and by --force alike: it is what a holospace knows the project by.
+  const identity = () => {
+    const { id, made } = ensureProjectId(directory);
+    const what = id === null ? 'states no project ID; left as it is' : `${made ? 'a new project ID' : 'the project ID, kept'}: it names this project's holospace, and no build reads it`;
+    out.write(`  ${PROJECT_FILE.padEnd(22)} ${what}\n`);
+  };
   const skill = async () => {
     if (options['no-skill']) return;
     for (const folder of await writeSkill(directory)) out.write(`  ${folder.padEnd(22)} the Prism skill, for the agent that works here\n`);
@@ -120,6 +141,7 @@ export async function runInit(argv, { out = process.stdout, err = process.stderr
   const held = sourceFiles(join(directory, APP_FOLDER)).length > 0 || sourceFiles(directory).length > 0;
   if (held && !options.force) {
     out.write(`${name} in ${directory}\n  a LexLean model is here already; left as it is\n`);
+    identity();
     await skill();
     out.write(nextSteps(shown));
     return 0;
@@ -142,6 +164,7 @@ export async function runInit(argv, { out = process.stdout, err = process.stderr
   out.write(`  the canonical template ${made.written.length + made.kept.length} files of ${template.repository}, ${made.label}\n`);
   out.write(`  ${`${APP_FOLDER}/src/`.padEnd(22)} the model to edit: replace the template's contract checker with your app\n`);
   out.write(`  ${''.padEnd(22)} until then, build names the holo for the template's app: template-contract.holo\n`);
+  identity();
   await skill();
   out.write(nextSteps(shown));
   return 0;

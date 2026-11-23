@@ -258,8 +258,7 @@ guest imports fail `capabilities.import` regardless of grants. A policy's
 ## Create, configure and build (experimental)
 
 ```sh
-npx prism-code init calculator
-# equivalent: npm create prism-code calculator
+npx prism-code@latest init calculator   # the one command every app starts with
 cd calculator
 npx prism-code check
 npx prism-code build

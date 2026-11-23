@@ -28,6 +28,7 @@ import { guaranteeStatement, proofKey } from './kappa-rules.mjs';
 import { STATUS, judgedFacts, proved, status, termReusable } from './canonical-rules.mjs';
 import { configuredStore as publicStoreOf, pullProofs } from './proof-store.mjs';
 import { kappa } from '../uorc.mjs';
+import { kappa as blake3Label } from '../blake3.mjs';
 import { ensureKernel, hasKernel, readKernelFile } from './kernel-store.mjs';
 import { HOLDS, KERNEL_AXIOMS, proofLines, readLibrary } from './kernel-terms.mjs';
 
@@ -49,6 +50,11 @@ export function readPinned({ read = (file) => (file === 'manifest.json' ? readFi
   // The library is entered without being judged again: sound only for one this same kernel judged whole.
   const b = manifest.binding;
   if (!b || b.kernel !== got.kernel || b.loader !== got.loader || b.library !== got.library) throw new Error('there is no record that this kernel judged this library whole');
+  // The same three files by their UOR content addresses, the BLAKE3 kappa-labels of the decoded bytes: the manifest
+  // names them so beside SHA-256, and the binding too, and a file that is not the one so named is refused as well.
+  const labels = { loader: blake3Label(glue), kernel: blake3Label(wasm), library: blake3Label(library) };
+  if (labels.loader !== manifest.glue.kappa || labels.kernel !== manifest.wasm.kappa || labels.library !== manifest.library.kappa) throw new Error('the kernel, its loader or its library is not the pinned one');
+  if (b.kernelKappa !== labels.kernel || b.loaderKappa !== labels.loader || b.libraryKappa !== labels.library) throw new Error('there is no record that this kernel judged this library whole');
   return { manifest, glue, wasm, library, addresses: got };
 }
 
