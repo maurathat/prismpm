@@ -48,7 +48,12 @@ assert.match(holoVerdict(found, ID, true).text, /^Your text still has the identi
 
 // Planted defect: a model published otherwise than the record names is said plainly; the reader's own change is not blamed on the app.
 assert.equal(holoVerdict(found, OTHER, false).state, 'other');
-assert.match(holoVerdict(found, OTHER, false).text, new RegExp(`^This is NOT the model the app at .* LexLean gives it sha256:${OTHER}, and the app's record names sha256:${ID}\\.$`));
+assert.match(holoVerdict(found, OTHER, false).text, /^This is NOT the model the app at .* LexLean gives it another identity than the app's record names\.$/);
+// No sentence shows a SHA-256: the only names a reader is given are BLAKE3 labels.
+for (const [identity, edited] of [[ID, false], [ID, true], [OTHER, false], [OTHER, true], [null, false]]) {
+  const said = holoVerdict(found, identity, edited).text;
+  assert.ok(!/sha-?256/i.test(said) && !said.includes(ID) && !said.includes(OTHER), said);
+}
 assert.equal(holoVerdict(found, OTHER, true).state, 'changed');
 assert.match(holoVerdict(found, OTHER, true).text, /The app itself is unchanged\.$/);
 assert.equal(holoVerdict(found, null, false).state, 'unread');

@@ -1,0 +1,18 @@
+{
+ "schema": "prism-ide/brand-pins/1",
+ "note": "The Hologram brand kit the workbench is themed from. tools/build-theme.mjs reads the tokens at this commit and takes them only as the bytes their BLAKE3 label names. The kit is not changed from here: a token the theme needs and the kit lacks stops the build.",
+ "repository": "https://github.com/Hologram-Technologies/hologram-brand-kit",
+ "raw": "https://raw.githubusercontent.com/Hologram-Technologies/hologram-brand-kit/",
+ "commit": "f14a9d8cfe6bce14fc8a6ff09ac0f99b01e300be",
+ "set": "hologram-dark",
+ "license": {
+  "tokens": "MPL-2.0"
+ },
+ "files": {
+  "tokens": {
+   "path": "brand/tokens/hologram-tokens.json",
+   "kappa": "blake3:642314875cadf458b5e110aec717dd88a1ce22fd2efd899d53751d47257ee06c",
+   "bytes": 27970
+  }
+ }
+}

@@ -667,6 +667,21 @@ capability = "OC-11"
 statement = "prismpm.lock does not select an immutable SDK image, or the image named is not immutable."
 
 [[error]]
+code = "lock.refused"
+capability = "DK-46"
+statement = "LexLean does not accept, as the lock it would have written, the lexlean.lock that prism-code lock proposes for the project, so nothing was written."
+
+[[error]]
+code = "lock.stale"
+capability = "DK-46"
+statement = "lexlean.lock is not the lock of the project as it is: lexlean.toml, a workspace file or a lexicon changed since it was written, and prism-code lock --check only says so."
+
+[[error]]
+code = "lock.unresolved"
+capability = "DK-46"
+statement = "prism-code lock cannot write the lock from the project's files: an embedded package the lock does not hold, a Git package, a source package or a PDF provider, or a lexicon folder with no lexicon.toml."
+
+[[error]]
 code = "manifest.env"
 capability = "DK-41"
 statement = "A manifest variable reads an environment variable that is not set."

@@ -23,6 +23,7 @@ import { canonicalJson, parseArchive } from './archive.mjs';
 import { sealName } from './uorc.mjs';
 import { attestationSection, readAttestations, stripAttestations } from './attestations.mjs';
 import { PolicyParseError, PrismError, VerificationError, classForCheck } from './errors.mjs';
+import { blake3Hex } from './blake3.mjs';
 
 export const EXIT = ASSURANCE.EXIT;
 
@@ -223,6 +224,27 @@ export async function check(path, options = {}) {
     if (error instanceof PrismError) throw error;
     throw noVerdict('verify.input', error.message, error);
   }
+}
+
+/**
+ * A policy that accepts exactly one holo, whatever its level: `digests.archive` pins the archive as a verdict judges
+ * it, which is the file without its attestation section, so that signing it afterwards does not change what is
+ * pinned. For a caller that has just established the holo's evidence itself, by building it or by proving it again,
+ * and runs it without a signature to carry that evidence. Throws a no-verdict error when the bytes are no archive.
+ *
+ * @param {string | Uint8Array} path the holo, as a path or its bytes
+ * @param {string} name the policy's name, as a verdict prints it
+ */
+export async function pinnedPolicy(path, name) {
+  const bytes = path instanceof Uint8Array ? path : await holoBytes(path);
+  let parsed;
+  try {
+    parsed = parseArchive(bytes);
+  } catch (cause) {
+    throw noVerdict('verify.input', cause.message, cause);
+  }
+  const judged = attestationSection(parsed) ? stripAttestations(parsed) : bytes;
+  return { name, minimum: 'P0', digests: { archive: { blake3: blake3Hex(judged) } } };
 }
 
 /** The human title of a reason: its error class without the `Error` suffix, such as `ProofMismatch`. */

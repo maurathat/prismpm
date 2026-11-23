@@ -22,12 +22,14 @@
  * manifest fails its checks or the model does not check (it does not parse, link or elaborate). A contract
  * violation is exit 1.
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { holospaceOf } from './holospace-link.mjs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { PrismCodeError, PrismError } from './errors.mjs';
 import { lexleanProjectDir } from './tiers.mjs';
 import { checkContract, checkRefusals, checkTheorems, contractRoot, isContract2, lexiconEntries, writeConformance } from './contract.mjs';
 import { readSession, sourceDigest, sourceFiles, writeSession } from './journey/project.mjs';
+import { proofRemedy, theoremPlace } from './journey/proof-hints.mjs';
 
 export const REPORT_SCHEMA = 'prism/report/1';
 export const EXIT = Object.freeze({ OK: 0, FAILED: 1, REFUSED: 2 });
@@ -37,29 +39,40 @@ const forward = (path) => path.split('\\').join('/');
 /** A report code of this module's own, written as an error so that it is registered like every code prism-code raises. */
 const coded = (error) => ({ code: error.code, message: error.message });
 
-/** One diagnostic of the report. `at` is `file:line:column`, as the engine anchors a diagnostic. */
-function diagnostic({ code, message, at = null, file = null, remediation = null, severity = 'error' }) {
-  const m = at ? /^(.*):(\d+):(\d+)$/.exec(at) : null;
+/**
+ * One diagnostic of the report. `at` is `file:line:column`, as the engine anchors a diagnostic, or `file:line`, as a
+ * hint names the line a quoted name is written on (hints.mjs): then the column is null, and the place is still given.
+ */
+function diagnostic({ code, message, at = null, file = null, line = null, remediation = null, severity = 'error' }) {
+  const m = at ? /^(.*?):(\d+)(?::(\d+))?$/.exec(at) : null;
   return {
     code: code ?? new PrismCodeError('report.uncoded', '').code,
     severity,
     file: m ? forward(m[1]) : file,
-    line: m ? Number(m[2]) : null,
-    column: m ? Number(m[3]) : null,
+    line: m ? Number(m[2]) : line,
+    column: m?.[3] ? Number(m[3]) : null,
     message: String(message ?? ''),
     remediation,
   };
 }
 
-/** The diagnostics of one engine step: each of its own, or the step's message when it names none. */
-function stepDiagnostics(result, fallback) {
-  const own = (result.diagnostics ?? []).map((d) => diagnostic({ code: d.code, message: d.message, at: d.at, remediation: d.didYouMean?.length ? `Write ${d.didYouMean.map((n) => `\`${n}\``).join(' or ')} instead.` : null }));
+/** The model's sources under `dir`, as `[path, text]` pairs, for proof-hints.mjs; none without a folder. */
+const modelTexts = (dir) => (dir ? sourceFiles(dir).map((file) => [file, readFileSync(join(dir, file), 'utf8')]) : []);
+
+/** The diagnostics of one engine step: each of its own, or the step's message when it names none. `dir` is the model's folder. */
+function stepDiagnostics(result, fallback, dir = null) {
+  // A title is a phrase of a lexicon the module uses, never free text: say so, since the diagnostic names only the word.
+  // A stale lock names a command prism-code does not ship; this one does the same, and LexLean checks what it writes.
+  const relock = (d) => (d.code === 'LLC0102' ? 'Run prism-code lock: it writes lexlean.lock again for the project as it is, and LexLean checks it. Never edit the lock by hand.' : null);
+  const titled = (d) => (/^\\title\{/.test(d.line ?? '') ? 'A \\title is a phrase a lexicon of the module defines (language/*/entries), not free text. Keep the title the module had, or add the phrase as a lexicon entry.' : null);
+  const own = (result.diagnostics ?? []).map((d) => diagnostic({ code: d.code, message: d.message, at: d.at, remediation: relock(d) ?? titled(d) ?? (d.didYouMean?.length ? `Write ${d.didYouMean.map((n) => `\`${n}\``).join(' or ')} instead.` : null) }));
   if (own.length > 0) {
     if (own[0].remediation === null) own[0].remediation = result.message ?? null;
     return own;
   }
   const missed = (result.theorems ?? []).filter((t) => !t.status.startsWith('proved'));
-  if (missed.length > 0) return missed.map((t) => diagnostic({ ...coded(new PrismCodeError('proof.rejected', `${t.theorem}: ${t.status}`)), remediation: 'Repair the definition or the theorem in the model; never weaken the theorem to make it pass.' }));
+  const texts = missed.length > 0 ? modelTexts(dir) : [];
+  if (missed.length > 0) return missed.map((t) => diagnostic({ ...coded(new PrismCodeError('proof.rejected', `${t.theorem}: ${t.status}`)), ...theoremPlace(texts, t.theorem), remediation: proofRemedy(String(t.status)) }));
   return [diagnostic({ code: result.code ?? fallback.code, message: result.message, remediation: result.next ?? null })];
 }
 
@@ -87,7 +100,7 @@ async function openProject(path, explicit) {
       dir = resolve(root, lexleanProjectDir(root, manifest?.model?.source ?? null, explicit ?? null));
     } catch (error) {
       if (!(error instanceof PrismError)) throw error;
-      diagnostics.push(diagnostic({ code: error.code, message: error.message, remediation: 'Run prism-code init <dir> to scaffold a project, or name the model with --project <dir>.' }));
+      diagnostics.push(diagnostic({ code: error.code, message: error.message, remediation: 'Run npx prism-code@latest init <dir> to scaffold a project, or name the model with --project <dir>.' }));
       refused = true;
     }
   }
@@ -134,7 +147,7 @@ async function gate(project, session, { env, log, engine, write = false }) {
     for (const d of contract.diagnostics) diagnostics.push(contractDiagnostic(d));
   }
   const checked = await check(project.dir, session, { env, log });
-  if (!checked.ok) return { code: EXIT.REFUSED, summary, diagnostics: [...diagnostics, ...stepDiagnostics(checked, new PrismCodeError('model.unchecked', ''))] };
+  if (!checked.ok) return { code: EXIT.REFUSED, summary, diagnostics: [...diagnostics, ...stepDiagnostics(checked, new PrismCodeError('model.unchecked', ''), project.dir)] };
   const proved = await prove(project.dir, session, { env, log });
   const judged = proved.theorems ?? proved.guarantees ?? [];
   summary.theoremsDeclared = judged.length;
@@ -151,7 +164,7 @@ async function gate(project, session, { env, log, engine, write = false }) {
     for (const d of refused.diagnostics) diagnostics.push(contractDiagnostic(d));
     summary.contractViolations += refused.diagnostics.length;
   }
-  if (!proved.ok) return { code: EXIT.FAILED, summary, root, diagnostics: [...diagnostics, ...stepDiagnostics(proved, new PrismCodeError('proof.rejected', ''))] };
+  if (!proved.ok) return { code: EXIT.FAILED, summary, root, diagnostics: [...diagnostics, ...stepDiagnostics(proved, new PrismCodeError('proof.rejected', ''), project.dir)] };
   if (summary.contractViolations > 0) return { code: EXIT.FAILED, summary, root, diagnostics };
   return { code: null, summary, root, diagnostics };
 }
@@ -165,6 +178,49 @@ export async function modelCheck(path, { project: explicit = null, env = process
   return answer('check', started, gated.code ?? EXIT.OK, gated.summary, gated.diagnostics);
 }
 
+/**
+ * `lock`: write the project's lexlean.lock again after the project changed, or with `check` only say whether it is
+ * current. The lock is proposed here (journey/relock.mjs) and judged by LexLean, which checks it byte for byte as
+ * `lexlean lock --check`: nothing is written unless LexLean accepts it as the lock it would have written itself.
+ */
+export async function modelLock(path, { project: explicit = null, check = false, env = process.env } = {}) {
+  const started = Date.now();
+  const project = await openProject(path, explicit);
+  if (project.refused) return answer('lock', started, EXIT.REFUSED, {}, project.diagnostics);
+  const { lockCandidate } = await import('./journey/relock.mjs');
+  const { projectFiles, runLexleanWasm } = await import('./journey/lexlean-wasm.mjs');
+  let candidate;
+  try {
+    candidate = lockCandidate(projectFiles(project.dir));
+  } catch (error) {
+    if (!(error instanceof PrismCodeError)) throw error;
+    return answer('lock', started, EXIT.REFUSED, {}, [...project.diagnostics, diagnostic({ code: error.code, message: error.message, file: 'lexlean.toml', remediation: 'Change what the message names, then run prism-code lock again; never edit the lock by hand.' })]);
+  }
+  const file = join(project.dir, candidate.lockfile);
+  const held = existsSync(file) ? readFileSync(file, 'utf8') : null;
+  const summary = { lockfile: forward(relative(process.cwd(), file) || file), current: held === candidate.text, written: false, packages: (candidate.text.match(/^\[\[package\]\]$/gm) ?? []).length };
+  if (!summary.current && check) {
+    return answer('lock', started, EXIT.FAILED, summary, [...project.diagnostics, diagnostic({ ...coded(new PrismCodeError('lock.stale', `${candidate.lockfile} is not the lock of the project as it is: lexlean.toml, a workspace file or a lexicon changed since it was written.`)), file: summary.lockfile, remediation: 'Run prism-code lock, which writes it again and has LexLean check it.' })]);
+  }
+  // LexLean is the judge of a lock, the one on disk as much as one proposed here.
+  const judged = await runLexleanWasm(project.dir, ['--diagnostic-format', 'json', 'lock', '--check'], { env, files: [[`/${candidate.lockfile}`, new TextEncoder().encode(candidate.text)]] });
+  if (judged.exit !== 0) {
+    let said = [];
+    try {
+      said = JSON.parse(judged.stdout.toString()).diagnostics ?? [];
+    } catch {
+      // LexLean gave no command result; its exit code is the answer.
+    }
+    const why = said.map((d) => `${d.code}: ${d.message}`).join('; ') || `LexLean exited ${judged.exit}`;
+    return answer('lock', started, EXIT.REFUSED, summary, [...project.diagnostics, diagnostic({ ...coded(new PrismCodeError('lock.refused', `LexLean does not accept the lock this command would write (${why}), so nothing was written.`)), file: summary.lockfile, remediation: 'The project needs something this command does not lock; the message says what LexLean found.' })]);
+  }
+  if (!summary.current) {
+    writeFileSync(file, candidate.text);
+    summary.written = true;
+  }
+  return answer('lock', started, EXIT.OK, summary, project.diagnostics);
+}
+
 /** What a build wrote, from the session: `{ kind, path, source }`, or null. */
 function builtOf(session) {
   const holo = session.status.built;
@@ -172,6 +228,12 @@ function builtOf(session) {
   const rule = session.status.ruleApp;
   if (rule?.path) return { kind: 'rule-app', path: rule.path, source: session.status.lastBuild?.source ?? session.status.kernelChecked?.source ?? null, address: rule.address };
   return null;
+}
+
+/** `{ holospace }` for a built holo: the link to its own holospace and the file that page asks for; else nothing. */
+function holospaceMember(built, file) {
+  const holospace = built.holo ? holospaceOf(built.address, file) : null;
+  return holospace ? { holospace } : {};
 }
 
 /**
@@ -198,7 +260,25 @@ export async function modelBuild(path, { project: explicit = null, out = null, s
     artifact = join(resolve(out), basename(written));
     copyFileSync(written, artifact);
   }
-  return answer('build', started, EXIT.OK, { ...summary, artifact: forward(relative(process.cwd(), artifact) || artifact), address: built.address, bytes: built.bytes ?? statSync(written).size, site: built.site ? forward(relative(process.cwd(), built.site) || built.site) : null }, gated.diagnostics);
+  return answer('build', started, EXIT.OK, { ...summary, ...holospaceMember(built, forward(relative(process.cwd(), artifact) || artifact)), artifact: forward(relative(process.cwd(), artifact) || artifact), address: built.address, bytes: built.bytes ?? statSync(written).size, site: built.site ? forward(relative(process.cwd(), built.site) || built.site) : null }, gated.diagnostics);
+}
+
+/**
+ * What `build` last wrote for the project, when it is still the build of the model as it is on disk: `{ kind, path,
+ * address }`, or null when nothing is built, the sources changed since, or that build did not pass. `run` of a
+ * project uses it to skip a build that would write the same bytes.
+ */
+export async function modelBuilt(path, { project: explicit = null } = {}) {
+  const project = await openProject(path, explicit);
+  if (project.refused) return null;
+  const session = readSession(project.dir);
+  const built = builtOf(session);
+  if (!built || !built.address || !existsSync(built.path)) return null;
+  const last = session.status.lastBuild;
+  if (last?.result?.ok !== true || last.result.address !== built.address) return null;
+  const source = sourceDigest(project.dir);
+  if (built.source !== source || last.source !== source) return null;
+  return { kind: built.kind, path: built.path, address: built.address };
 }
 
 /**
@@ -301,10 +381,12 @@ export async function modelVerify(target, { project: explicit = null, policy = n
 export function formatReport(r) {
   const lines = [`${r.ok ? 'ok      ' : 'failed  '} ${r.command}, in ${r.durationMs} ms`];
   const s = r.summary;
+  if (s.lockfile) lines.push(`  lock       ${s.lockfile}: ${s.written ? 'written again, and checked by LexLean' : s.current ? 'current, as LexLean checks it' : 'not current'}; ${s.packages} package${s.packages === 1 ? '' : 's'}`);
   if (s.modulesChecked !== undefined) lines.push(`  model      ${s.modulesChecked} module${s.modulesChecked === 1 ? '' : 's'}; ${s.theoremsVerified} of ${s.theoremsDeclared} theorems proved by Lean's kernel in this process`);
   if (s.idsRegistered !== undefined) lines.push(`  contract   ${s.idsRegistered} IDs, ${s.scenarios} scenarios, ${s.authorities} authorities, ${s.claims} claims; ${s.contractViolations} violation${s.contractViolations === 1 ? '' : 's'}`);
   if (s.artifact) lines.push(`  artifact   ${s.artifact}${s.address ? ` (${s.address})` : ''}`);
   if (s.vectorsTotal !== undefined) lines.push(`  vectors    ${s.vectorsPassed} of ${s.vectorsTotal} acceptance vectors pass`);
+  if (s.holospace) lines.push(`  holospace  open ${s.holospace.link}`, `             and choose ${s.holospace.choose}: the app runs there, in its own holospace, in your browser`);
   if (s.identitiesVerified !== undefined) lines.push(`  identities ${s.identitiesVerified ? 'verified' : 'NOT verified'}${s.level ? `; assurance level ${s.level}` : ''}`);
   if (s.reproved) lines.push(`  reproved   ${s.reproved.passed ? `Lean's kernel accepted a proof of all ${s.reproved.theorems.length} theorems again, from the holo alone` : `NOT proved again: ${s.reproved.reason}`}`);
   if (s.sources) lines.push(`  sources    ${!s.sources.present ? 'not carried' : s.sources.matchesSnapshot === true ? "LexLean, on the sources the holo carries, writes its snapshot" : s.sources.matchesSnapshot === null ? 'carried, not read again' : `do NOT give the snapshot: ${s.sources.reason}`}`);

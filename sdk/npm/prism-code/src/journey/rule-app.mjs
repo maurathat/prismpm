@@ -16,7 +16,7 @@
  * own text beside them, so the two cannot drift apart unnoticed.
  *
  * Two things differ from a built holo, and the record says both:
- * every rule app runs the same holo, so the record's address names the app,
+ * every rule app runs the same holo, so the record's address (the BLAKE3 kappa-label of its bytes) names the app,
  * not the holo's; and the text of a request is read here, outside the guest,
  * so refusing malformed text is tested by vectors, not carried by the guest.
  */
@@ -25,11 +25,17 @@ import { loadArchive } from '../index.mjs';
 import { PrismCodeError } from '../errors.mjs';
 import { INVALID, decodeRequest, requestLimits } from './request-text.mjs';
 import { tableShape, tableWords } from './rule-table.mjs';
-import { readKernelFile } from './kernel-store.mjs';
+import { KERNEL_FILES, readKernelFile } from './kernel-store.mjs';
+import { kappa } from '../blake3.mjs';
 
 export const RULE_APP_SCHEMA = 'prism/rule-app/1';
-/** The rule judge's holo this package carries. A record names the holo it was made for by this address. */
-export const RULE_JUDGE_HOLO = 'sha256:e775324ea3abf203d3f7cb0b5a31e2c6c2328d751fdddf5fa1c46aae4e0d8cee';
+/**
+ * The rule judge's holo this package carries, by its UOR content address: the BLAKE3 kappa-label of its bytes
+ * (kernel-store.mjs admits the file by the same label). A record names the holo it was made for by this address.
+ */
+export const RULE_JUDGE_HOLO = KERNEL_FILES['kernel.holo'].kappa;
+/** The same holo as records written before 0.12 name it, by SHA-256. Such a record is still read; none is written. */
+export const RULE_JUDGE_HOLO_SHA256 = `sha256:${KERNEL_FILES['kernel.holo'].sha256}`;
 /** The judge reads at most this many numbers in one request: the app's and the request's together. */
 const WORDS_MAX = 1024;
 const KEYS = Object.freeze(['schema', 'name', 'title', 'kernel', 'fields', 'outcomes', 'words', 'guarantees', 'vectors', 'proof']);
@@ -72,7 +78,7 @@ export const statementOf = (words, guarantees) => sha256(JSON.stringify(['prism/
 /** The pinned rule judge's holo, checked against its address. */
 export function pinnedHolo({ read = () => readKernelFile('kernel.holo') } = {}) {
   const bytes = new Uint8Array(read());
-  if (sha256(bytes) !== RULE_JUDGE_HOLO) throw new RuleAppRefused('rule-app.holo', "the rule judge's holo is not the pinned one");
+  if (kappa(bytes) !== RULE_JUDGE_HOLO) throw new RuleAppRefused('rule-app.holo', "the rule judge's holo is not the pinned one");
   return bytes;
 }
 
@@ -105,7 +111,8 @@ export function ruleAppRecord(table, { proof = null } = {}) {
     proof,
   };
   const bytes = enc.encode(`${JSON.stringify(record, null, 1)}\n`);
-  return { record, bytes, address: sha256(bytes) };
+  // The app's address is its UOR content address: the BLAKE3 kappa-label of the record's bytes.
+  return { record, bytes, address: kappa(bytes) };
 }
 
 function readRecord(bytes) {
@@ -151,7 +158,8 @@ async function factsOf(record, holo) {
   const facts = {
     schema: record.schema === RULE_APP_SCHEMA ? SCHEMA_ONE : 0,
     holoNamed: record.kernel.holo,
-    holoPinned: sha256(holo),
+    // The holo it is given, named as the record names its own: by BLAKE3, or by SHA-256 in a record written before 0.12.
+    holoPinned: record.kernel.holo.startsWith('sha256:') ? sha256(holo) : kappa(holo),
     holoVerified: verified,
     holoVectorsFailed: failed,
     fields,
@@ -235,5 +243,5 @@ export async function loadRuleApp(recordBytes, { holo = null } = {}) {
     return { total: record.vectors.length, passed: record.vectors.length - failed.length, failed };
   }
 
-  return { record, address: sha256(bytes), facts, kernelChecked: kernelChecked(facts), dispatch, acceptance };
+  return { record, address: kappa(bytes), facts, kernelChecked: kernelChecked(facts), dispatch, acceptance };
 }

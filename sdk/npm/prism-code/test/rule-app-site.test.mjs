@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +10,7 @@ import { build } from '../src/journey/engine.mjs';
 import { RULE_JUDGE_HOLO, admits, answerKind, greatestAt, kernelChecked, leastAt, rulesAt } from '../src/journey/rule-app.mjs';
 import { browserClosure, writeRuleAppSite } from '../src/journey/rule-app-site.mjs';
 import { modelFiles } from '../src/journey/model-files.mjs';
+import { kappa } from '../src/blake3.mjs';
 import { PARKING, ruleAppSnapshot } from './support/snapshot.mjs';
 import { snapshotOf, startedApp } from './support/started-app.mjs';
 
@@ -42,8 +43,10 @@ test('a build writes the page beside the app, and the page carries the record, t
   assert.match(r.message, /Its page is the folder .*site: static files any host serves, which check the app in the browser before it answers\./);
   const at = (file) => readFileSync(join(r.site, file));
   // The record and the judge are the very bytes the build named.
-  assert.equal(sha(at('app.rule-app.json')), r.address);
-  assert.equal(sha(at('kernel.holo')), RULE_JUDGE_HOLO);
+  // The app's address and the judge's are UOR content addresses: the BLAKE3 kappa-label of the bytes.
+  assert.equal(kappa(new Uint8Array(at('app.rule-app.json'))), r.address);
+  assert.match(r.address, /^blake3:[0-9a-f]{64}$/);
+  assert.equal(kappa(new Uint8Array(at('kernel.holo'))), RULE_JUDGE_HOLO);
   for (const file of browserClosure()) assert.deepEqual(at(`prism-code/src/${file}`), readFileSync(new URL(`../src/${file}`, import.meta.url)), file);
   // Planted defect P1: the page decides with the package's own functions, by their source, not a second writing of them.
   const script = at('start.mjs').toString('utf8');
@@ -98,12 +101,15 @@ test('the published model is what a check reads: nothing of the machine it was w
   for (const needed of ['lexlean.toml', 'lexlean.lock', 'lake-manifest.json', 'src/App.lex.tex']) assert.ok(model.files.has(needed), needed);
   assert.equal(model.entry, 'src/App.lex.tex');
   assert.deepEqual([...model.files.keys()], [...model.files.keys()].sort());
-  // A folder the caller names is left out too, and a project that names no entrypoint is refused.
+  // A folder the caller names is left out too. A project whose lexlean.toml names no entrypoint that is there opens the
+  // module that states the application; one with no module at all is refused.
   mkdirSync(join(dir, 'tools'));
   writeFileSync(join(dir, 'tools', 'gen.py'), 'x');
   assert.ok(modelFiles(dir).files.has('tools/gen.py'));
   assert.ok(!modelFiles(dir, { skip: ['tools'] }).files.has('tools/gen.py'));
   writeFileSync(join(dir, 'lexlean.toml'), 'name = "x"');
+  assert.equal(modelFiles(dir).entry, 'src/App.lex.tex');
+  rmSync(join(dir, 'src'), { recursive: true });
   assert.throws(() => modelFiles(dir), /names no entrypoint/);
 });
 
@@ -143,7 +149,7 @@ test('the page produces only the terms this browser has not produced, and judges
   // Planted defect R3: kept files are still checked against the manifest, and the guest runs from the bytes hashed.
   assert.match(script, /if \(g !== manifest\.glue\.sha256 \|\| w !== manifest\.wasm\.sha256 \|\| l !== manifest\.library\.sha256\) throw/);
   assert.match(script, /kernel = await loadArchive\(holoBytes, \{ capabilities: null, capabilitySet: undefined, allowUnverified: false \}\);/);
-  assert.match(script, /holoPinned: await sha256\(holoBytes\),/);
+  assert.match(script, /holoPinned: await labelLike\(record\.kernel\.holo, holoBytes\),/);
   // An earlier visit is named only when a proof was reused.
   assert.match(script, /const earlier = \(reused === 0 \? '' :/);
 });

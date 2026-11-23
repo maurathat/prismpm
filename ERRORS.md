@@ -1053,6 +1053,9 @@ Registered in model/sdk-diagnostics.toml. These are the codes the Prism SDK modu
 | `load.path` |  | `OC-11` | The holo path cannot be read, or is not a local file. |
 | `load.source` |  | `OC-11` | load or images.push was given a source that is not bytes, a Blob, a path or a URL; until the local image store (#349) a pushed image comes as options.source. |
 | `lock.image` |  | `OC-11` | prismpm.lock does not select an immutable SDK image, or the image named is not immutable. |
+| `lock.refused` |  | `DK-46` | LexLean does not accept, as the lock it would have written, the lexlean.lock that prism-code lock proposes for the project, so nothing was written. |
+| `lock.stale` |  | `DK-46` | lexlean.lock is not the lock of the project as it is: lexlean.toml, a workspace file or a lexicon changed since it was written, and prism-code lock --check only says so. |
+| `lock.unresolved` |  | `DK-46` | prism-code lock cannot write the lock from the project's files: an embedded package the lock does not hold, a Git package, a source package or a PDF provider, or a lexicon folder with no lexicon.toml. |
 | `manifest.env` |  | `DK-41` | A manifest variable reads an environment variable that is not set. |
 | `manifest.invalid` |  | `DK-41` | The manifest is missing, is not TOML text or bytes, or has a member it does not allow. |
 | `manifest.overlay` |  | `DK-41` | A manifest overlay is not a table, or names no target or an unknown one. |

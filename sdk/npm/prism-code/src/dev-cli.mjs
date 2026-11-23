@@ -96,7 +96,7 @@ export async function runDev(argv) {
   const directory = resolve(positional[0] ?? '.');
   if (!(await stat(directory).catch(() => null))?.isDirectory()) fail('dev.path', `${directory} is not a directory`);
   const project = await describeProject(directory);
-  if (!project.isProject && options.build === undefined) fail('dev.project', `${directory} has no prism.toml or prismpm.toml, so there is nothing to build; run prism-code init, or pass --build <command>`);
+  if (!project.isProject && options.build === undefined) fail('dev.project', `${directory} has no prism.toml or prismpm.toml, so there is nothing to build; run npx prism-code@latest init, or pass --build <command>`);
 
   const name = project.name ?? 'application';
   const port = Number(options.port ?? STUDIO_PORT);

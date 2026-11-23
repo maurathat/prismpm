@@ -27,40 +27,46 @@ Every Prism app starts with one command:
 npx prism-code@latest init my-app
 ```
 
-It writes three things, all inside `my-app`: `prism.toml`, a starter LexLean
-model to edit, and the Prism skill for an agent, in `.claude/skills/prism` and
+It writes these, all inside `my-app`: `prism.toml`, `prism.project`, the canonical
+template, and the Prism skill for an agent, in `.claude/skills/prism` and
 `.agents/skills/prism`. Nothing outside the folder is written or configured,
 and nothing is fetched. Run again in a folder that holds a model, it leaves
 the model as it is and writes only the skill, so it is safe to repeat.
 `npm create prism-code my-app` runs the same code.
 
-The starter is `rule-app` unless `--template` names another:
+There is one template, [UOR-Foundation/template](https://github.com/UOR-Foundation/template),
+which the package carries, and every app starts from it, simple or complex,
+stateless or stateful; `init` takes no `--template`. Its LexLean app is in
+`app/src/`, a working model to replace with your own, under module names of
+your own. `--name` names the application, `--no-skill` leaves the skill out,
+and `--force` overwrites files that exist.
 
-| Starter | Shape |
-| --- | --- |
-| `rule-app` | one answer from one request, each condition a field against a value |
-| `decision-app` | one answer from one request, with its own judge and theorems |
-| `stateful-app` | state kept between steps, with actions and invariants |
-
-`--template text-request` writes a plain LexLean project instead, `--name`
-names the application, `--no-skill` leaves the skill out, and `--force`
-overwrites files that exist.
-
-Then three commands take the model to a verified app, each in this process:
+Then these commands take the model to a running app, each in this process:
 
 ```
 cd my-app
 npx prism-code check --json     # prism.toml, the model, and every theorem proved by Lean's kernel
-npx prism-code build --json     # check, then the app under .prism/build, with nothing compiled
+npx prism-code build --json     # check, then the app under app/.prism/build, with nothing compiled
 npx prism-code verify --json    # check again, then every acceptance vector on a fresh instance
+npx prism-code run              # build when the model changed, then serve the app; --input <text> for one request
 ```
+
+`prism.project` holds the project's ID, 32 random bytes made once. A holospace
+opened from the project is named by it, so two apps started from the one
+template never share files or storage. No build reads it: the same model
+builds the same bytes for anyone, and the ID is not in the holo. A copy of the
+folder is the same project to a holospace until its ID is changed.
+
+When you change `app/lexlean.toml`, to give the project its own name or a
+lexicon of its own, `npx prism-code lock` writes `lexlean.lock` again, and
+LexLean checks it before it is written.
 
 An agent with the skill does the same: it edits the model, runs `check` after
 every edit, and builds and verifies before it calls the work done.
 
 ## Write the model
 
-An app's one source of truth is its LexLean model under `src/`. `init` starts it from a content-addressed starter module, you or your agent write it, and Lean's kernel proves it. The skill's `references/lexlean-1.2.md` holds every form a model uses.
+An app's one source of truth is its LexLean model under `src/`. `init` starts it from the canonical template's model, you or your agent write it, and Lean's kernel proves it. The skill's `references/lexlean-1.2.md` holds every form a model uses.
 
 ## Three calls
 
@@ -230,22 +236,6 @@ await app.experimental_verify();  // judges world.capabilities against the set t
 pure. The check is `@prism-code/verify`'s `worldPolicy`, vendored, so the
 runtime, `holo.verify()` and the browser verifier cannot disagree. Design:
 [docs/proposals/283-world-within-policy.md](../../../../docs/proposals/283-world-within-policy.md).
-
-## Start a project (experimental, #281)
-
-```
-npx prism-code init calculator --template text-request   # or: npm create prism-code calculator -- --template text-request
-```
-
-With `--template text-request`, `init` writes `prism.toml` (application `calculator` 0.1.0, nothing granted) and the
-`text-request` template: a language-1.2 text application, its `prism.arch` lexicon, its Lean
-workspace and the `lexlean.lock` that binds them. The template is a byte-for-byte copy of the
-reviewed fixture `tests/fixtures/holo/ho-11-text-application`, so the project starts from a model
-the repository's own gate checks; edit it from there. Existing files are never overwritten without
-`--force`. Without `--template`, `init` writes the `rule-app` starter, as "Start an app" says.
-
-Then `npx prism-code check` checks the model and proves its theorems, and `npx prism-code check <app.holo>`
-judges a built holo.
 
 ## The prism.toml manifest (experimental, #280)
 
