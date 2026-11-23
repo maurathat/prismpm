@@ -9,6 +9,7 @@
   body { display: flex; flex-direction: column; font: 13px/1.4 system-ui, sans-serif; background: #1e1e1e; color: #ddd; }
   #top { display: flex; align-items: center; border-bottom: 1px solid #333; }
   #strip { padding: .35rem .75rem; flex: 1; }
+  #liveLabel { white-space: nowrap; margin-right: .5rem; color: #ddd; }
   #starters { white-space: nowrap; } #starters a { color: #9cc4ff; margin-left: .35rem; }
   #download, #build { font: inherit; color: #ddd; background: none; border: 1px solid #555; border-radius: 3px; padding: .1rem .5rem; margin-right: .5rem; cursor: pointer; white-space: nowrap; }
   #took { padding: .35rem .75rem; border-bottom: 1px solid #333; overflow-wrap: anywhere; }
@@ -34,7 +35,7 @@
 </style>
 </head>
 <body>
-<div id="top"><div id="strip" role="status">Starting…</div><span id="starters"><a href="?project=../app/model/" title="The one template every Prism app starts from: the app prism-code init and build write, with theorems of its own">Start a new app</a></span><button id="build" type="button" title="Check, prove and build this model into a holo, here in this tab">Build</button><button id="download" type="button" title="The model as it stands in the editor, as one tar archive">Download model</button></div>
+<div id="top"><div id="strip" role="status">Starting…</div><span id="starters"><a href="?project=../app/model/" title="The one template every Prism app starts from: the app prism-code init and build write, with theorems of its own">Start a new app</a></span><button id="build" type="button" title="Check, prove and build this model into a holo, here in this tab">Build</button><label id="liveLabel" title="After each edit that checks and whose theorems are all proved, build the model and show the app that was built. An edit that is not fully proved changes nothing that is running."><input id="live" type="checkbox" checked> Live</label><button id="download" type="button" title="The model as it stands in the editor, as one tar archive">Download model</button></div>
 <div id="took" role="status" hidden></div>
 <form id="pushForm">
   <label>Registry <input id="pushTarget" type="text" placeholder="registry.example/name:tag" aria-label="The registry, name and tag to push the built holo to, or to pull a holo from" autocomplete="off" spellcheck="false"></label>
