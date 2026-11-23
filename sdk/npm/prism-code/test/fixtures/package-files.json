@@ -97,6 +97,7 @@
   "src/journey/proof-record.mjs",
   "src/journey/proof-store.mjs",
   "src/journey/prove-core.mjs",
+  "src/journey/relock.mjs",
   "src/journey/reprove-here.mjs",
   "src/journey/request-text.mjs",
   "src/journey/rule-app-site.mjs",

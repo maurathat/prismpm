@@ -22,7 +22,7 @@
  * manifest fails its checks or the model does not check (it does not parse, link or elaborate). A contract
  * violation is exit 1.
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { PrismCodeError, PrismError } from './errors.mjs';
 import { lexleanProjectDir } from './tiers.mjs';
@@ -61,8 +61,10 @@ const modelTexts = (dir) => (dir ? sourceFiles(dir).map((file) => [file, readFil
 /** The diagnostics of one engine step: each of its own, or the step's message when it names none. `dir` is the model's folder. */
 function stepDiagnostics(result, fallback, dir = null) {
   // A title is a phrase of a lexicon the module uses, never free text: say so, since the diagnostic names only the word.
+  // A stale lock names a command prism-code does not ship; this one does the same, and LexLean checks what it writes.
+  const relock = (d) => (d.code === 'LLC0102' ? 'Run prism-code lock: it writes lexlean.lock again for the project as it is, and LexLean checks it. Never edit the lock by hand.' : null);
   const titled = (d) => (/^\\title\{/.test(d.line ?? '') ? 'A \\title is a phrase a lexicon of the module defines (language/*/entries), not free text. Keep the title the module had, or add the phrase as a lexicon entry.' : null);
-  const own = (result.diagnostics ?? []).map((d) => diagnostic({ code: d.code, message: d.message, at: d.at, remediation: titled(d) ?? (d.didYouMean?.length ? `Write ${d.didYouMean.map((n) => `\`${n}\``).join(' or ')} instead.` : null) }));
+  const own = (result.diagnostics ?? []).map((d) => diagnostic({ code: d.code, message: d.message, at: d.at, remediation: relock(d) ?? titled(d) ?? (d.didYouMean?.length ? `Write ${d.didYouMean.map((n) => `\`${n}\``).join(' or ')} instead.` : null) }));
   if (own.length > 0) {
     if (own[0].remediation === null) own[0].remediation = result.message ?? null;
     return own;
@@ -173,6 +175,49 @@ export async function modelCheck(path, { project: explicit = null, env = process
   if (project.refused) return answer('check', started, EXIT.REFUSED, {}, project.diagnostics);
   const gated = await gate(project, readSession(project.dir), { env, log, engine });
   return answer('check', started, gated.code ?? EXIT.OK, gated.summary, gated.diagnostics);
+}
+
+/**
+ * `lock`: write the project's lexlean.lock again after the project changed, or with `check` only say whether it is
+ * current. The lock is proposed here (journey/relock.mjs) and judged by LexLean, which checks it byte for byte as
+ * `lexlean lock --check`: nothing is written unless LexLean accepts it as the lock it would have written itself.
+ */
+export async function modelLock(path, { project: explicit = null, check = false, env = process.env } = {}) {
+  const started = Date.now();
+  const project = await openProject(path, explicit);
+  if (project.refused) return answer('lock', started, EXIT.REFUSED, {}, project.diagnostics);
+  const { lockCandidate } = await import('./journey/relock.mjs');
+  const { projectFiles, runLexleanWasm } = await import('./journey/lexlean-wasm.mjs');
+  let candidate;
+  try {
+    candidate = lockCandidate(projectFiles(project.dir));
+  } catch (error) {
+    if (!(error instanceof PrismCodeError)) throw error;
+    return answer('lock', started, EXIT.REFUSED, {}, [...project.diagnostics, diagnostic({ code: error.code, message: error.message, file: 'lexlean.toml', remediation: 'Change what the message names, then run prism-code lock again; never edit the lock by hand.' })]);
+  }
+  const file = join(project.dir, candidate.lockfile);
+  const held = existsSync(file) ? readFileSync(file, 'utf8') : null;
+  const summary = { lockfile: forward(relative(process.cwd(), file) || file), current: held === candidate.text, written: false, packages: (candidate.text.match(/^\[\[package\]\]$/gm) ?? []).length };
+  if (!summary.current && check) {
+    return answer('lock', started, EXIT.FAILED, summary, [...project.diagnostics, diagnostic({ ...coded(new PrismCodeError('lock.stale', `${candidate.lockfile} is not the lock of the project as it is: lexlean.toml, a workspace file or a lexicon changed since it was written.`)), file: summary.lockfile, remediation: 'Run prism-code lock, which writes it again and has LexLean check it.' })]);
+  }
+  // LexLean is the judge of a lock, the one on disk as much as one proposed here.
+  const judged = await runLexleanWasm(project.dir, ['--diagnostic-format', 'json', 'lock', '--check'], { env, files: [[`/${candidate.lockfile}`, new TextEncoder().encode(candidate.text)]] });
+  if (judged.exit !== 0) {
+    let said = [];
+    try {
+      said = JSON.parse(judged.stdout.toString()).diagnostics ?? [];
+    } catch {
+      // LexLean gave no command result; its exit code is the answer.
+    }
+    const why = said.map((d) => `${d.code}: ${d.message}`).join('; ') || `LexLean exited ${judged.exit}`;
+    return answer('lock', started, EXIT.REFUSED, summary, [...project.diagnostics, diagnostic({ ...coded(new PrismCodeError('lock.refused', `LexLean does not accept the lock this command would write (${why}), so nothing was written.`)), file: summary.lockfile, remediation: 'The project needs something this command does not lock; the message says what LexLean found.' })]);
+  }
+  if (!summary.current) {
+    writeFileSync(file, candidate.text);
+    summary.written = true;
+  }
+  return answer('lock', started, EXIT.OK, summary, project.diagnostics);
 }
 
 /** What a build wrote, from the session: `{ kind, path, source }`, or null. */
@@ -329,6 +374,7 @@ export async function modelVerify(target, { project: explicit = null, policy = n
 export function formatReport(r) {
   const lines = [`${r.ok ? 'ok      ' : 'failed  '} ${r.command}, in ${r.durationMs} ms`];
   const s = r.summary;
+  if (s.lockfile) lines.push(`  lock       ${s.lockfile}: ${s.written ? 'written again, and checked by LexLean' : s.current ? 'current, as LexLean checks it' : 'not current'}; ${s.packages} package${s.packages === 1 ? '' : 's'}`);
   if (s.modulesChecked !== undefined) lines.push(`  model      ${s.modulesChecked} module${s.modulesChecked === 1 ? '' : 's'}; ${s.theoremsVerified} of ${s.theoremsDeclared} theorems proved by Lean's kernel in this process`);
   if (s.idsRegistered !== undefined) lines.push(`  contract   ${s.idsRegistered} IDs, ${s.scenarios} scenarios, ${s.authorities} authorities, ${s.claims} claims; ${s.contractViolations} violation${s.contractViolations === 1 ? '' : 's'}`);
   if (s.artifact) lines.push(`  artifact   ${s.artifact}${s.address ? ` (${s.address})` : ''}`);

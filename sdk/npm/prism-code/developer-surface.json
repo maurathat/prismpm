@@ -48,6 +48,11 @@
     },
     {
       "kind": "verb",
+      "place": "prism-code lock",
+      "name": "lock"
+    },
+    {
+      "kind": "verb",
       "place": "prism-code login",
       "name": "login"
     },

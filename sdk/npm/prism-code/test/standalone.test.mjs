@@ -317,6 +317,59 @@ for (const [starter, theorem, input] of [['decision-app', 'ParkingFeeTierProofs.
   });
 }
 
+test('lock writes the lock again after the project changes, and only what LexLean accepts', { timeout: 600000 }, () => {
+  const root = scratch();
+  assert.equal(run(['init', root], { cwd: root }).code, 0);
+  const app = join(root, 'app');
+  const config = () => readFileSync(join(app, 'lexlean.toml'), 'utf8');
+  const lock = () => readFileSync(join(app, 'lexlean.lock'), 'utf8');
+  const report = (args) => {
+    const r = run(['lock', ...args, '--json'], { cwd: root, env: OFFLINE });
+    return { code: r.code, ...JSON.parse(r.out) };
+  };
+  // The template's own lock is the one this command would write, byte for byte: nothing is written.
+  const shipped = lock();
+  const untouched = report([]);
+  assert.deepEqual([untouched.code, untouched.summary.current, untouched.summary.written], [0, true, false]);
+  assert.equal(lock(), shipped);
+
+  // The app takes its own name. check then refuses the lock, and says which command writes it again.
+  writeFileSync(join(app, 'lexlean.toml'), config().replace('name = "prism-template-contract"', 'name = "chess"'));
+  const refused = JSON.parse(run(['check', '--json'], { cwd: root, env: OFFLINE }).out);
+  assert.equal(refused.diagnostics.at(-1).code, 'LLC0102');
+  assert.match(refused.diagnostics.at(-1).remediation, /prism-code lock/);
+  const stale = report(['--check']);
+  assert.deepEqual([stale.code, stale.diagnostics.at(-1).code, stale.summary.written], [1, 'lock.stale', false]);
+  assert.equal(lock(), shipped, '--check writes nothing');
+  const written = report([]);
+  assert.deepEqual([written.code, written.summary.written], [0, true]);
+  assert.equal(run(['check', '--json'], { cwd: root, env: OFFLINE }).code, 0);
+
+  // A lexicon of the app's own, added in a folder and configured in its sorted place, is locked with the rest.
+  mkdirSync(join(app, 'language', 'chess.terms', 'entries'), { recursive: true });
+  writeFileSync(join(app, 'language', 'chess.terms', 'lexicon.toml'), readFileSync(join(app, 'language', 'prism.arch', 'lexicon.toml'), 'utf8').replace('package = "prism.arch"', 'package = "chess.terms"'));
+  writeFileSync(join(app, 'language', 'chess.terms', 'entries', 'arch-concern.toml'), readFileSync(join(app, 'language', 'prism.arch', 'entries', 'arch-concern.toml')));
+  const sorted = config().replace('[[lexicon_source]]', '[[lexicon_source]]\npackage = "chess.terms"\nkind = "path"\npath = "language/chess.terms"\n\n[[lexicon_source]]');
+  writeFileSync(join(app, 'lexlean.toml'), sorted);
+  const added = report([]);
+  assert.deepEqual([added.code, added.summary.written, added.summary.packages], [0, true, written.summary.packages + 1], JSON.stringify(added.diagnostics));
+  assert.match(lock(), /id = "chess\.terms"\nversion = "1\.0\.0"\nkind = "path"\nsource = "language\/chess\.terms"/);
+
+  // What LexLean does not accept is not written: here a lexicon configured out of order, which LexLean's own rule refuses.
+  const before = lock();
+  writeFileSync(join(app, 'lexlean.toml'), `${config()}\n[[lexicon_source]]\npackage = "a.first"\nkind = "path"\npath = "language/chess.terms"\n`);
+  const unaccepted = report([]);
+  assert.equal(unaccepted.code, 2);
+  assert.ok(['lock.refused', 'lock.unresolved'].includes(unaccepted.diagnostics.at(-1).code), JSON.stringify(unaccepted.diagnostics));
+  assert.equal(lock(), before);
+
+  // A package embedded in LexLean that the lock does not hold cannot be added here, and the refusal says so.
+  writeFileSync(join(app, 'lexlean.toml'), `${sorted}\n[[lexicon_source]]\npackage = "lexlean.std.zzz"\nkind = "builtin"\n`);
+  const embedded = report([]);
+  assert.deepEqual([embedded.code, embedded.diagnostics.at(-1).code], [2, 'lock.unresolved']);
+  assert.equal(lock(), before);
+});
+
 test('a theorem the kernel does not prove is reported where the model states it, with what to try', { timeout: 600000 }, () => {
   const root = scratch();
   startApp(root, 'decision-app');

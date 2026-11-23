@@ -166,6 +166,11 @@ Usage:
                                                     fetch a holo and write it only after it verifies: digests, archive,
                                                     verdict, attestations; the verify-attestation flags add a signer policy;
                                                     a verified holo is also kept in the local image store
+  prism-code lock [<dir>] [--project <dir>] [--check] [--json]
+                                                    write the project's lexlean.lock again after lexlean.toml, a workspace
+                                                    file or a lexicon of its own changed. LexLean, as WebAssembly, checks
+                                                    the lock byte for byte before it is written; --check only says whether
+                                                    the lock is current, and exits 1 when it is not
   prism-code check [<dir>] [--project <dir>] [--json]
                                                     check the project: prism.toml, then LexLean as WebAssembly checks
                                                     the model, then Lean's kernel, as WebAssembly, proves every theorem.
@@ -869,7 +874,7 @@ async function commandProviders(positional, options) {
   return 0;
 }
 
-const MODEL_OPTIONS = { check: ['project', 'json'], build: ['project', 'out', 'json', 'check', 'no-sources'], verify: ['project', 'policy', 'json'] };
+const MODEL_OPTIONS = { lock: ['project', 'check', 'json'], check: ['project', 'json'], build: ['project', 'out', 'json', 'check', 'no-sources'], verify: ['project', 'policy', 'json'] };
 
 /**
  * The model verbs (src/model-cli.mjs): check, build and verify, each in this process. LexLean as WebAssembly checks the
@@ -887,7 +892,8 @@ async function commandModel(verb, positional, options) {
   const model = await import('../src/model-cli.mjs');
   const shared = { project: options.project ?? null, log: options.json ? () => {} : (line) => process.stderr.write(`${line}\n`) };
   let result;
-  if (verb === 'check' || (verb === 'build' && options.check)) result = await model.modelCheck(positional[0], shared);
+  if (verb === 'lock') result = await model.modelLock(positional[0], { project: shared.project, check: options.check === true });
+  else if (verb === 'check' || (verb === 'build' && options.check)) result = await model.modelCheck(positional[0], shared);
   else if (verb === 'build') result = await model.modelBuild(positional[0], { ...shared, out: options.out ?? null, sources: options['no-sources'] !== true });
   else result = await model.modelVerify(positional[0], { ...shared, policy: options.policy ?? null });
   process.stdout.write(options.json ? `${JSON.stringify(result.report, null, 2)}\n` : model.formatReport(result.report));
@@ -1019,6 +1025,7 @@ async function main(argv) {
       // A holo is judged against a policy; anything else is the project, whose model is checked and proved.
       if (namesHolo(positional)) return commandCheck(positional, options);
       return commandModel('check', positional, options);
+    case 'lock':
     case 'build':
     case 'verify':
       return commandModel(command, positional, options);
