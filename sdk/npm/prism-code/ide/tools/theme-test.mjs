@@ -37,6 +37,14 @@ const accent = '#e93b01';
 const uses = Object.entries(theme.colors).filter(([, value]) => value.toLowerCase().startsWith(accent)).map(([id]) => id);
 assert.deepEqual(uses, ['tab.activeBorderTop'], 'the accent is the line over the open tab and nothing else');
 assert.ok(!JSON.stringify([theme.tokenColors, theme.semanticTokenColors]).toLowerCase().includes(accent), 'no code is coloured with the accent');
+// A control's edge at rest is the kit's subtle text grey, and reaches 3:1 wherever a control sits; dividers do not
+// use it. Focus is told from rest by the ring's width, the kit's, since the two colours are nearly one.
+for (const id of ['input.border', 'dropdown.border', 'checkbox.border', 'settingsTextInputBorder', 'settingsNumberInputBorder', 'settingsDropdownBorder', 'settingsCheckboxBorder']) assert.equal(theme.colors[id], '#767472', id);
+assert.ok(report.held.filter((pair) => /edge/.test(pair.what)).length >= 6 && report.held.filter((pair) => /edge/.test(pair.what)).every((pair) => pair.ratio >= 3));
+assert.notEqual(theme.colors['panel.border'], '#767472', 'a divider stays a hairline');
+assert.ok(contrast(theme.colors.focusBorder, theme.colors['input.border']) < 1.1, 'the ring and the resting edge are nearly one colour, which is why width tells them apart');
+assert.match(readFileSync(join(ide, 'src', 'theme', 'focus.css'), 'utf8'), /outline-width: var\(--hg-ring-width, 2px\) !important/);
+assert.match(readFileSync(CSS_FILE, 'utf8'), /--hg-ring-width: 2px;/);
 // No shadows on the dark ground.
 assert.equal(theme.colors['widget.shadow'], '#00000000');
 assert.equal(theme.colors['scrollbar.shadow'], '#00000000');

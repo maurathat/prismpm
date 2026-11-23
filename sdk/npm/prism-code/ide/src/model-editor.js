@@ -36,6 +36,7 @@ import '@codingame/monaco-vscode-theme-defaults-default-extension';
 import { registerExtension, ExtensionHostKind } from '@codingame/monaco-vscode-api/extensions';
 // The workbench's own theme, from the Hologram brand kit (tools/build-theme.mjs, tools/brand-pins.json).
 import hologramThemeUrl from './theme/hologram-dark.json?url';
+import './theme/focus.css';
 import extHostWorkerUrl from '@codingame/monaco-vscode-api/workers/extensionHost.worker?worker&url';
 import editorWorkerUrl from '@codingame/monaco-vscode-api/workers/editor.worker?worker&url';
 import { LEXLEAN, registerLexLean, tokenTypes } from './lexlean-language.js';

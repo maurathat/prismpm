@@ -16,12 +16,13 @@ The kit, its commit and the BLAKE3 label of its token file are in `tools/brand-p
 - **VS Code itself, untouched:** the editor's font and its size, the terminal's sixteen colours, bracket colours.
 - **The accent** (`#e93b01`) colours one thing: the line over the open tab. The kit allows it once in a view and never as a general highlight.
 - Dividers are the kit's hairlines. No shadows.
+- **A control's edge at rest** (fields, dropdowns, checkboxes, the settings editor's fields) is the kit's subtle text grey, `muted-foreground-subtle` (the owner's choice): neither border role of the kit reaches 3:1. **In focus** it is the kit's ring, which is nearly the same colour, so `focus.css` draws it at the kit's ring width, 2px against 1px at rest. `focus.css` is the one other file here written by hand.
 
 ## Checked
 
 `node tools/theme-test.mjs --fetch` (in CI): every text pair is at least 4.5:1 and every mark of state or place at least 3:1, code on its own ground and selected included; the accent is used once; code has Dark+'s colours; the committed files are what the pinned tokens generate.
 
-Hairline dividers are listed by the generator and held to nothing: 1.31:1 for a divider, 1.54:1 for a field's edge. That is the kit's design. A divider that only separates is not something a reader has to find, but a field's edge at 1.54:1 is below the 3:1 WCAG asks of a control's boundary.
+Hairline dividers are listed by the generator and held to nothing (1.31:1). That is the kit's design: a divider that only separates is not something a reader has to find. A control's edge is, and is held to 3:1 (3.65:1 on a field, 3.98:1 on the ground).
 
 Selected code is Dark+'s as well, and is held to nothing: under Dark+'s selection colour (`#264f78`) a keyword is 2.88:1, a string 3.21:1 and a comment 2.55:1, exactly as in VS Code. Plain text selected is held, and passes.
 

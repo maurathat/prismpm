@@ -60,4 +60,6 @@
   --hg-font-sans: Geist, Inter, sans-serif;
   --hg-font-display: Archivo, Geist, sans-serif;
   --hg-font-mono: Geist Mono, JetBrains Mono, monospace;
+  --hg-ring-width: 2px;
+  --hg-ring-offset: 2px;
 }

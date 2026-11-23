@@ -96,6 +96,7 @@ export function themeOf(c) {
     'warning-subtle', 'info-border', 'destructive-subtle', 'success-subtle', 'scrim'];
   for (const name of need) if (!(name in c)) throw new Error(`the kit has no "${name}" token, which the theme is built from`);
   const text = c.foreground, soft = c['muted-foreground'], faint = c['muted-foreground-subtle'];
+  const edge = faint;
   const ground = c.background, raised = c.card, side = c.sidebar, hair = c['border-solid'], line = c['border-strong'], held = c['accent-pressed'];
   const colors = {
     // The ground and its text.
@@ -142,10 +143,14 @@ export function themeOf(c) {
     'menubar.selectionBackground': c.secondary, 'menubar.selectionForeground': text,
     'quickInput.background': c.popover, 'quickInput.foreground': text, 'quickInputTitle.background': side, 'quickInputList.focusBackground': held, 'quickInputList.focusForeground': text,
     'pickerGroup.foreground': soft, 'pickerGroup.border': hair, 'commandCenter.background': raised, 'commandCenter.border': line, 'commandCenter.foreground': soft,
-    'input.background': raised, 'input.foreground': text, 'input.border': line, 'input.placeholderForeground': soft,
+    // A control's edge at rest is the kit's subtle text grey (the owner's choice): neither of the kit's border roles
+    // reaches 3:1 on its ground, and a control's edge is something a reader has to find. Dividers stay hairlines.
+    'input.background': raised, 'input.foreground': text, 'input.border': edge, 'input.placeholderForeground': soft,
+    'settingsTextInputBorder': edge, 'settingsNumberInputBorder': edge, 'settingsDropdownBorder': edge, 'settingsCheckboxBorder': edge,
+    'searchEditor.textInputBorder': edge,
     'inputOption.activeBorder': c.ring, 'inputOption.activeBackground': held, 'inputOption.activeForeground': text,
     'inputValidation.errorBackground': c['destructive-subtle'], 'inputValidation.errorBorder': c.destructive, 'inputValidation.warningBackground': c['warning-subtle'], 'inputValidation.warningBorder': c.warning,
-    'dropdown.background': c.popover, 'dropdown.foreground': text, 'dropdown.border': line, 'checkbox.background': raised, 'checkbox.border': line, 'checkbox.foreground': text,
+    'dropdown.background': c.popover, 'dropdown.foreground': text, 'dropdown.border': edge, 'checkbox.background': raised, 'checkbox.border': edge, 'checkbox.foreground': text,
     'button.background': c.primary, 'button.foreground': c['primary-foreground'], 'button.hoverBackground': c['primary-hover'], 'button.border': NONE,
     'button.secondaryBackground': c.secondary, 'button.secondaryForeground': text, 'button.secondaryHoverBackground': held,
     'badge.background': c.secondary, 'badge.foreground': text, 'progressBar.background': soft, 'keybindingLabel.background': c.secondary, 'keybindingLabel.foreground': text,
@@ -239,11 +244,16 @@ export function contrastReport(theme) {
     ['an error\'s underline', k['editorError.foreground'], k['editor.background']],
     ['a warning\'s underline', k['editorWarning.foreground'], k['editor.background']],
     ['the bracket that matches', k['editorBracketMatch.border'], k['editor.background']],
+    ['a field\'s edge, on the field', k['input.border'], k['input.background']],
+    ['a field\'s edge, on the ground around it', k['input.border'], k['panel.background']],
+    ['a field\'s edge, in the side bar', k['input.border'], k['sideBar.background']],
+    ['a dropdown\'s edge', k['dropdown.border'], k['dropdown.background']],
+    ['a checkbox\'s edge', k['checkbox.border'], k['checkbox.background']],
+    ['a field\'s edge in the settings editor', k.settingsTextInputBorder, k['editor.background']],
   ].map(([what, color, ground]) => ({ what, color, ground, least: 3 }));
   const held = [...text, ...marks].map((pair) => ({ ...pair, ratio: Math.round(contrast(pair.color, pair.ground) * 100) / 100 }));
   const hairlines = [
     ['a divider', k['panel.border'], k['panel.background']],
-    ['a field\'s edge', k['input.border'], k['panel.background']],
     ['an indent guide', k['editorIndentGuide.background1'], k['editor.background']],
   ].map(([what, color, ground]) => ({ what, color, ground, ratio: Math.round(contrast(color, ground) * 100) / 100 }));
   // Dark+'s own selection colour under Dark+'s own code colours: listed, and held to nothing. It is what VS Code shows.
@@ -256,6 +266,8 @@ export function cssOf(tokens, c) {
   const font = tokens.global?.font?.family ?? {};
   const lines = Object.entries(c).map(([name, value]) => `  --hg-${name}: ${value.length === 9 && !['scrim', 'shadow'].includes(name) ? over(value, c.background) : value};`);
   for (const [name, token] of Object.entries(font)) if (typeof token?.$value === 'string') lines.push(`  --hg-font-${name}: ${token.$value};`);
+  // The focus ring's width and offset: what tells a control in focus from one at rest (src/theme/focus.css).
+  for (const [name, token] of Object.entries(tokens.global?.focus ?? {})) if (typeof token?.$value === 'string') lines.push(`  --hg-${name}: ${token.$value};`);
   return `/* Written by tools/build-theme.mjs from the Hologram brand kit's tokens (${PINS.repository} at ${PINS.commit.slice(0, 7)},\n * ${PINS.files.tokens.path}, the "${PINS.set}" set). Do not edit: change the mapping in that tool, or the pin. */\n:root {\n${lines.join('\n')}\n}\n`;
 }
 
