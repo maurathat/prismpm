@@ -33,7 +33,8 @@ async function open() {
   const [glue, wasm, library] = await Promise.all([manifest.glue, manifest.wasm, manifest.library].map(async (entry) => unpack(await fetch(base + entry.file))));
   // Each file is taken only as the bytes its BLAKE3 label names, where the manifest names one (manifest.*.kappa, the
   // label of the decoded bytes), and the record that this kernel judged this library whole is read by the same labels
-  // (binding.*Kappa). Then nothing here is hashed with SHA-256. A manifest from before it had labels names its files
+  // (binding.*Kappa). Then no file is admitted by SHA-256. (A proof term is still named by its SHA-256 below: that
+  // name keys the verdict guest and the kept proofs, and is the package's to change.) A manifest from before it had labels names its files
   // by SHA-256 and is held to that, in both places.
   const LABEL = /^blake3:[0-9a-f]{64}$/;
   const named = [manifest.glue, manifest.wasm, manifest.library];
