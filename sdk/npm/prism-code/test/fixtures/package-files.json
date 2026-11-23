@@ -90,6 +90,7 @@
   "src/journey/model-files.mjs",
   "src/journey/model-guest.mjs",
   "src/journey/model-holo.mjs",
+  "src/journey/model-kernel-pins.mjs",
   "src/journey/model-prove.mjs",
   "src/journey/model-site.mjs",
   "src/journey/module-source.mjs",
