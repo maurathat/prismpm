@@ -168,12 +168,14 @@ if (BY_LABEL) {
 }
 const entry = '/' + listing.entry;
 const { ruleTable, tableWords, tableShape, counterexample, OPS } = await import(/* @vite-ignore */ EDIT + 'prism-code/journey/rule-table.mjs');
-// The app this model was published with, if any: its record says what the app runs.
-const { appRecord, tableFacts, differences, verdict } = await import(/* @vite-ignore */ EDIT + 'app-match.mjs');
-const beside = await appRecord(PROJECT);
-// A holo app has another record: the label of its holo and the identity of the model it was built from.
+// The app this model was published with, if any. A holo app's record names the label of its holo and the identity of
+// the model it was built from; a rule app's says what the app runs.
 const { holoAppRecord, holoVerdict } = await import(/* @vite-ignore */ EDIT + 'holo-match.mjs');
-const holoBeside = beside ? null : await holoAppRecord(PROJECT);
+const holoBeside = await holoAppRecord(PROJECT);
+const { appRecord, tableFacts, differences, verdict } = await import(/* @vite-ignore */ EDIT + 'app-match.mjs');
+// Asked for only when the app has no holo record: a holo app has no rule app's record beside it, and asking for one
+// is a request that can only fail, which with the network off is a request that should not be made at all.
+const beside = holoBeside ? null : await appRecord(PROJECT);
 const original = files[entry];
 const matchLine = document.getElementById('match');
 function compare(table, edited) {
@@ -767,18 +769,23 @@ try {
       + (built.vectors ? `Tested: ${built.vectors.passed} of ${built.vectors.total} examples give their recorded answer through it. ` : ''), link);
     // Under a host, the running app is the holospace's to replace. It judges the bytes itself and says what it
     // did, or why it did nothing; this page's own account of the build is not what decides.
-    if (HOST) {
+    // A live build does not wait for that answer: the next edit is built while the holospace is still judging this
+    // one, and what it says is added when it comes, if this build is still the one shown.
+    const shown = state.built;
+    const askHost = async () => {
       let said;
       // The holospace may refuse, for a reason it names: a proof it cannot check, a build over its limits. It is
       // waited for a minute and no longer, so a holospace that does not answer shows as that and not as a hang.
       const answer = new Promise((resolve) => setTimeout(() => resolve({ replaced: false, reason: 'replace.unanswered' }), 60000));
       try { said = await Promise.race([HOST.replace(built.holo.bytes), answer]); } catch (error) { said = { replaced: false, reason: String(error?.code ?? error?.message ?? error) }; }
+      if (state.built !== shown) return;
       state.replaced = { replaced: said?.replaced === true, kept: said?.kept ?? null, reason: said?.reason ?? null, address: said?.address ?? null, judged: said?.judged ?? null };
       const WHY = { 'replace.unanswered': 'its holospace did not answer within a minute', 'proof.unjudged': "its holospace cannot yet check the proof itself, and does not take this page's word for it", 'replace.unbuilt': 'its holospace judged the build and cannot replace a running app yet' };
       took.append(said?.replaced === true
         ? ` The running app was replaced${said.kept === 'restarted' ? `, and restarted: ${said.reason ?? 'no reason given'}` : ', and kept its state'}.`
         : ` The running app was not replaced: ${WHY[said?.reason] ?? said?.reason ?? 'no reason given'}.`);
-    }
+    };
+    if (HOST) { if (live) askHost().catch(() => {}); else await askHost(); }
     return state.built;
   };
   buildButton.addEventListener('click', () => { window.prismModel.build().catch((error) => { buildButton.disabled = false; took.textContent = 'Not built: ' + String(error?.message ?? error); took.hidden = false; }); });
