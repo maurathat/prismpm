@@ -113,6 +113,34 @@ export function prepare(root, envelope) {
   writeFileSync(path, writeSemantic(text, payload));
 }
 
+const TOOLCHAIN = /^lean_toolchain = "(leanprover\/lean4:v[0-9]+\.[0-9]+\.[0-9]+)"$/m;
+
+// The prior SDK projects the source as it was committed, Lean toolchain
+// included. The current LexLean locks only for the toolchain it pins, so the
+// envelope is retargeted to the root's toolchain after the prior capture and
+// before the current lock. Only the two toolchain pins change: the project's
+// `lean_toolchain` and the Lean workspace's `lean-toolchain`.
+export function retarget(root, envelope) {
+  const target = regular(join(root, 'lexlean.toml')).toString('utf8').match(TOOLCHAIN);
+  requireThat(target, 'root lexlean.toml pins no Lean toolchain');
+  const project = join(envelope, 'lexlean.toml');
+  const text = regular(project).toString('utf8');
+  requireThat(text.match(new RegExp(TOOLCHAIN.source, 'gm'))?.length === 1, 'envelope lexlean.toml pins no single Lean toolchain');
+  writeFileSync(project, text.replace(TOOLCHAIN, `lean_toolchain = "${target[1]}"`));
+  writeFileSync(join(envelope, 'lean-toolchain'), regular(join(root, 'lean-toolchain')));
+}
+
+// A lock less what a toolchain retarget may change: the compiler identity, the
+// toolchain, the project configuration digest, and the digest of the Lean
+// workspace's lean-toolchain file. Everything else must be byte-identical.
+function projectionLock(lock) {
+  return lock
+    .replace(/^compiler_semantics = "[0-9a-f]{64}"$/m, '')
+    .replace(TOOLCHAIN, '')
+    .replace(/^project_config_sha256 = "[0-9a-f]{64}"$/m, '')
+    .replace(/^(path = "lean-toolchain"\n)sha256 = "[0-9a-f]{64}"$/m, '$1');
+}
+
 function compiler(lock) {
   requireThat(typeof lock === 'string', 'lock must be text');
   const values = [...lock.matchAll(/^compiler_semantics = "([0-9a-f]{64})"$/gm)];
@@ -223,8 +251,8 @@ export function compare(prior, current, manifest, priorLock, currentLock) {
   const before = validateCapture(prior, compiler(priorLock));
   const after = validateCapture(current, compiler(currentLock));
   requireThat(prior.lock === priorLock, 'prior lock differs from accepted source');
-  requireThat(prior.lock.replace(/^compiler_semantics = "[0-9a-f]{64}"$/m, '')
-    === current.lock.replace(/^compiler_semantics = "[0-9a-f]{64}"$/m, ''), 'projection lock changed beyond compiler identity');
+  requireThat(projectionLock(prior.lock) === projectionLock(current.lock),
+    'projection lock changed beyond compiler identity and Lean toolchain');
   const content = snapshot => {
     const { source_id, semantic_id, compiler_semantics_id, ...payload } = snapshot;
     return canonical(payload);
@@ -299,7 +327,7 @@ export function publish(root, work) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, ...args] = process.argv.slice(2);
-  const commands = { prepare: [2, prepare], capture: [4, captureProjection], emit: [5, emit], publish: [2, publish] };
+  const commands = { prepare: [2, prepare], retarget: [2, retarget], capture: [4, captureProjection], emit: [5, emit], publish: [2, publish] };
   requireThat(commands[command] && args.length === commands[command][0], 'invalid bootstrap evidence arguments');
   commands[command][1](...args);
 }

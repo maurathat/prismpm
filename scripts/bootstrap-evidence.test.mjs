@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { canonical, captureProjection, compare, prepare, publish, sha, sha256Base32, sourceManifest, validateCapture } from './bootstrap-evidence.mjs';
+import { canonical, captureProjection, compare, prepare, publish, retarget, sha, sha256Base32, sourceManifest, validateCapture } from './bootstrap-evidence.mjs';
 import { historicalInvocation, qemuArguments, RUNTIME, verifyRuntime } from '../sdk/bootstrap/runner.mjs';
 
 const OLD = '4'.repeat(64);
@@ -151,6 +151,51 @@ test('exact accepted compiler and projection lock changes cannot be caller subst
   assert.throws(() => compare(fixture(), changed, manifest, lock(OLD), lock(NEW)), /lock changed beyond compiler/);
   changed.lock = lock(NEW) + `compiler_semantics = "${NEW}"\n`;
   assert.throws(() => compare(fixture(), changed, manifest, lock(OLD), lock(NEW)), /ambiguous/);
+});
+
+// A lock as LexLean writes it for a project with a Lean workspace.
+const toolchainLock = (compiler, toolchain, config, pin, manifestSha = '9'.repeat(64)) =>
+  `spec = "lexlean/lock/1"\nlanguage = "1.1"\ncompiler_semantics = "${compiler}"\n`
+  + `project_config_sha256 = "${config}"\nlean_toolchain = "leanprover/lean4:${toolchain}"\n\n`
+  + `[[workspace_file]]\npath = "lake-manifest.json"\nsha256 = "${manifestSha}"\n\n`
+  + `[[workspace_file]]\npath = "lean-toolchain"\nsha256 = "${pin}"\n`;
+
+test('a Lean toolchain retarget may change only the toolchain, its two digests and the compiler', () => {
+  const priorLock = toolchainLock(OLD, 'v4.32.1', 'a'.repeat(64), 'b'.repeat(64));
+  const currentLock = toolchainLock(NEW, 'v4.32.2', 'c'.repeat(64), 'd'.repeat(64));
+  const before = fixture();
+  const after = fixture(NEW);
+  before.lock = priorLock;
+  after.lock = currentLock;
+  compare(before, after, manifest, priorLock, currentLock);
+  const drifted = toolchainLock(NEW, 'v4.32.2', 'c'.repeat(64), 'd'.repeat(64), 'e'.repeat(64));
+  after.lock = drifted;
+  assert.throws(() => compare(before, after, manifest, priorLock, drifted), /lock changed beyond compiler identity and Lean toolchain/);
+  const language = currentLock.replace('language = "1.1"', 'language = "1.2"');
+  after.lock = language;
+  assert.throws(() => compare(before, after, manifest, priorLock, language), /lock changed beyond/);
+});
+
+test('retarget rewrites only the two Lean toolchain pins of the envelope to the root', () => {
+  const work = mkdtempSync(join(tmpdir(), 'bootstrap-retarget-'));
+  try {
+    const root = join(work, 'root');
+    const envelope = join(work, 'envelope');
+    mkdirSync(root);
+    mkdirSync(envelope);
+    writeFileSync(join(root, 'lexlean.toml'), 'name = "prismpm"\nlean_toolchain = "leanprover/lean4:v4.32.2"\n');
+    writeFileSync(join(root, 'lean-toolchain'), 'leanprover/lean4:v4.32.2\n');
+    const project = 'name = "prismpm"\nlanguage = "1.1"\nlean_toolchain = "leanprover/lean4:v4.32.1"\nlockfile = "lexlean.lock"\n';
+    writeFileSync(join(envelope, 'lexlean.toml'), project);
+    writeFileSync(join(envelope, 'lean-toolchain'), 'leanprover/lean4:v4.32.1\n');
+    retarget(root, envelope);
+    assert.equal(readFileSync(join(envelope, 'lexlean.toml'), 'utf8'), project.replace('v4.32.1', 'v4.32.2'));
+    assert.equal(readFileSync(join(envelope, 'lean-toolchain'), 'utf8'), 'leanprover/lean4:v4.32.2\n');
+    writeFileSync(join(envelope, 'lexlean.toml'), `${project}lean_toolchain = "leanprover/lean4:v4.32.1"\n`);
+    assert.throws(() => retarget(root, envelope), /no single Lean toolchain/);
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
 });
 
 test('modeled manifest digest and count must match the supplied exact source closure', () => {

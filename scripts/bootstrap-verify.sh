@@ -54,6 +54,9 @@ fi
 node "$root/sdk/bootstrap/runner.mjs" "$prior" --project "$envelope" build --json >"$work/prior-build.json"
 node "$root/scripts/bootstrap-evidence.mjs" capture "$envelope" \
   "$work/prior-projection.json" "$work/prior-build.json" "$work/prior-capture.json"
+# The current LexLean locks only for the Lean toolchain it pins; the prior
+# capture above is of the source as committed.
+node "$root/scripts/bootstrap-evidence.mjs" retarget "$root" "$envelope"
 # Keep compilation out of the sealed dependency tree, including when a caller
 # supplies a Cargo target directory. The existing private workspace owns cleanup.
 if ! cargo run --locked --offline --quiet --manifest-path \
