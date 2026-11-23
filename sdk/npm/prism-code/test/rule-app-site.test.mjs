@@ -10,6 +10,7 @@ import { build } from '../src/journey/engine.mjs';
 import { RULE_JUDGE_HOLO, admits, answerKind, greatestAt, kernelChecked, leastAt, rulesAt } from '../src/journey/rule-app.mjs';
 import { browserClosure, writeRuleAppSite } from '../src/journey/rule-app-site.mjs';
 import { modelFiles } from '../src/journey/model-files.mjs';
+import { kappa } from '../src/blake3.mjs';
 import { PARKING, ruleAppSnapshot } from './support/snapshot.mjs';
 import { snapshotOf, startedApp } from './support/started-app.mjs';
 
@@ -42,8 +43,10 @@ test('a build writes the page beside the app, and the page carries the record, t
   assert.match(r.message, /Its page is the folder .*site: static files any host serves, which check the app in the browser before it answers\./);
   const at = (file) => readFileSync(join(r.site, file));
   // The record and the judge are the very bytes the build named.
-  assert.equal(sha(at('app.rule-app.json')), r.address);
-  assert.equal(sha(at('kernel.holo')), RULE_JUDGE_HOLO);
+  // The app's address and the judge's are UOR content addresses: the BLAKE3 kappa-label of the bytes.
+  assert.equal(kappa(new Uint8Array(at('app.rule-app.json'))), r.address);
+  assert.match(r.address, /^blake3:[0-9a-f]{64}$/);
+  assert.equal(kappa(new Uint8Array(at('kernel.holo'))), RULE_JUDGE_HOLO);
   for (const file of browserClosure()) assert.deepEqual(at(`prism-code/src/${file}`), readFileSync(new URL(`../src/${file}`, import.meta.url)), file);
   // Planted defect P1: the page decides with the package's own functions, by their source, not a second writing of them.
   const script = at('start.mjs').toString('utf8');
@@ -146,7 +149,7 @@ test('the page produces only the terms this browser has not produced, and judges
   // Planted defect R3: kept files are still checked against the manifest, and the guest runs from the bytes hashed.
   assert.match(script, /if \(g !== manifest\.glue\.sha256 \|\| w !== manifest\.wasm\.sha256 \|\| l !== manifest\.library\.sha256\) throw/);
   assert.match(script, /kernel = await loadArchive\(holoBytes, \{ capabilities: null, capabilitySet: undefined, allowUnverified: false \}\);/);
-  assert.match(script, /holoPinned: await sha256\(holoBytes\),/);
+  assert.match(script, /holoPinned: await labelLike\(record\.kernel\.holo, holoBytes\),/);
   // An earlier visit is named only when a proof was reused.
   assert.match(script, /const earlier = \(reused === 0 \? '' :/);
 });

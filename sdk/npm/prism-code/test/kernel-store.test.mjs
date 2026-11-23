@@ -27,6 +27,13 @@ function network(answer = (name) => ({ ok: true, status: 200, bytes: real(name) 
 test('the fixtures beside the tests are the pinned bytes, and the package ships them only by label, under wasm/pinned', () => {
   // Each is named by the label of its decoded bytes, and kept as served.
   for (const [name, want] of Object.entries(KERNEL_FILES)) assert.deepEqual([real(name).length, kappa(want.encoding === 'gzip' ? gunzipSync(real(name)) : real(name))], [want.encodedBytes ?? want.bytes, want.kappa], name);
+  // The manifest names the loader, the module and the library by the same labels, and so does its record that this
+  // kernel judged this library whole: a reader admits the three by BLAKE3 with nothing else to trust.
+  const manifest = JSON.parse(readFileSync(new URL('../src/journey/kernel/manifest.json', import.meta.url), 'utf8'));
+  for (const [part, bound] of [['glue', 'loaderKappa'], ['wasm', 'kernelKappa'], ['library', 'libraryKappa']]) {
+    const label = kappa(gunzipSync(real(manifest[part].file)));
+    assert.deepEqual([manifest[part].kappa, manifest.binding[bound], KERNEL_FILES[manifest[part].file].kappa], [label, label, label], part);
+  }
   assert.equal(hasKernel({ env: { PRISM_KERNEL_DIR: fileURLToPath(new URL('./fixtures/kernel/', import.meta.url)) } }), true);
   assert.deepEqual(readdirSync(new URL('../src/journey/kernel/', import.meta.url)).sort(), ['NOTICE.md', 'manifest.json']);
   const shipped = JSON.parse(readFileSync(new URL('./fixtures/package-files.json', import.meta.url), 'utf8'));
