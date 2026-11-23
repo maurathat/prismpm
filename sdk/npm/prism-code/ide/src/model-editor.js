@@ -36,6 +36,7 @@ import '@codingame/monaco-vscode-theme-defaults-default-extension';
 import extHostWorkerUrl from '@codingame/monaco-vscode-api/workers/extensionHost.worker?worker&url';
 import editorWorkerUrl from '@codingame/monaco-vscode-api/workers/editor.worker?worker&url';
 import { LEXLEAN, registerLexLean, tokenTypes } from './lexlean-language.js';
+import { limitsSaid, replaceSaid, stoppedSaid } from './host-words.mjs';
 import { prismTerminal } from './model-terminal.js';
 import { ITerminalService } from '@codingame/monaco-vscode-terminal-service-override';
 
@@ -543,6 +544,10 @@ try {
       // A View that cannot be shown does not stop the app being run by request.
       try { state.run.view = await showView(opened); } catch (error) { state.run.view = { shown: false, why: String(error?.message ?? error) }; }
       if (state.run.view?.shown) runVerdict.textContent += ' Its own page is shown below, in a frame that can reach nothing but the app.';
+      // The limits its holospace holds it to, when this page is in one and it names them. None is assumed.
+      state.run.limits = HOST?.limits ?? null;
+      const limits = limitsSaid(state.run.limits);
+      if (limits) runVerdict.textContent += ' ' + limits;
     } catch (error) {
       state.run = { verdict: null, error: String(error?.message ?? error) };
       runBox.dataset.state = 'refused';
@@ -554,7 +559,8 @@ try {
   async function ask(request, from = '') {
     if (!running) throw new Error('nothing is ready to run: build first');
     let answers;
-    try { answers = await running.runner.step(request); } catch (error) { answers = [`(the app did not answer: ${String(error?.message ?? error)})`]; }
+    // A request the holospace stopped (over its memory, its time or its storage) is said to be that, by its reason.
+    try { answers = await running.runner.step(request); } catch (error) { state.run.stopped = error?.code ?? null; answers = [`(${stoppedSaid(error)})`]; }
     state.run.sent.push(request);
     state.run.answers.push(answers);
     runLog.textContent += `${from}> ${request}\n${answers.map((a) => '  ' + a).join('\n')}\n`;
@@ -779,11 +785,10 @@ try {
       const answer = new Promise((resolve) => setTimeout(() => resolve({ replaced: false, reason: 'replace.unanswered' }), 60000));
       try { said = await Promise.race([HOST.replace(built.holo.bytes), answer]); } catch (error) { said = { replaced: false, reason: String(error?.code ?? error?.message ?? error) }; }
       if (state.built !== shown) return;
-      state.replaced = { replaced: said?.replaced === true, kept: said?.kept ?? null, reason: said?.reason ?? null, address: said?.address ?? null, judged: said?.judged ?? null };
-      const WHY = { 'replace.unanswered': 'its holospace did not answer within a minute', 'proof.unjudged': "its holospace cannot yet check the proof itself, and does not take this page's word for it", 'replace.unbuilt': 'its holospace judged the build and cannot replace a running app yet' };
-      took.append(said?.replaced === true
-        ? ` The running app was replaced${said.kept === 'restarted' ? `, and restarted: ${said.reason ?? 'no reason given'}` : ', and kept its state'}.`
-        : ` The running app was not replaced: ${WHY[said?.reason] ?? said?.reason ?? 'no reason given'}.`);
+      // Said as the holospace gave it (host-words.mjs): replaced or not, why, and whether a session was carried.
+      const told = replaceSaid(said);
+      state.replaced = told.state;
+      took.append(' ' + told.text);
     };
     if (HOST) { if (live) askHost().catch(() => {}); else await askHost(); }
     return state.built;
