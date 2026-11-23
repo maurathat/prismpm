@@ -32,21 +32,29 @@ async function open() {
   const manifest = await (await fetch(base + 'manifest.json', { cache: 'no-store' }).catch(() => fetch(base + 'manifest.json'))).json();
   const [glue, wasm, library] = await Promise.all([manifest.glue, manifest.wasm, manifest.library].map(async (entry) => unpack(await fetch(base + entry.file))));
   // Each file is taken only as the bytes its BLAKE3 label names, where the manifest names one (manifest.*.kappa, the
-  // label of the decoded bytes). A manifest from before it had labels names them by SHA-256, and is held to that.
+  // label of the decoded bytes), and the record that this kernel judged this library whole is read by the same labels
+  // (binding.*Kappa). Then nothing here is hashed with SHA-256. A manifest from before it had labels names its files
+  // by SHA-256 and is held to that, in both places.
+  const LABEL = /^blake3:[0-9a-f]{64}$/;
   const named = [manifest.glue, manifest.wasm, manifest.library];
-  const byLabel = named.every((entry) => typeof entry?.kappa === 'string' && /^blake3:[0-9a-f]{64}$/.test(entry.kappa));
-  const [g, w, l] = await Promise.all([glue, wasm, library].map(sha256));
-  const pinned = byLabel
-    ? [glue, wasm, library].every((bytes, i) => kappa(bytes) === named[i].kappa)
-    : g === manifest.glue.sha256 && w === manifest.wasm.sha256 && l === manifest.library.sha256;
-  if (!pinned) throw Object.assign(new Error('the kernel, its loader or its library is not the pinned one'), { reason: 'mismatch' });
   const b = manifest.binding;
-  if (!b || b.kernel !== w || b.loader !== g || b.library !== l) throw new Error('there is no record that this kernel judged this library whole');
+  const byLabel = named.every((entry) => LABEL.test(entry?.kappa ?? '')) && [b?.loaderKappa, b?.kernelKappa, b?.libraryKappa].every((label) => LABEL.test(label ?? ''));
+  let ids;
+  if (byLabel) {
+    ids = [glue, wasm, library].map((bytes) => kappa(bytes));
+    if (ids.some((id, n) => id !== named[n].kappa)) throw Object.assign(new Error('the kernel, its loader or its library is not the pinned one'), { reason: 'mismatch' });
+    if (b.loaderKappa !== ids[0] || b.kernelKappa !== ids[1] || b.libraryKappa !== ids[2]) throw new Error('there is no record that this kernel judged this library whole');
+  } else {
+    const [g, w, l] = await Promise.all([glue, wasm, library].map(sha256));
+    if (g !== manifest.glue.sha256 || w !== manifest.wasm.sha256 || l !== manifest.library.sha256) throw Object.assign(new Error('the kernel, its loader or its library is not the pinned one'), { reason: 'mismatch' });
+    if (!b || b.kernel !== w || b.loader !== g || b.library !== l) throw new Error('there is no record that this kernel judged this library whole');
+    ids = ['sha256:' + g, 'sha256:' + w, 'sha256:' + l];
+  }
 
   // Resettable: the kernel as it is once its library is resident is held, and laid back before every batch.
   const k = await openKernel({ factory: await loaderFromBlob(glue), wasm, baseText: dec.decode(library), resettable: true });
   postMessage({ ready: true, ms: Math.round(performance.now() - started), lean: manifest.lean?.version ?? null, admittedBy: byLabel ? 'blake3' : 'sha256' });
-  return { lib: readLibrary(k.baseText), check: k.check, reset: k.reset, labels: { kernel: 'sha256:' + w, library: 'sha256:' + l } };
+  return { lib: readLibrary(k.baseText), check: k.check, reset: k.reset, labels: { kernel: ids[1], library: ids[2] } };
 }
 
 const kernel = open();
