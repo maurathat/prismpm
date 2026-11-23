@@ -262,15 +262,12 @@ async function buildUnheld(dir, session, { log = () => {}, env = process.env, sn
 
 /**
  * The files that decide the model, as a holo carries them (ADR-018, `isSourcePath`): the model folder's `.lex.tex`
- * files under `src`, its `lexlean.toml` and `lexlean.lock`, everything under `language`, the Lake workspace's
- * `lakefile.toml`, `lean-toolchain` and `lake-manifest.json`, and `prism.toml`, which is the workspace's when the
- * model is in a folder of it. Their bytes are kept as they are on disk: they are what LexLean read.
+ * files under `src`, its `lexlean.toml` and `lexlean.lock`, everything under `language`, and the Lake workspace's
+ * `lakefile.toml`, `lean-toolchain` and `lake-manifest.json`. Their bytes are kept as they are on disk: they are
+ * what LexLean read. `prism.toml` is the project's and is not carried (model-holo.mjs).
  */
-function carriedSources(dir, root) {
-  const files = [...projectFiles(dir)].map(([path, bytes]) => ({ path: path.slice(1), bytes })).filter((file) => isSourcePath(file.path));
-  const manifest = root ? join(root, 'prism.toml') : null;
-  if (manifest && !files.some((file) => file.path === 'prism.toml') && existsSync(manifest)) files.push({ path: 'prism.toml', bytes: new Uint8Array(readFileSync(manifest)) });
-  return files;
+function carriedSources(dir) {
+  return [...projectFiles(dir)].map(([path, bytes]) => ({ path: path.slice(1), bytes })).filter((file) => isSourcePath(file.path));
 }
 
 /**
@@ -313,7 +310,7 @@ async function buildModelApp(dir, session, { log, env, snapshot, gaps, kernel, w
   const { EVALUATOR_GUEST } = await import('./model-guest.mjs');
   log("Writing the app's holo: the evaluator guest with the model's program. Nothing is compiled.");
   // The same function a browser build calls (build-core.mjs), so the two build the same bytes.
-  const made = await holoFromSnapshot(taken.snapshot, { evaluator: readFileSync(new URL(EVALUATOR_GUEST.file, import.meta.url)), snapshotBytes: taken.bytes, sources: sources ? carriedSources(dir, root) : null, proof });
+  const made = await holoFromSnapshot(taken.snapshot, { evaluator: readFileSync(new URL(EVALUATOR_GUEST.file, import.meta.url)), snapshotBytes: taken.bytes, sources: sources ? carriedSources(dir) : null, proof });
   if (!made.ok) return made;
   const { built } = made;
   const path = join(dir, '.prism', 'build', `${built.name.toLowerCase().match(/[a-z0-9]+/g)?.join('-') ?? 'app'}.holo`);

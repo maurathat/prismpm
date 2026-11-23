@@ -4,33 +4,38 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Prism model editor</title>
+<link rel="stylesheet" href="./src/theme/hologram-tokens.css">
 <style>
+  /* The strip above the workbench, on the Hologram brand kit's tokens (src/theme/hologram-tokens.css, generated). */
   html, body { margin: 0; height: 100%; }
-  body { display: flex; flex-direction: column; font: 13px/1.4 system-ui, sans-serif; background: #1e1e1e; color: #ddd; }
-  #top { display: flex; align-items: center; border-bottom: 1px solid #333; }
+  a { color: var(--hg-link); } a:hover { color: var(--hg-link-hover); }
+  /* A control's edge at rest is the kit's subtle text grey; in focus, the kit's ring at the kit's ring width. */
+  #top button:focus-visible, #pushForm button:focus-visible, #pushForm input:focus-visible, #run button:focus-visible, #run input:focus-visible, #draft button:focus-visible { outline: var(--hg-ring-width, 2px) solid var(--hg-ring); outline-offset: 0; }
+  body { display: flex; flex-direction: column; font: 13px/1.4 var(--hg-font-sans), system-ui, sans-serif; background: var(--hg-background); color: var(--hg-foreground); }
+  #top { display: flex; align-items: center; border-bottom: 1px solid var(--hg-border-solid); }
   #strip { padding: .35rem .75rem; flex: 1; }
-  #liveLabel { white-space: nowrap; margin-right: .5rem; color: #ddd; }
-  #starters { white-space: nowrap; } #starters a { color: #9cc4ff; margin-left: .35rem; }
-  #download, #build { font: inherit; color: #ddd; background: none; border: 1px solid #555; border-radius: 3px; padding: .1rem .5rem; margin-right: .5rem; cursor: pointer; white-space: nowrap; }
-  #took { padding: .35rem .75rem; border-bottom: 1px solid #333; overflow-wrap: anywhere; }
-  #pushForm { padding: .35rem .75rem; border-bottom: 1px solid #333; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+  #liveLabel { white-space: nowrap; margin-right: .5rem; color: var(--hg-foreground); }
+  #starters { white-space: nowrap; } #starters a { color: var(--hg-link); margin-left: .35rem; }
+  #download, #build { font: inherit; color: var(--hg-foreground); background: none; border: 1px solid var(--hg-muted-foreground-subtle); border-radius: 3px; padding: .1rem .5rem; margin-right: .5rem; cursor: pointer; white-space: nowrap; }
+  #took { padding: .35rem .75rem; border-bottom: 1px solid var(--hg-border-solid); overflow-wrap: anywhere; }
+  #pushForm { padding: .35rem .75rem; border-bottom: 1px solid var(--hg-border-solid); display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
   #pushForm[hidden] { display: none; }
-  #pushForm input { font: 12px/1.4 ui-monospace, monospace; background: #111; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: .15rem .4rem; }
+  #pushForm input { font: 12px/1.4 ui-monospace, Consolas, monospace; background: var(--hg-card); color: var(--hg-foreground); border: 1px solid var(--hg-muted-foreground-subtle); border-radius: 3px; padding: .15rem .4rem; }
   #pushTarget { min-width: 18rem; }
-  #pushForm button { font: inherit; color: #ddd; background: none; border: 1px solid #555; border-radius: 3px; padding: .1rem .5rem; cursor: pointer; }
+  #pushForm button { font: inherit; color: var(--hg-foreground); background: none; border: 1px solid var(--hg-muted-foreground-subtle); border-radius: 3px; padding: .1rem .5rem; cursor: pointer; }
   #pushSaid { overflow-wrap: anywhere; }
-  #run { padding: .35rem .75rem; border-bottom: 1px solid #333; max-height: 32vh; overflow: auto; }
-  #run[data-state="verified"] #runVerdict { color: #6fcf8f; } #run[data-state="refused"] #runVerdict { color: #ff8a8a; }
+  #run { padding: .35rem .75rem; border-bottom: 1px solid var(--hg-border-solid); max-height: 32vh; overflow: auto; }
+  #run[data-state="verified"] #runVerdict { color: var(--hg-success); } #run[data-state="refused"] #runVerdict { color: var(--hg-destructive); }
   #run form { display: flex; gap: .5rem; align-items: center; margin: .3rem 0; flex-wrap: wrap; }
-  #run input[type="text"] { font: 12px/1.4 ui-monospace, monospace; flex: 1; min-width: 12rem; background: #111; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: .15rem .4rem; }
-  #run button { font: inherit; color: #ddd; background: none; border: 1px solid #555; border-radius: 3px; padding: .1rem .5rem; cursor: pointer; }
-  #runView { display: block; width: 100%; height: 14rem; border: 1px solid #555; border-radius: 3px; background: #fff; margin: .3rem 0; }
-  #runLog { margin: 0; font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-  #strip[data-state="ok"] { color: #6fcf8f; } #strip[data-state="bad"] { color: #ff8a8a; }
-  #match { padding: .35rem .75rem; border-bottom: 1px solid #333; }
-  #draft { padding: .35rem .75rem; border-bottom: 1px solid #333; color: #d7ba7d; }
+  #run input[type="text"] { font: 12px/1.4 ui-monospace, Consolas, monospace; flex: 1; min-width: 12rem; background: var(--hg-card); color: var(--hg-foreground); border: 1px solid var(--hg-muted-foreground-subtle); border-radius: 3px; padding: .15rem .4rem; }
+  #run button { font: inherit; color: var(--hg-foreground); background: none; border: 1px solid var(--hg-muted-foreground-subtle); border-radius: 3px; padding: .1rem .5rem; cursor: pointer; }
+  #runView { display: block; width: 100%; height: 14rem; border: 1px solid var(--hg-border-strong); border-radius: 3px; background: #fff; margin: .3rem 0; }
+  #runLog { margin: 0; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+  #strip[data-state="ok"] { color: var(--hg-success); } #strip[data-state="bad"] { color: var(--hg-destructive); }
+  #match { padding: .35rem .75rem; border-bottom: 1px solid var(--hg-border-solid); }
+  #draft { padding: .35rem .75rem; border-bottom: 1px solid var(--hg-border-solid); color: var(--hg-muted-foreground); }
   #draft button { font: inherit; color: inherit; background: none; border: 1px solid currentColor; border-radius: 3px; padding: 0 .4rem; cursor: pointer; }
-  #match[data-state="same"] { color: #6fcf8f; } #match[data-state="other"] { color: #ff8a8a; font-weight: 600; }
+  #match[data-state="same"] { color: var(--hg-success); } #match[data-state="other"] { color: var(--hg-destructive); font-weight: 600; }
   #workbench { flex: 1; min-height: 0; position: relative; }
 </style>
 </head>

@@ -39,6 +39,7 @@ const escapeHtml = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&am
 function startScript() {
   return `// Written by prism-code. The record decides nothing here: the functions below do, and they are the package's own.
 import { loadArchive } from './prism-code/src/index.mjs';
+import { kappa } from './prism-code/src/blake3.mjs';
 import { HOLDS, KERNEL_AXIOMS, proofLines, readLibrary } from './prism-code/src/journey/kernel-terms.mjs';
 import { derivationKey, guaranteeStatement, proofKey, reuseAdmits } from './prism-code/src/journey/kappa-rules.mjs';
 import { judgedFacts, proved, termReusable } from './prism-code/src/journey/canonical-rules.mjs';
@@ -63,6 +64,8 @@ const dec = new TextDecoder();
 const hexWord = (n) => [0, 8, 16, 24].map((k) => ((n >>> k) & 255).toString(16).padStart(2, '0')).join('');
 const readWord = (hex) => parseInt(hex.match(/../g).reverse().join(''), 16);
 const sha256 = async (bytes) => 'sha256:' + [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
+// A label as another is written: the UOR kappa-label (BLAKE3), or SHA-256 where a record written before 0.12 or the kernel's manifest names bytes so.
+const labelLike = async (like, bytes) => (like.startsWith('sha256:') ? sha256(bytes) : kappa(bytes));
 const $ = (id) => document.getElementById(id);
 // What this browser already fetched and proved, by κ-label. Every read re-derives the label.
 const store = await opfsStore();
@@ -72,7 +75,7 @@ async function named(label, fetchBytes) {
   const kept = await store.get(label);
   if (kept) return kept;
   const bytes = await fetchBytes();
-  if ((await sha256(bytes)) === label) await store.put(bytes);
+  if ((await labelLike(label, bytes)) === label) await store.put(bytes);
   return bytes;
 }
 const say = (id, text, state) => { $(id).textContent = text; if (state) $(id).dataset.state = state; };
@@ -93,7 +96,7 @@ async function open() {
   const facts = {
     schema: record.schema === ${JSON.stringify(RULE_APP_SCHEMA)} ? SCHEMA_ONE : 0,
     holoNamed: record.kernel.holo,
-    holoPinned: await sha256(holoBytes),
+    holoPinned: await labelLike(record.kernel.holo, holoBytes),
     holoVerified: verified,
     holoVectorsFailed: failed,
     fields,
@@ -104,7 +107,8 @@ async function open() {
     proofStatement: record.proof === null ? '' : record.proof.statement,
     recordStatement: await sha256(enc.encode(JSON.stringify(['prism/kernel-statement/1', record.words, record.guarantees]))),
   };
-  return { record, facts, kernel, address: await sha256(recordBytes) };
+  // The app's address is its UOR content address: the BLAKE3 kappa-label of the record's bytes.
+  return { record, facts, kernel, address: kappa(recordBytes) };
 }
 
 function form(record) {

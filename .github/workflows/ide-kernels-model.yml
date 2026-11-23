@@ -207,6 +207,8 @@ jobs:
         run: node ide/tools/gate-facts-test.mjs
       - name: An earlier build of the site opens by its label after the next is published
         run: node ide/tools/kappa-store-test.mjs
+      - name: The workbench's theme is what the brand kit's tokens generate, with the contrast asked
+        run: node ide/tools/theme-test.mjs --fetch
       - name: The site's worker serves a listed file only as the bytes its label names, and from its store with the network off
         run: node ide/tools/offline-test.mjs
       # The terminal's command line is tested against the tables above, with xterm.js as the lockfile installs it.

@@ -33,6 +33,10 @@ import getExplorerOverride from '@codingame/monaco-vscode-explorer-service-overr
 import getKeybindingsOverride from '@codingame/monaco-vscode-keybindings-service-override';
 import getQuickAccessOverride from '@codingame/monaco-vscode-quickaccess-service-override';
 import '@codingame/monaco-vscode-theme-defaults-default-extension';
+import { registerExtension, ExtensionHostKind } from '@codingame/monaco-vscode-api/extensions';
+// The workbench's own theme, from the Hologram brand kit (tools/build-theme.mjs, tools/brand-pins.json).
+import hologramThemeUrl from './theme/hologram-dark.json?url';
+import './theme/focus.css';
 import extHostWorkerUrl from '@codingame/monaco-vscode-api/workers/extensionHost.worker?worker&url';
 import editorWorkerUrl from '@codingame/monaco-vscode-api/workers/editor.worker?worker&url';
 import { LEXLEAN, registerLexLean, tokenTypes } from './lexlean-language.js';
@@ -43,6 +47,7 @@ import { ITerminalService } from '@codingame/monaco-vscode-terminal-service-over
 // two, enough to take a burst of keys as one edit; and only one check is ever waiting, the newest, so typing faster
 // than LexLean answers never builds a queue behind what is on screen.
 const PAUSE_MS = 40;
+const HOLOGRAM_THEME = 'Hologram Dark';
 const ERROR = 8; // MarkerSeverity.Error
 const strip = document.getElementById('strip');
 const state = (window.prismModel = { ready: false, checks: 0, last: null, proof: null, error: null, markers: 0 });
@@ -416,9 +421,14 @@ try {
     registerFileSystemOverlay(1, provider);
   }
   // LexLean's colours reach the editor as semantic tokens, so they are on whatever the theme would choose.
-  // ?theme=<a theme's name> opens the page in that theme; without it, the workbench's own choice stands.
-  // Dark+ unless the address names another theme: ?theme=<a theme's name, as the command palette lists it>.
-  const theme = new URLSearchParams(location.search).get('theme') || 'Default Dark+';
+  // The Hologram theme, generated from the brand kit's tokens, is given to the workbench as a theme of its own, the
+  // way an extension gives one, and is the one it opens in. ?theme=<a theme's name, as the command palette lists it>
+  // opens the page in another, Default Dark+ for one.
+  const hologram = registerExtension({ name: 'hologram-theme', publisher: 'prism', version: '1.0.0', engines: { vscode: '*' },
+    contributes: { themes: [{ id: HOLOGRAM_THEME, label: HOLOGRAM_THEME, uiTheme: 'vs-dark', path: './hologram-dark.json' }] } }, ExtensionHostKind.LocalProcess, { system: true });
+  hologram.registerFileUrl('./hologram-dark.json', hologramThemeUrl);
+  const theme = new URLSearchParams(location.search).get('theme') || HOLOGRAM_THEME;
+  // The editor's font and its size are VS Code's own, untouched: code reads as it does there.
   // No minimap: it is one more thing drawn on every keystroke, and the files here are short.
   await initUserConfiguration(JSON.stringify({ 'editor.semanticHighlighting.enabled': true, 'workbench.colorTheme': theme, 'editor.minimap.enabled': false }));
 
@@ -733,6 +743,8 @@ try {
     }
     const theoremsProved = built.theorems ? built.theorems.filter((t) => t.status === 'proved').length : null;
     state.built = { ok: built.ok, stage: built.stage, proved: built.proved, theorems: built.theorems ? { proved: theoremsProved, total: built.theorems.length } : null, vectors: built.vectors ?? null, ms: reply.ms, message: built.message,
+      // Each theorem a build did not prove, with where the package says it is stated and what to do about it.
+      unproved: (built.theorems ?? []).filter((t) => t.status !== 'proved').map((t) => ({ theorem: t.theorem, status: t.status, file: t.place?.file ?? null, line: t.place?.line ?? null, remedy: t.remedy ?? null })),
       diagnostics: (built.diagnostics ?? []).length, holo: built.holo ? { label: built.holo.label, name: built.holo.name, bytes: built.holo.bytes.length, semanticId: built.holo.semanticId } : null };
     // The bytes are kept for whoever runs or saves the holo next; a failed build keeps none.
     window.prismModel.holo = built.holo ? () => built.holo.bytes : null;
@@ -912,12 +924,15 @@ try {
         }
         return { path: entry, line: 1 };
       };
-      const missed = proving.theorems.filter((t) => t.status !== 'proved').map((t) => ({ ...t, at: stated(t.theorem) }));
+      // The package says where a theorem that is not proved is stated (place) and what to do about it (remedy). Its
+      // place is used when it names a file of the model; this page's own search stands in when it does not.
+      const placed = (t) => (t.place && typeof t.place.file === 'string' && t.place.file in project && Number.isInteger(t.place.line) && t.place.line > 0 ? { path: t.place.file, line: t.place.line } : stated(t.theorem));
+      const missed = proving.theorems.filter((t) => t.status !== 'proved').map((t) => ({ ...t, at: placed(t) }));
       for (const path of Object.keys(project)) {
         markers.changeOne('prism-guarantees', uriOf(path), missed.filter((t) => t.at.path === path).map((t) => ({
           severity: ERROR, source: 'Prism', code: t.status,
           message: t.status === 'not settled' ? `Theorem ${t.theorem} is not settled: Lean's kernel accepted no proof of it here. That says nothing about whether it is true. ${t.detail}`
-            : `Theorem ${t.theorem} is not proved: ${t.detail.replace(/^not proved: /, '')}.`,
+            : `Theorem ${t.theorem} is not proved: ${t.detail.replace(/^not proved: /, '')}.` + (typeof t.remedy === 'string' && t.remedy !== '' ? ' ' + t.remedy : ''),
           startLineNumber: t.at.line, startColumn: 1, endLineNumber: t.at.line, endColumn: 1000,
         })));
       }

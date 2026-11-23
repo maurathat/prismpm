@@ -1,0 +1,12 @@
+/* A control in focus is told from one at rest by the width of its ring, not by its colour: the kit's ring (#757371)
+ * and the resting edge (the kit's subtle text grey, #767472) are nearly the same colour. The width is the kit's own
+ * (global.focus.ring-width, in hologram-tokens.css). VS Code draws focus as a 1px outline in the theme's focusBorder. */
+.monaco-workbench .monaco-inputbox.synthetic-focus,
+.monaco-workbench .monaco-select-box:focus,
+.monaco-workbench .monaco-custom-toggle:focus,
+.monaco-workbench .monaco-checkbox:focus,
+.monaco-workbench .setting-item-contents input:focus {
+  outline-width: var(--hg-ring-width, 2px) !important;
+  outline-style: solid !important;
+  outline-offset: 0 !important;
+}

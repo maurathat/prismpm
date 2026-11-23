@@ -134,6 +134,22 @@ test('init: --name, a bad name, an unknown template, usage errors', () => {
   assert.ok(run(bin, ['init', '--help']).out.includes('Writes the canonical template, UOR-Foundation/template'));
 });
 
+test('one entry point: every page a user starts from names npx prism-code@latest init, and none starts an app another way', () => {
+  const at = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
+  const pages = { README: at('../README.md'), guide: at('../docs/guide.md'), skill: at('../skill/SKILL.md'), create: at('../../create-prism-code/README.md') };
+  for (const [name, text] of Object.entries(pages)) {
+    assert.match(text, /npx prism-code@latest init/, `${name} names the entry point`);
+    // A bare `npx prism-code init` runs whichever version npx last kept; no page shows it as the way to start.
+    assert.doesNotMatch(text, /npx prism-code init\b/, `${name} shows the entry point without @latest`);
+    assert.doesNotMatch(text, /--template [a-z]/, `${name} offers a choice of template`);
+  }
+  // npm create is named only as the same command under another name, never as a different start.
+  for (const name of ['README', 'guide', 'create']) assert.match(pages[name], /npm create prism-code[^\n]*\n?[^\n]*(same code|same command|same files)/, name);
+  // The command's own help and the steps it prints say the same.
+  assert.match(run(bin, ['init', '--help']).out, /the one command it begins with: npx prism-code@latest init/);
+  assert.match(JSON.parse(run(bin, ['check', '--json'], { cwd: scratch() }).out).diagnostics[0].remediation, /npx prism-code@latest init/);
+});
+
 test('npm create prism-code is prism-code init', () => {
   const root = scratch();
   const viaCreate = run(createBin, ['proj', '--name', 'same'], { cwd: root });
@@ -142,7 +158,10 @@ test('npm create prism-code is prism-code init', () => {
   assert.equal(run(bin, ['init', 'proj2', '--name', 'same'], { cwd: root }).code, 0);
   const a = walk(join(root, 'proj'));
   assert.deepEqual(a, walk(join(root, 'proj2')));
-  for (const path of a) assert.ok(readFileSync(join(root, 'proj', path)).equals(readFileSync(join(root, 'proj2', path))), path);
+  // Every file is the same bytes, but the one that is each project's own: its ID, which init makes from random bytes.
+  for (const path of a.filter((p) => p !== 'prism.project')) assert.ok(readFileSync(join(root, 'proj', path)).equals(readFileSync(join(root, 'proj2', path))), path);
+  const ids = ['proj', 'proj2'].map((p) => /^id = "([0-9a-f]{64})"$/m.exec(readFileSync(join(root, p, 'prism.project'), 'utf8'))?.[1]);
+  assert.ok(ids[0] && ids[1] && ids[0] !== ids[1], 'each project has an ID of its own');
 });
 
 
