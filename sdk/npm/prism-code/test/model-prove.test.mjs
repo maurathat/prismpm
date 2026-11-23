@@ -36,6 +36,15 @@ test('the lowering and proof finder here are byte for byte the ones the sealed b
   }
 });
 
+test('the kernel\'s files by address are stated in a module with no import, and model-prove gives the same ones', async () => {
+  const pins = await import('../src/journey/model-kernel-pins.mjs');
+  // A page proves a holo again with these, so it must be able to load them: no import at all, of Node or of the package.
+  const source = readFileSync(new URL('../src/journey/model-kernel-pins.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /^\s*import\b|\bimport\(|\brequire\(/m);
+  assert.equal(pins.MODEL_KERNEL_FILES, MODEL_KERNEL_FILES, 'one object, stated once');
+  for (const file of Object.values(pins.MODEL_KERNEL_FILES)) assert.match(file.kappa, /^blake3:[0-9a-f]{64}$/);
+});
+
 test('the pinned files are the ones the lean-prover package carries', { skip: !here && 'no lean-prover package beside this one' }, async () => {
   await ensureModelKernel({ env: { PRISM_MODEL_KERNEL_DIR: kernelDir() }, fetch: noFetch });
   assert.deepEqual(Object.keys(MODEL_KERNEL_FILES), ['lean-kernel.mjs', 'lean-kernel.wasm.gz', 'base.ndjson.gz']);
