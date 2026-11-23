@@ -28,6 +28,7 @@ import { PrismCodeError, PrismError } from './errors.mjs';
 import { lexleanProjectDir } from './tiers.mjs';
 import { checkContract, checkRefusals, checkTheorems, contractRoot, isContract2, lexiconEntries, writeConformance } from './contract.mjs';
 import { readSession, sourceDigest, sourceFiles, writeSession } from './journey/project.mjs';
+import { proofRemedy, theoremPlace } from './journey/proof-hints.mjs';
 
 export const REPORT_SCHEMA = 'prism/report/1';
 export const EXIT = Object.freeze({ OK: 0, FAILED: 1, REFUSED: 2 });
@@ -54,24 +55,8 @@ function diagnostic({ code, message, at = null, file = null, line = null, remedi
   };
 }
 
-/** Where the model states the theorem `name`: `{ file, line }` of its `name:` member, or nulls when no module states it. */
-function theoremPlace(dir, name) {
-  const bare = String(name).split(/[.:]/).pop();
-  for (const file of dir ? sourceFiles(dir) : []) {
-    const lines = readFileSync(join(dir, file), 'utf8').split(/\r?\n/);
-    const at = lines.findIndex((l, i) => /^\s*name:/.test(l) && l.replace(/^\s*name:\s*/, '').replace(/\s*,?\s*$/, '') === bare && /^\s*theorem\{/.test(lines[i - 1] ?? ''));
-    if (at >= 0) return { file, line: at + 1 };
-  }
-  return { file: null, line: null };
-}
-
-/** What to try when the kernel finds no proof, by what it said: the forms it covers, never a weaker theorem. */
-function proofRemedy(status) {
-  const keep = 'Repair the definition or the theorem in the model; never weaken the theorem to make it pass.';
-  if (/unsupported: this form of goal/.test(status)) return `The kernel's search does not cover this statement's form. State it as a breaks definition equal to false, ((breaksName …) = false), and prove it by linear_arithmetic. ${keep}`;
-  if (/no certificate found/.test(status)) return `No proof was found: either the theorem is false of the model, or the search cannot see it. List every definition the proof unfolds, and give the theorem Nat parameters (1 and 0 for a Bool), which the search covers. ${keep}`;
-  return keep;
-}
+/** The model's sources under `dir`, as `[path, text]` pairs, for proof-hints.mjs; none without a folder. */
+const modelTexts = (dir) => (dir ? sourceFiles(dir).map((file) => [file, readFileSync(join(dir, file), 'utf8')]) : []);
 
 /** The diagnostics of one engine step: each of its own, or the step's message when it names none. `dir` is the model's folder. */
 function stepDiagnostics(result, fallback, dir = null) {
@@ -83,7 +68,8 @@ function stepDiagnostics(result, fallback, dir = null) {
     return own;
   }
   const missed = (result.theorems ?? []).filter((t) => !t.status.startsWith('proved'));
-  if (missed.length > 0) return missed.map((t) => diagnostic({ ...coded(new PrismCodeError('proof.rejected', `${t.theorem}: ${t.status}`)), ...theoremPlace(dir, t.theorem), remediation: proofRemedy(String(t.status)) }));
+  const texts = missed.length > 0 ? modelTexts(dir) : [];
+  if (missed.length > 0) return missed.map((t) => diagnostic({ ...coded(new PrismCodeError('proof.rejected', `${t.theorem}: ${t.status}`)), ...theoremPlace(texts, t.theorem), remediation: proofRemedy(String(t.status)) }));
   return [diagnostic({ code: result.code ?? fallback.code, message: result.message, remediation: result.next ?? null })];
 }
 

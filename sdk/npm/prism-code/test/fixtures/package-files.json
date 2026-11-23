@@ -93,6 +93,7 @@
   "src/journey/model-prove.mjs",
   "src/journey/model-site.mjs",
   "src/journey/project.mjs",
+  "src/journey/proof-hints.mjs",
   "src/journey/proof-record.mjs",
   "src/journey/proof-store.mjs",
   "src/journey/prove-core.mjs",
