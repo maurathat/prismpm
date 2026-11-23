@@ -29,10 +29,10 @@ test('the skill teaches the one path, with the CLI alone, and says what runs whe
   assert.doesNotMatch(skill, /spec\.json|prism\/spec\//);
 });
 
-test('a scaffolded LexLean project says a Prism app is one too, started from a starter', () => {
-  const r = run(['init', join(scratch(), 'proj'), '--template', 'text-request']);
+test('a scaffolded project is a Prism app started from the canonical template', () => {
+  const r = run(['init', join(scratch(), 'proj')]);
   assert.equal(r.code, 0, r.err);
-  assert.match(r.out, /A Prism app is a LexLean project too/);
+  assert.match(r.out, /the canonical template/);
   assert.doesNotMatch(r.out, /spec\.json/);
 });
 

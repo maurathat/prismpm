@@ -12,7 +12,7 @@
  *                                                     write the acceptance vectors as a recording
  *   prism-code replay <recording | dir>... --image <app.holo> [--statement <file>] [--json]
  *                                                     re-execute histories against a build; a divergence exits 1
- *   prism-code init [<dir>] [--name N] [--template T] [--no-skill] [--force]
+ *   prism-code init [<dir>] [--name N] [--no-skill] [--force]
  *                                                     start a Prism app: a starter model and the Prism skill, in this folder
  *   prism-code manifest [<dir>] [--target browser|node] [--json]
  *                                                     check and lint prism.toml, with its overlay merged
@@ -101,14 +101,13 @@ Usage:
   prism-code replay <recording | dir>... --image <app.holo | closure-dir> [--statement <file>] [--json]
                                                     re-execute recordings against this build and compare every
                                                     outcome: exit 0 unchanged, 1 diverged, 2 could not replay
-  prism-code init [<dir>] [--name <name>] [--template <name>] [--no-skill] [--force]
+  prism-code init [<dir>] [--name <name>] [--no-skill] [--force]
                                                     start a Prism app, the one command it begins with: npx prism-code@latest init.
-                                                    Writes prism.toml, a starter LexLean model to edit (rule-app unless
-                                                    --template names decision-app, stateful-app or the text-request template)
-                                                    and the Prism skill for an agent, all inside the folder. A folder that
-                                                    holds a model keeps it and gets only the skill. Nothing outside the folder
-                                                    is written or configured, and nothing is fetched. npm create prism-code
-                                                    runs the same command
+                                                    Writes the canonical template, UOR-Foundation/template, which this package
+                                                    carries and admits by BLAKE3 label, prism.toml naming the app, and the Prism
+                                                    skill for an agent, all inside the folder. A folder that holds a model keeps
+                                                    it and gets only the skill. Nothing outside the folder is written or
+                                                    configured, and nothing is fetched. npm create prism-code runs the same command
   prism-code manifest [<dir>] [--target <browser|node>] [--json]
                                                     check and lint prism.toml, with prism.<target>.toml merged;
                                                     a secret written as a literal is an error
@@ -161,8 +160,9 @@ Usage:
   prism-code check [<dir>] [--project <dir>] [--json]
                                                     check the project: prism.toml, then LexLean as WebAssembly checks
                                                     the model, then Lean's kernel, as WebAssembly, proves every theorem.
-                                                    All in this process; writes nothing. Exit 0 passed, 1 a theorem is
-                                                    not proved, 2 the manifest or the model does not check
+                                                    All in this process; writes nothing. Exit 0 passed, 1 a theorem is not
+                                                    proved or the template contract is broken, 2 the manifest or the model
+                                                    does not check
   prism-code build [<dir>] [--project <dir>] [--out <dir>] [--json]
                                                     check, then write the app under .prism/build with nothing compiled,
                                                     and replay its acceptance vectors; --out also copies it there.

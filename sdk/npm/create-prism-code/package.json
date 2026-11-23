@@ -1,7 +1,7 @@
 {
   "name": "create-prism-code",
   "version": "0.1.0",
-  "description": "npm create prism-code: start a Prism app with prism-code init (prism.toml, a starter LexLean model and the Prism skill).",
+  "description": "npm create prism-code: start a Prism app with prism-code init (the canonical template, prism.toml and the Prism skill).",
   "license": "MIT",
   "type": "module",
   "engines": {

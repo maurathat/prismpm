@@ -20,7 +20,7 @@ process.env.PRISM_HOME = mkdtempSync(join(tmpdir(), 'prism-home-'));
 process.env.PRISM_LEXLEAN_FETCH = '0';
 process.env.PRISM_KERNEL_DIR = fileURLToPath(new URL('./fixtures/kernel/', import.meta.url));
 
-const STARTERS = fileURLToPath(new URL('../templates/starters/', import.meta.url));
+const STARTERS = fileURLToPath(new URL('./fixtures/starters/', import.meta.url));
 // The env a step is given is the whole environment it sees: it names this test's home, never the user's.
 const HOME = { PRISM_HOME: process.env.PRISM_HOME };
 // The old opt-in to the hosted verifier: it is ignored now.

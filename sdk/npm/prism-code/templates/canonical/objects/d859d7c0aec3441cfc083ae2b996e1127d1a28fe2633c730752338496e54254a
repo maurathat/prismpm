@@ -1,0 +1,14 @@
+# Build output.
+**/.prism/
+**/.lexlean/
+**/.lake/
+
+# Editor and OS noise.
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+
+# What prism-code records about the last check and build, per machine.
+**/session.json

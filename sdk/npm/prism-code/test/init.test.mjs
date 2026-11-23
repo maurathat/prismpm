@@ -11,6 +11,8 @@ import { TEMPLATES, DEFAULT_TEMPLATE, templateFiles, manifestText, nameFromDirec
 import { parseManifest } from '../src/manifest.mjs';
 import { parseToml } from '../src/toml.mjs';
 import { readManifest } from '../src/node.mjs';
+import { canonicalTemplate } from '../src/journey/template.mjs';
+import { kappa } from '../src/blake3.mjs';
 
 const bin = fileURLToPath(new URL('../bin/prism-code.mjs', import.meta.url));
 const createBin = fileURLToPath(new URL('../../create-prism-code/bin/create-prism-code.mjs', import.meta.url));
@@ -88,12 +90,13 @@ test('planInit is the template plus prism.toml and an LF-only .gitattributes; an
 
 test('prism-code init scaffolds a project that prism-code manifest reads', async () => {
   const dir = join(scratch(), 'my-calc');
-  const r = run(bin, ['init', dir, '--template', 'text-request']);
+  const r = run(bin, ['init', dir]);
   assert.equal(r.code, 0, r.err);
   assert.match(r.out, /^Creating my-calc in /);
-  assert.match(r.out, /A Prism app is a LexLean project too: start one from a starter/);
+  assert.match(r.out, /the canonical template/);
   assert.doesNotMatch(r.out, /SDK|setup/);
-  assert.equal(readFileSync(join(dir, 'lexlean.lock'), 'utf8'), Buffer.from(templateFiles().get('lexlean.lock')).toString('utf8'));
+  const { files } = canonicalTemplate();
+  assert.equal(kappa(new Uint8Array(readFileSync(join(dir, 'app', 'lexlean.lock')))), files['app/lexlean.lock'], 'the lock is the template\'s, byte for byte');
   assert.ok(!existsSync(join(dir, 'prismpm.lock')), 'init binds no SDK image');
   const { manifest, grant } = await readManifest(dir);
   assert.equal(manifest.application.name, 'my-calc');
@@ -119,13 +122,15 @@ test('init: --name, a bad name, an unknown template, usage errors', () => {
   const bad = run(bin, ['init', join(dir, 'b'), '--name', 'Bad Name']);
   assert.equal(bad.code, 2);
   assert.match(bad.err, /^manifest\.invalid: application\.name/);
-  assert.equal(run(bin, ['init', join(dir, 'c'), '--template', 'nope']).code, 2);
+  const choice = run(bin, ['init', join(dir, 'c'), '--template', 'rule-app']);
+  assert.equal(choice.code, 64, 'there is no choice of template');
+  assert.match(choice.err, /^init no longer takes --template: every app starts from the one canonical template/);
   const gone = run(bin, ['init', join(dir, 'd'), '--sdk-image', 'x']);
   assert.equal(gone.code, 64);
   assert.match(gone.err, /^init no longer takes --sdk-image/);
   assert.equal(run(bin, ['init', 'a', 'b']).code, 64);
   assert.equal(run(bin, ['init', '--frobnicate']).code, 64);
-  assert.ok(run(bin, ['init', '--help']).out.includes('a starter LexLean model to edit (rule-app unless'));
+  assert.ok(run(bin, ['init', '--help']).out.includes('Writes the canonical template, UOR-Foundation/template'));
 });
 
 test('npm create prism-code is prism-code init', () => {
@@ -140,13 +145,13 @@ test('npm create prism-code is prism-code init', () => {
 });
 
 
-test('init with no template is the one command an app starts with: a starter, named for the folder, and the skill beside it', () => {
+test('init is the one command an app starts with: the canonical template, named for the folder, and the skill beside it', () => {
   const dir = join(scratch(), 'fee-tier');
   const r = run(bin, ['init', dir]);
   assert.equal(r.code, 0, r.err);
-  assert.match(r.out, /the rule-app starter: the model to edit/);
+  assert.match(r.out, /the canonical template \d+ files of UOR-Foundation\/template, blake3:[0-9a-f]{64}/);
   assert.match(readFileSync(join(dir, 'prism.toml'), 'utf8'), /^name = "fee-tier"$/m);
-  assert.ok(existsSync(join(dir, 'src', 'App.lex.tex')));
+  assert.ok(existsSync(join(dir, 'app', 'src', 'Contract.lex.tex')));
   for (const folder of ['.claude/skills/prism', '.agents/skills/prism']) {
     for (const f of ['SKILL.md', 'references/lexlean-1.2.md', 'references/template-contract.md']) {
       assert.ok(readFileSync(join(dir, folder, f)).equals(readFileSync(new URL(`../skill/${f}`, import.meta.url))), `${folder}/${f}`);
@@ -156,12 +161,12 @@ test('init with no template is the one command an app starts with: a starter, na
   assert.doesNotMatch(r.out + r.err, /setup|server|registered/i);
 
   // Run again, the model is the author's: it is left as it is, and only the skill is written.
-  const model = join(dir, 'src', 'App.lex.tex');
+  const model = join(dir, 'app', 'src', 'Contract.lex.tex');
   writeFileSync(model, `${readFileSync(model, 'utf8')}\n`);
   const edited = readFileSync(model);
   const again = run(bin, ['init', dir]);
   assert.equal(again.code, 0, again.err);
-  assert.match(again.out, /holds a LexLean model already; left as it is/);
+  assert.match(again.out, /a LexLean model is here already; left as it is/);
   assert.ok(readFileSync(model).equals(edited));
 
   const bare = join(scratch(), 'bare');

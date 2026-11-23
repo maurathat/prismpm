@@ -25,25 +25,35 @@ no container, no cloud build, no host Lean toolchain, and nothing about a model
 is sent anywhere.
 
 ```sh
-npx prism-code@latest init my-app   # a starter model to edit, and the Prism skill for your agent
+npx prism-code@latest init my-app   # the canonical template, its model to edit, and the Prism skill for your agent
 cd my-app
 npx prism-code check --json     # prism.toml, the model, and every theorem proved by Lean's kernel
-npx prism-code build --json     # check, then write the app under .prism/build with nothing compiled
+npx prism-code build --json     # check, then write the app under app/.prism/build with nothing compiled
 npx prism-code verify --json    # check again, then replay every acceptance vector on a fresh instance
 ```
 
 `npx prism-code@latest init` is the one command every Prism app starts with;
 `npm create prism-code@latest` runs the same code. It writes only inside the
-folder. An app's one source of truth is its LexLean model under `src/`. A
-starter is a LexLean module named by its SHA-256 in
-`templates/starters/index.json`, copied only when its bytes match; `rule-app`
-is the default, and `--template` names another:
+folder, and fetches nothing. Every app, simple or complex, starts from one
+canonical template, [`UOR-Foundation/template`](https://github.com/UOR-Foundation/template)
+(contract 2, the standalone frame), which this package carries in
+`templates/canonical`: every file under the BLAKE3 label of its bytes, each
+admitted by that label before any is written. There is no other template to
+choose. It writes:
 
-| Starter | Shape | Built as |
-| --- | --- | --- |
-| `rule-app` | one answer from one request, each condition a field against a value | the verified rule judge with the model's numbers, served as a static page |
-| `decision-app` | one answer from one request, with its own judge and theorems | a holo whose guest runs the model's program |
-| `stateful-app` | state kept between steps, with actions and invariants | a holo, as a decision app |
+| Path | What it is |
+| --- | --- |
+| `app/` | the app's one source of truth, its LexLean model in `app/src/`: the template's contract checker, to replace with your app |
+| `model/ids.toml` | every capability by ID, with its level and the theorems of the model that prove it; a refusal with the exact response it answers |
+| `features/suites/` | one scenario for each ID |
+| `AGENTS.md`, `VERIFICATION.md`, `template-contract.json`, `template.lock` | the universal policy, bound by BLAKE3 label |
+| `prism.toml` | the app's name; nothing granted |
+
+`check` holds the workspace to the template contract: `CONFORMANCE.md` is the
+generation of `model/ids.toml` (`build` writes it), every ID has a
+scenario, every theorem an ID names is stated and proved by Lean's kernel, every
+refusal it names answers an acceptance vector, and every universal policy file
+still has its label.
 
 `check`, `build` and `verify` answer one report, `prism/report/1`: `ok`, a
 `summary`, and `diagnostics`, each with a `code`, a `file`, a `line`, a
@@ -249,11 +259,9 @@ npx prism-code check
 npx prism-code build
 ```
 
-`init` writes `prism.toml` (version 0.1.0, nothing granted) and `text-request`:
-language-1.2 model, `prism.arch`, Lean workspace, `lexlean.lock`. The template
-is byte-identical to the reviewed ho-11 fixture. Existing files require
-`--force`. `--template rule-app`, `decision-app` or `stateful-app` starts a
-Prism app from a starter instead.
+`init` writes the canonical template and `prism.toml` (version 0.1.0, nothing
+granted). A file already there with other bytes requires `--force`; a folder
+that already holds a model keeps it and gets only the skill.
 
 `check`, `build` and `verify` run in this process: LexLean checks the model and
 Lean's kernel proves every theorem, both as WebAssembly, and `build` writes the
@@ -303,8 +311,8 @@ const vars = resolveVariables(manifest, process.env);
 
 ### Develop locally
 
-An app's model is LexLean the agent writes under `src/`, started from a
-starter by `prism-code init --template`.
+An app's model is LexLean the agent writes under `app/src/`, in a project
+`prism-code init` starts from the canonical template.
 
 ```sh
 npx prism-code dev

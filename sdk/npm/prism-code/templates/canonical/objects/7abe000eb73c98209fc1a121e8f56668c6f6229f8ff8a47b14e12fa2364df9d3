@@ -1,0 +1,1 @@
+{"project_content_paths":["CONFORMANCE.md"],"required_paths":["AGENTS.md","CONFORMANCE.md","VERIFICATION.md","template-contract.json","template.lock"],"schema":"uor/template-contract/2","universal_policy_paths":["AGENTS.md","VERIFICATION.md","template-contract.json","template.lock"],"version":"2.0.0"}

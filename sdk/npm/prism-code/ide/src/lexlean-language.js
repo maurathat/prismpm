@@ -1,6 +1,6 @@
 // LexLean as a language of the editor: a name, the file ending it goes with, brackets, and a tokenizer for colour.
 //
-// The tokenizer is written from the models in this repository (model/, templates/starters/), not from LexLean's
+// The tokenizer is written from the models in this repository (model/, test/fixtures/starters/), not from LexLean's
 // grammar: it colours what those files contain. It decides nothing. What a model means is LexLean's to say, in the
 // worker; a wrong colour here changes no verdict.
 

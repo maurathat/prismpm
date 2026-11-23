@@ -5,7 +5,7 @@ available_in: "1.0-beta"
 ---
 This guide covers three ways agents and holos meet. An agent can call a holo as a tool, an agent can reach it as a Model Context Protocol server, and an agent can write the model that becomes a holo. In every case the holo is checked before the first call.
 
-What ships today is different: `asTool`, `holo.verify()` and the `@prism-code/mcp` package below are planned for 1.0-beta and are not on npm. Today `npx prism-code@latest init` writes a starter model and the Prism skill into the project, and an agent that reads the skill checks, proves and builds the app with the `prism-code` command alone. To give an agent a built holo as a tool now, wrap `load` and `app.dispatch` in a tool of your own.
+What ships today is different: `asTool`, `holo.verify()` and the `@prism-code/mcp` package below are planned for 1.0-beta and are not on npm. Today `npx prism-code@latest init` writes the canonical template's model and the Prism skill into the project, and an agent that reads the skill checks, proves and builds the app with the `prism-code` command alone. To give an agent a built holo as a tool now, wrap `load` and `app.dispatch` in a tool of your own.
 
 ## As a tool with the Vercel AI SDK
 
@@ -61,7 +61,7 @@ The server refuses to start when the check fails, and it grants the instance exa
 
 ## Let an agent write the model
 
-An agent writes the app's LexLean model with the Prism skill that `npx prism-code@latest init` puts in the project: it starts from a content-addressed starter, runs `npx prism-code check` after every edit, and shows you the guarantees Lean proves. `check` reads the proof, not who wrote the model.
+An agent writes the app's LexLean model with the Prism skill that `npx prism-code@latest init` puts in the project: it starts from the canonical template, runs `npx prism-code check` after every edit, and shows you the guarantees Lean proves. `check` reads the proof, not who wrote the model.
 
 ## Next steps
 

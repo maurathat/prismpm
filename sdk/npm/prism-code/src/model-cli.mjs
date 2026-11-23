@@ -23,7 +23,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'nod
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { PrismCodeError, PrismError } from './errors.mjs';
 import { lexleanProjectDir } from './tiers.mjs';
-import { checkContract, contractRoot, lexiconEntries } from './contract.mjs';
+import { checkContract, checkRefusals, checkTheorems, contractRoot, isContract2, lexiconEntries, writeConformance } from './contract.mjs';
 import { readSession, sourceDigest, sourceFiles, writeSession } from './journey/project.mjs';
 
 export const REPORT_SCHEMA = 'prism/report/1';
@@ -94,17 +94,41 @@ async function openProject(path, explicit) {
 const report = (command, started, ok, summary, diagnostics) => ({ schema: REPORT_SCHEMA, ok, command, durationMs: Date.now() - started, summary, diagnostics });
 const answer = (command, started, code, summary, diagnostics) => ({ code, report: report(command, started, code === EXIT.OK, summary, diagnostics) });
 
+/** The acceptance vectors the model states, `[{ request, response }]` as bytes, from its semantic snapshot; none when it states no text application. */
+async function statedVectors(dir, env) {
+  const { wasmSnapshot } = await import('./journey/lexlean-wasm.mjs');
+  const { modelProgram } = await import('./journey/model-eval.mjs');
+  const taken = await wasmSnapshot(dir, { env });
+  if (!taken.ok) return [];
+  try {
+    return modelProgram(taken.snapshot).application.acceptanceVectors;
+  } catch {
+    return [];
+  }
+}
+
 /** Check then prove, on `session`. Resolves `{ code, summary, diagnostics }`; `code` is null when both passed. */
-async function gate(project, session, { env, log, engine }) {
+async function gate(project, session, { env, log, engine, write = false }) {
   const { check, prove } = engine ?? (await import('./journey/engine.mjs'));
   const summary = { modulesChecked: sourceFiles(project.dir).length, lexiconEntriesBound: lexiconEntries(project.dir), theoremsDeclared: 0, theoremsVerified: 0, contractViolations: 0 };
   const diagnostics = [...project.diagnostics];
   // The template contract's ratchet (contract.mjs), when this is a template workspace: the project's own folder, its
   // root, or the folder above the model. Its violations are reported with the model's, and fail the gate with exit 1.
-  const contract = checkContract(contractRoot(project.root, project.dir, dirname(project.dir)));
+  const root = contractRoot(project.root, project.dir, dirname(project.dir));
+  // `build` (template/2): CONFORMANCE.md is the register's generation, so build writes it before R1 judges it, as it
+  // writes the app; `check` writes nothing and only compares.
+  if (write && root && isContract2(root)) {
+    try {
+      writeConformance(root);
+    } catch (error) {
+      if (!(error instanceof PrismCodeError)) throw error;
+    }
+  }
+  const contract = checkContract(root);
+  const contractDiagnostic = (d) => ({ ...diagnostic({ code: d.code, message: d.message, file: d.file, remediation: d.remediation }), line: d.line, id: d.id ?? null });
   if (contract.applies) {
     Object.assign(summary, contract.summary);
-    for (const d of contract.diagnostics) diagnostics.push({ ...diagnostic({ code: d.code, message: d.message, file: d.file, remediation: d.remediation }), line: d.line, id: d.id ?? null });
+    for (const d of contract.diagnostics) diagnostics.push(contractDiagnostic(d));
   }
   const checked = await check(project.dir, session, { env, log });
   if (!checked.ok) return { code: EXIT.REFUSED, summary, diagnostics: [...diagnostics, ...stepDiagnostics(checked, new PrismCodeError('model.unchecked', ''))] };
@@ -112,9 +136,21 @@ async function gate(project, session, { env, log, engine }) {
   const judged = proved.theorems ?? proved.guarantees ?? [];
   summary.theoremsDeclared = judged.length;
   summary.theoremsVerified = proved.ok ? judged.length : judged.filter((t) => String(t.status).startsWith('proved')).length;
-  if (!proved.ok) return { code: EXIT.FAILED, summary, diagnostics: [...diagnostics, ...stepDiagnostics(proved, new PrismCodeError('proof.rejected', ''))] };
-  if (summary.contractViolations > 0) return { code: EXIT.FAILED, summary, diagnostics };
-  return { code: null, summary, diagnostics };
+  // R3 (template/2): every theorem a build ID names is stated by the model and proved, in this same check.
+  if (contract.applies) {
+    const named = checkTheorems(root, new Map(judged.filter((t) => t.qualified).map((t) => [t.qualified, t])));
+    for (const d of named.diagnostics) diagnostics.push(contractDiagnostic(d));
+    summary.contractViolations += named.diagnostics.length;
+    // R5 (template/2): every registered failure is the response of an acceptance vector the model states. build
+    // replays every one of them, and refuses a build whose app answers one otherwise.
+    // Only contract 2 registers failures; a template/1 workspace takes no second snapshot.
+    const refused = isContract2(root) ? checkRefusals(root, await statedVectors(project.dir, env)) : { diagnostics: [] };
+    for (const d of refused.diagnostics) diagnostics.push(contractDiagnostic(d));
+    summary.contractViolations += refused.diagnostics.length;
+  }
+  if (!proved.ok) return { code: EXIT.FAILED, summary, root, diagnostics: [...diagnostics, ...stepDiagnostics(proved, new PrismCodeError('proof.rejected', ''))] };
+  if (summary.contractViolations > 0) return { code: EXIT.FAILED, summary, root, diagnostics };
+  return { code: null, summary, root, diagnostics };
 }
 
 /** `check`: the model checks and every theorem is proved. Writes nothing in the project. */
@@ -141,7 +177,7 @@ export async function modelBuild(path, { project: explicit = null, out = null, e
   const project = await openProject(path, explicit);
   if (project.refused) return answer('build', started, EXIT.REFUSED, {}, project.diagnostics);
   const session = readSession(project.dir);
-  const gated = await gate(project, session, { env, log, engine });
+  const gated = await gate(project, session, { env, log, engine, write: true });
   if (gated.code !== null) return answer('build', started, gated.code, gated.summary, gated.diagnostics);
   const { build } = engine ?? (await import('./journey/engine.mjs'));
   const built = await build(project.dir, session, { env, log });

@@ -1,0 +1,5 @@
+# `template.lock` binds the universal policy files by the BLAKE3 label of their
+# bytes, and `prism-code check` recomputes each label. A checkout that rewrites
+# line endings (Git for Windows does so by default) changes those bytes, and
+# LexLean refuses a CRLF source. No file here is converted.
+* -text
