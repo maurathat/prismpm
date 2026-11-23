@@ -1419,6 +1419,52 @@ const __holo5 = (() => {
     return { version, objects, seal, sealed: (version === 6 ? blake3Hex(preimage) : chainHex(preimage)) === seal };
   }
 
+  function uleb(n) {
+    const out = [];
+    do {
+      let byte = n % 0x80;
+      n = Math.floor(n / 0x80);
+      if (n > 0) byte |= 0x80;
+      out.push(byte);
+    } while (n > 0);
+    return Uint8Array.from(out);
+  }
+
+  /**
+   * A sealed holo v5 or v6 whose every statement is unsigned, as `{ bytes, holo }`: the holo without its attestations
+   * object, sealed again, and the κ of the file as given; or null for any other bytes. An unsigned statement is a
+   * record, such as the kernel-proof statement a build writes (ADR-018): it has no signature to check, and no verifier
+   * takes it as evidence. So such a holo is judged as the holo without them, which is what its statements' subjects
+   * name object by object, and its level is the one its own bytes support. A holo with a signed statement is not this:
+   * its signer has to be named, which is `check`'s to do. A holo whose seal does not match is not this either: taking
+   * its statements off would write a new seal over the damage.
+   */
+  function withoutRecords(bytes) {
+    const version = versionOf(bytes);
+    if (version === null) return null;
+    const archive = readArchive(bytes);
+    if (archive.problem || !archive.sealed) return null;
+    const base = ROLES.length + (version === 6 ? optionalRolesOf(archive.objects[0].bytes).length : 0);
+    if (archive.objects.length !== base + 1) return null;
+    let text;
+    try {
+      text = utf8.decode(archive.objects[base].bytes);
+    } catch {
+      return null;
+    }
+    if (text === '' || !text.endsWith('\n')) return null;
+    for (const line of text.slice(0, -1).split('\n')) {
+      const decoded = decode(new TextEncoder().encode(line));
+      const signatures = decoded.value?.dsseEnvelope?.signatures;
+      if (decoded.error || !Array.isArray(signatures) || signatures.length === 0 || signatures.some((signature) => signature?.sig !== '')) return null;
+    }
+    const kept = archive.objects.slice(0, base).map((object) => object.bytes);
+    const total = kept.reduce((n, object) => n + object.length, 0);
+    const preimage = concat([bytes.subarray(0, 8), uleb(kept.length), ...kept.map((object) => uleb(object.length)), uleb(total), ...kept]);
+    const seal = fromHex(version === 6 ? blake3Hex(preimage) : chainHex(preimage));
+    return { bytes: concat([preimage, seal]), holo: kappa(bytes, version) };
+  }
+
   /** JSON as the canonical form of a holo document: keys sorted, no whitespace. */
   function canonical(value) {
     if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -1682,7 +1728,7 @@ const __holo5 = (() => {
     checks.sort((a, b) => context.order.indexOf(a.id) - context.order.indexOf(b.id));
     return { checks, facts };
   }
-  return Object.freeze({ MANIFEST_SCHEMA, PROVENANCE_SCHEMA, ROLES, ROLE_ATTESTATIONS, OPTIONAL_ROLES, isSourcePath, sourcesProblem, isUorc, kappa, versionOf, chainHex, readArchive, analyzeV5 });
+  return Object.freeze({ MANIFEST_SCHEMA, PROVENANCE_SCHEMA, ROLES, ROLE_ATTESTATIONS, OPTIONAL_ROLES, isSourcePath, sourcesProblem, isUorc, kappa, versionOf, chainHex, readArchive, withoutRecords, analyzeV5 });
 })();
 
 // src/asn1.mjs
@@ -4361,7 +4407,7 @@ const __index = (() => {
   const { SCHEMA_FILES } = __vendor_schemas;
   const { sha256Hex } = __sha256;
   const { readStructure } = __reader;
-  const { analyzeV5, isUorc } = __holo5;
+  const { analyzeV5, isUorc, withoutRecords } = __holo5;
   const assurance = __vendor_assurance_levels;
   const transparency = __transparency;
   const { levelOf } = __level;
@@ -5407,6 +5453,10 @@ const __index = (() => {
    * format revision this package does not know. Asynchronous so that bundle
    * signature verification (issue #267), which needs WebCrypto, can join without an API change.
    *
+   * A holo whose statements are all unsigned (a build's kernel-proof record, ADR-018) is judged as the holo without
+   * them, and its verdict names the file as given: a record has no signature to check and raises no level. The
+   * claims' functions are given the holo as it came, record included.
+   *
    * The claims beside the level (ASSURANCE.CLAIMS) are checks run again on this machine, by functions the caller
    * supplies, so this package never loads a kernel or a compiler: `reprove(holoBytes)` runs Lean's kernel on the
    * holo's carried snapshot and gives the `reproved` member, and `relex(holoBytes)` runs LexLean on its carried sources
@@ -5418,8 +5468,12 @@ const __index = (() => {
    * @param {{ reprove?: (holo: Uint8Array) => Promise<object>, relex?: (holo: Uint8Array) => Promise<object> }} [options]
    */
   async function verify(source, policy, options = {}) {
-    const bytes = asBytes(source);
+    const given = asBytes(source);
     const wanted = checkPolicy(policy);
+    // Statements that are all unsigned are records, never evidence: the holo is judged without them, and named as given.
+    // A caller that hands in statements it read and checked itself has taken them off already.
+    const records = wanted.statements === undefined ? withoutRecords(given) : null;
+    const bytes = records ? records.bytes : given;
     const evidence = evidenceOf(bytes, wanted.capabilities, wanted.replay, wanted.statements);
     const { facts, level, contract, world: worldPolicy } = evidence;
     const reasons = [...evidence.reasons];
@@ -5474,8 +5528,8 @@ const __index = (() => {
     for (const { rule, message } of decision.denials) reasons.push({ check: rule, withholds: null, message: sentence(message) });
 
     // The claims beside the level: each from its check run again here, never from what the holo records.
-    const reproved = typeof options?.reprove === 'function' ? await reprovedOf(options.reprove, bytes) : undefined;
-    const sources = facts.sourcesPresent || typeof options?.relex === 'function' ? await sourcesOf(options?.relex, bytes, facts.sourcesPresent === true) : undefined;
+    const reproved = typeof options?.reprove === 'function' ? await reprovedOf(options.reprove, given) : undefined;
+    const sources = facts.sourcesPresent || typeof options?.relex === 'function' ? await sourcesOf(options?.relex, given, facts.sourcesPresent === true) : undefined;
     for (const claim of wanted.require) {
       const held = claim === 'reproved' ? reproved?.passed === true : sources?.matchesSnapshot === true;
       if (held) continue;
@@ -5495,7 +5549,7 @@ const __index = (() => {
 
     return {
       schema: ASSURANCE.VERDICT,
-      holo: facts.fingerprint,
+      holo: records ? records.holo : facts.fingerprint,
       level,
       policy: wanted.require.length > 0 ? { name: wanted.name, minimum, require: wanted.require } : { name: wanted.name, minimum },
       passed,

@@ -13,7 +13,7 @@ import { validate } from './vendor/json-schema.mjs';
 import { SCHEMA_FILES } from './vendor/schemas.mjs';
 import { sha256Hex } from './sha256.mjs';
 import { readStructure } from './reader.mjs';
-import { analyzeV5, isUorc } from './holo5.mjs';
+import { analyzeV5, isUorc, withoutRecords } from './holo5.mjs';
 import * as assurance from './vendor/assurance-levels.mjs';
 import * as transparency from './transparency.mjs';
 import { levelOf } from './level.mjs';
@@ -1050,6 +1050,10 @@ async function sourcesOf(relex, bytes, present) {
  * format revision this package does not know. Asynchronous so that bundle
  * signature verification (issue #267), which needs WebCrypto, can join without an API change.
  *
+ * A holo whose statements are all unsigned (a build's kernel-proof record, ADR-018) is judged as the holo without
+ * them, and its verdict names the file as given: a record has no signature to check and raises no level. The
+ * claims' functions are given the holo as it came, record included.
+ *
  * The claims beside the level (ASSURANCE.CLAIMS) are checks run again on this machine, by functions the caller
  * supplies, so this package never loads a kernel or a compiler: `reprove(holoBytes)` runs Lean's kernel on the
  * holo's carried snapshot and gives the `reproved` member, and `relex(holoBytes)` runs LexLean on its carried sources
@@ -1061,8 +1065,12 @@ async function sourcesOf(relex, bytes, present) {
  * @param {{ reprove?: (holo: Uint8Array) => Promise<object>, relex?: (holo: Uint8Array) => Promise<object> }} [options]
  */
 export async function verify(source, policy, options = {}) {
-  const bytes = asBytes(source);
+  const given = asBytes(source);
   const wanted = checkPolicy(policy);
+  // Statements that are all unsigned are records, never evidence: the holo is judged without them, and named as given.
+  // A caller that hands in statements it read and checked itself has taken them off already.
+  const records = wanted.statements === undefined ? withoutRecords(given) : null;
+  const bytes = records ? records.bytes : given;
   const evidence = evidenceOf(bytes, wanted.capabilities, wanted.replay, wanted.statements);
   const { facts, level, contract, world: worldPolicy } = evidence;
   const reasons = [...evidence.reasons];
@@ -1117,8 +1125,8 @@ export async function verify(source, policy, options = {}) {
   for (const { rule, message } of decision.denials) reasons.push({ check: rule, withholds: null, message: sentence(message) });
 
   // The claims beside the level: each from its check run again here, never from what the holo records.
-  const reproved = typeof options?.reprove === 'function' ? await reprovedOf(options.reprove, bytes) : undefined;
-  const sources = facts.sourcesPresent || typeof options?.relex === 'function' ? await sourcesOf(options?.relex, bytes, facts.sourcesPresent === true) : undefined;
+  const reproved = typeof options?.reprove === 'function' ? await reprovedOf(options.reprove, given) : undefined;
+  const sources = facts.sourcesPresent || typeof options?.relex === 'function' ? await sourcesOf(options?.relex, given, facts.sourcesPresent === true) : undefined;
   for (const claim of wanted.require) {
     const held = claim === 'reproved' ? reproved?.passed === true : sources?.matchesSnapshot === true;
     if (held) continue;
@@ -1138,7 +1146,7 @@ export async function verify(source, policy, options = {}) {
 
   return {
     schema: ASSURANCE.VERDICT,
-    holo: facts.fingerprint,
+    holo: records ? records.holo : facts.fingerprint,
     level,
     policy: wanted.require.length > 0 ? { name: wanted.name, minimum, require: wanted.require } : { name: wanted.name, minimum },
     passed,

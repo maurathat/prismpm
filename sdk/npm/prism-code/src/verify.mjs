@@ -142,13 +142,8 @@ async function judged(source, options, clientOptions, statements = undefined) {
   const { reprove, relex, ...policy } = resolved;
   let verdict;
   try {
-    const given = await bytesOf(source);
-    // `check` reads a holo's statements itself and hands them here; otherwise unsigned records are set aside.
-    const records = statements === undefined ? recordsOnly(given) : null;
-    // The claims' checks read the holo as given, its kernel-proof statement included.
-    const claims = records ? { reprove: reprove && (() => reprove(given)), relex: relex && (() => relex(given)) } : { reprove, relex };
-    verdict = await verifyBytes(records ? records.bytes : given, statements === undefined ? policy : { ...policy, statements }, claims);
-    if (records) verdict = { ...verdict, holo: records.holo };
+    // A holo whose statements are all unsigned is judged without them, by the verifier itself (`recordsOnly`).
+    verdict = await verifyBytes(await bytesOf(source), statements === undefined ? policy : { ...policy, statements }, { reprove, relex });
   } catch (error) {
     if (error instanceof VerifyError) throw new (classForCheck(error.code))(error.message, { check: error.code, cause: error });
     throw error;
