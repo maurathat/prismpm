@@ -32,6 +32,15 @@ import getDialogsOverride from '@codingame/monaco-vscode-dialogs-service-overrid
 import getExplorerOverride from '@codingame/monaco-vscode-explorer-service-override';
 import getKeybindingsOverride from '@codingame/monaco-vscode-keybindings-service-override';
 import getQuickAccessOverride from '@codingame/monaco-vscode-quickaccess-service-override';
+// What a VS Code user reaches for in the first minute, each VS Code's own: Search across the model's files, the Settings
+// and Keyboard Shortcuts editors, the Outline view, Output channels, snippets, and the accessibility help and screen
+// reader mode. All of them work on the files in this tab; none asks a server for anything.
+import getSearchOverride from '@codingame/monaco-vscode-search-service-override';
+import getPreferencesOverride from '@codingame/monaco-vscode-preferences-service-override';
+import getOutlineOverride from '@codingame/monaco-vscode-outline-service-override';
+import getOutputOverride from '@codingame/monaco-vscode-output-service-override';
+import getSnippetsOverride from '@codingame/monaco-vscode-snippets-service-override';
+import getAccessibilityOverride from '@codingame/monaco-vscode-accessibility-service-override';
 import '@codingame/monaco-vscode-theme-defaults-default-extension';
 import { registerExtension, ExtensionHostKind } from '@codingame/monaco-vscode-api/extensions';
 // The workbench's own theme, from the Hologram brand kit (tools/build-theme.mjs, tools/brand-pins.json).
@@ -563,6 +572,7 @@ try {
     ...prismTerminal(commandLine, terminals),
     // The Explorer, so every file of the model can be opened; the keyboard shortcuts and the command palette.
     ...getExplorerOverride(), ...getKeybindingsOverride(), ...getQuickAccessOverride(),
+    ...getSearchOverride(), ...getPreferencesOverride(), ...getOutlineOverride(), ...getOutputOverride(), ...getSnippetsOverride(), ...getAccessibilityOverride(),
   }, document.getElementById('workbench'), {
     // The model is the one folder of the workspace. It lives in this tab's memory: nothing is written anywhere.
     workspaceProvider: { trusted: true, workspace: { folderUri: URI.file('/workspace') }, open: async () => false },
