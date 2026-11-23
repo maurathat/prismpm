@@ -1,8 +1,8 @@
-# Terminal reach, version 2
+# Terminal reach, version 3
 
-2026-11-21. Model: `src/App.lex.tex`, written by `tools/gen_reach.py`. A rule table, proved by `../ide-prove-rule-app.mjs` with this checkout's prism-code. Nothing is sent anywhere.
+2026-11-23. Model: `src/App.lex.tex`, written by `tools/gen_reach.py`. A rule table, proved by `../ide-prove-rule-app.mjs` with this checkout's prism-code. Nothing is sent anywhere.
 
-The terminal that asks it is `../../ide/edit/terminal` (`shell.mjs`). Version 1 denied every command a write to the model. Version 2 allows it to six commands and to no other.
+The terminal that asks it is `../../ide/edit/terminal` (`shell.mjs`). Version 1 denied every command a write to the model. Version 2 allows it to six commands and to no other. Version 3 adds the programs `build` and `verify`, which read the model and are handed no store.
 
 ## What it decides
 
@@ -12,7 +12,7 @@ A request is two words, in order:
 
 | Field | Values | Meaning |
 |---|---|---|
-| command | other, help, clear, ls, cat, kappa, check, snapshot, prove, audit, echo, pwd, set, unset, env, history, sessions, restore, save, grep, head, tail, wc, sort, uniq, diff, cd, run, test, append, mv, cp, write, touch, rm | the command that is running |
+| command | other, help, clear, ls, cat, kappa, check, snapshot, prove, audit, build, verify, echo, pwd, set, unset, env, history, sessions, restore, save, grep, head, tail, wc, sort, uniq, diff, cd, run, test, append, mv, cp, write, touch, rm | the command that is running |
 | resource | screen, readmodel, writemodel, readstore, writestore, network, clipboard, process | what it asks its host for |
 
 `screen` is writing to the terminal. `readmodel` and `writemodel` are the open model's files, as the editor holds them in this tab. `readstore` and `writestore` are the content-addressed store, by BLAKE3 label. `network` is any request to any address. `process` is starting another program, worker or frame.
@@ -26,6 +26,7 @@ A request is two words, in order:
 | sessions, restore | allow | deny | deny | allow | deny | deny |
 | save | allow | deny | deny | allow | allow | deny |
 | check, snapshot, prove, audit | allow | allow | deny | allow | allow | deny |
+| build, verify | allow | allow | deny | deny | deny | deny |
 | other | deny | deny | deny | deny | deny | deny |
 
 `run` is handed the model to read its script and nothing more: what the script's lines do is asked of this table line by line, under each command's own name. So a script cannot change a file except through the six commands that may. `test` reads the model only to say whether a path names a file or a folder of it. A function is not a command of this table: it is its lines, and each command of them is asked about under its own name.
@@ -34,7 +35,7 @@ A command that is piped to another still asks for `screen` only when it writes t
 
 ## Proved
 
-Lean's kernel accepted all 22, for every request (280 of them).
+Lean's kernel accepted all 24, for every request (296 of them).
 
 1. Network is always denied, whatever the command.
 2. The clipboard is always denied.
@@ -42,25 +43,25 @@ Lean's kernel accepted all 22, for every request (280 of them).
 4. An unlisted command is always denied everything.
 5. to 7. Reading the model is always denied to every command outside the two runs that read it.
 8. Changing the model is always denied to every command from `other` to `test`: every command but `append`, `mv`, `cp`, `write`, `touch` and `rm`.
-9. to 11. Reading the store is always denied to every command but the programs, `sessions`, `restore` and `save`.
-12. to 14. Writing the store is always denied to every command but the programs and `save`.
-15. and 16. `ls`, `cat`, `kappa`, the programs, and `grep` to `cp` are always allowed to read the model.
-17. `append`, `mv`, `cp`, `write`, `touch` and `rm` are always allowed to change the model.
-18. and 19. The programs, `sessions`, `restore` and `save` are always allowed to read the store.
-20. and 21. The programs and `save` are always allowed to write the store.
-22. Each listed command is always allowed the screen.
+9. to 12. Reading the store is always denied to every command but `check`, `snapshot`, `prove`, `audit`, `sessions`, `restore` and `save`. `build` and `verify` are among the denied (guarantee 10).
+13. to 16. Writing the store is always denied to every command but `check`, `snapshot`, `prove`, `audit` and `save`. `build` and `verify` are among the denied (guarantee 14).
+17. and 18. `ls`, `cat`, `kappa`, the six programs, and `grep` to `cp` are always allowed to read the model.
+19. `append`, `mv`, `cp`, `write`, `touch` and `rm` are always allowed to change the model.
+20. and 21. `check`, `snapshot`, `prove`, `audit`, `sessions`, `restore` and `save` are always allowed to read the store.
+22. and 23. `check`, `snapshot`, `prove`, `audit` and `save` are always allowed to write the store.
+24. Each listed command is always allowed the screen.
 
-Guarantees 1 to 3 together say that what is typed into the terminal, and what a command reads, has nowhere to go: no command is handed a way to send it. Guarantees 5 to 21 say, for each of the four resources and every command, either always allow or always deny: the generator checks that the runs leave no command out.
+Guarantees 1 to 3 together say that what is typed into the terminal, and what a command reads, has nowhere to go: no command is handed a way to send it. Guarantees 5 to 23 say, for each of the four resources and every command, either always allow or always deny: the generator checks that the runs leave no command out.
 
 What changed from version 1: its guarantee 4 was "Writing the model is always denied. The terminal changes no file; the editor does." That is no longer so, by design: six commands change a file, and guarantee 8 holds every other command to the old rule.
 
-Model identity: `sha256:d27b100135669d8dd56e02376029586865085b62e9157967f5eb1b027f56e51c`.
-Built app: `sha256:d0b02e718b0b8c116b115cf6b67477d64ac5eefa6f4a23a0efb6ae43690fc846`.
+Model identity: `sha256:abfb3c3073e1ad64f7590538ff7b231d0baf5d2bc87cbf05b61104bc656f7eec`.
+Built app: `sha256:66f20b6b9fa9fb25b97de80236dfdea10caa5257ea4196be9a6c32589b3c5d8d`.
 These names are SHA-256 because that is what prism-code emits today.
 
 ## Tested, not proved
 
-39 of 39 acceptance vectors pass through the built judge.
+46 of 46 acceptance vectors pass through the built judge.
 A planted defect (allow the network) is refused in CI, and the step checks that the kernel names guarantee 1 and the request `help network`.
 
 ## Not covered

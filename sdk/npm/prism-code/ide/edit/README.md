@@ -326,7 +326,7 @@ Both pages have a terminal, and both are answered by one command line (`terminal
 - The plain page: below the guarantees, on xterm.js itself (`@xterm/xterm` 6.0.0, MIT) with the fit, webgl, web-links, search and unicode11 addons, installed by `ide/package-lock.json` and published beside the page as the files npm ships.
 - The workbench page: the workbench's own terminal panel (`@codingame/monaco-vscode-terminal-service-override` 39.0.5, which brings VS Code's terminal and the xterm.js it pins, 6.1.0-beta.327). The panel, its tabs, its find box and its renderer are VS Code's. `src/model-terminal.js` is the "process" behind it.
 
-xterm.js draws and reports keys; a browser tab has no operating system to run anything else. What answers the keys is a command language over a fixed list of 34 commands, each of them the page's own code or a question to one of the page's two workers:
+xterm.js draws and reports keys; a browser tab has no operating system to run anything else. What answers the keys is a command language over a fixed list of 36 commands, each of them the page's own code or a question to one of the page's two workers:
 
 | Commands | What they do |
 |---|---|
