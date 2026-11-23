@@ -9,6 +9,10 @@ const kept = replaceSaid({ replaced: true, label: LABEL, carried: 3, judged: { v
 assert.equal(kept.text, 'The running app was replaced, and kept its state.');
 assert.deepEqual(kept.state, { replaced: true, reset: false, reason: null, why: null, label: LABEL, carried: 3, judged: { verdict: 'verified' } });
 
+// The first build in a holospace where nothing ran: started, not replaced.
+assert.equal(replaceSaid({ replaced: true, started: true, label: LABEL, judged: {} }).text, 'The app was started in its holospace.');
+assert.equal(replaceSaid({ replaced: true, started: false, label: LABEL, carried: 1 }).text, 'The running app was replaced, and kept its state.');
+
 // Replaced, but its session could not be carried: said as a fresh start, with the holospace's own reason.
 const reset = replaceSaid({ replaced: true, label: LABEL, carried: 0, reason: 'state.reset', why: 'the state has another shape in the new build' });
 assert.equal(reset.text, 'The running app was replaced, and started afresh: the state has another shape in the new build.');

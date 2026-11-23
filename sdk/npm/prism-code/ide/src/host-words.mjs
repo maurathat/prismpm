@@ -2,7 +2,8 @@
 //
 // The holospace decides; this file only says what it decided. Nothing here judges a holo, a proof or a limit.
 // The shapes are the ones agreed with Holospace:
-//   replace(bytes)  -> { replaced: true, label, carried, judged, reason?: 'state.reset', why? }
+//   replace(bytes)  -> { replaced: true, started, label, carried, judged, reason?: 'state.reset', why? }
+//                      (started: the first build, when nothing ran before)
 //                    | { replaced: false, reason, judged, why? }
 //                      reason: holo.<verdict> | proof.refused | proof.unjudged | replace.failed
 //                              (and this page's own replace.unanswered, when no answer came in a minute)
@@ -27,6 +28,7 @@ export function replaceSaid(said) {
   // A session that could not be carried into the new build: the app was replaced and starts afresh.
   const reset = replaced && (reason === 'state.reset' || said?.kept === 'restarted');
   const state = { replaced, reset, reason, why, label: said?.label ?? said?.address ?? null, carried: said?.carried ?? null, judged: said?.judged ?? null };
+  if (replaced && said?.started === true) return { state: { ...state, started: true }, text: 'The app was started in its holospace.' };
   if (replaced) {
     return { state, text: reset
       ? `The running app was replaced, and started afresh: ${why ?? (said?.kept === 'restarted' && reason ? reason : 'its state could not be carried into the new build')}.`
