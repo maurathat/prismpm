@@ -109,6 +109,10 @@ const hostedModel = () => {
 // the folder, and Holospace's library enters the project's holospace from that file and from nothing else. A link
 // with a key this browser does not hold opens nothing.
 const FOLDER = HOST ? null : new URLSearchParams(location.search).get('folder');
+// With a folder, nothing else is taken from the link: no project, no model by label, no workspace. The key selects
+// bytes this browser already keeps, so a link someone else wrote can at most reopen a project this browser opened,
+// and never put another's files or build into it. (?theme= is read too; it changes only colours.)
+const LINK = FOLDER !== null ? new URLSearchParams() : new URLSearchParams(location.search);
 const FOLDER_KEPT = 'prism-ide-folder:';
 const PROJECT_MARKER = 'prism.project';
 // Holospace's library, opened once for the page: by the folder's own loading below when there is a folder, and by
@@ -196,7 +200,7 @@ openFolderButton.addEventListener('click', async () => {
   }
 });
 
-const asked = HOST ? hostedModel() : new URLSearchParams(location.search).get('project');
+const asked = HOST ? hostedModel() : LINK.get('project');
 const PROJECT = asked ? new URL(asked.replace(/\/?$/, '/'), location.href).href : null;
 const files = {};
 let listing, pin;
@@ -222,7 +226,7 @@ async function heldModel() {
 }
 // ?model=blake3:<label>&registry=<address>&namespace=<name> opens a model by its content: the archive "Download
 // model" makes, fetched from a kappa-registry under its BLAKE3 label and taken only if its bytes are that label.
-const wanted = new URLSearchParams(location.search);
+const wanted = LINK;
 const BY_LABEL = wanted.get('model') ? { label: wanted.get('model'), registry: wanted.get('registry') ?? '', namespace: wanted.get('namespace') ?? '' } : null;
 if (BY_LABEL) {
   try {
@@ -353,7 +357,7 @@ const library = HOST
 // ?workspace=<name> keeps the model's files in a workspace of Holospace's store, in this browser, and mounts them in
 // the workbench through Holospace's own file provider. The first visit puts the model there as fetched, in one
 // step; later visits open what was saved. Without it the files are held in memory and changes are kept as a draft.
-const WORKSPACE = (() => { const name = new URLSearchParams(location.search).get('workspace'); return name !== null && /^[a-z0-9][a-z0-9._-]{0,62}$/.test(name) ? name : null; })();
+const WORKSPACE = (() => { const name = LINK.get('workspace'); return name !== null && /^[a-z0-9][a-z0-9._-]{0,62}$/.test(name) ? name : null; })();
 // An app opened from its own link (?project=<app>/model/) has a holospace of its own, named by Holospace from the
 // BLAKE3 label of the holo the app publishes: the same on every visit and for every rebuild of that app, and apart
 // from every other app's. The label is the one the app's record names, taken only because the published holo's
