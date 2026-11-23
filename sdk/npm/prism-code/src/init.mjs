@@ -107,12 +107,6 @@ export function planInit({ name, template = DEFAULT_TEMPLATE }) {
   return files;
 }
 
-/** What this scaffold is, as `init` prints it. */
-export const NOT_AN_APP = [
-  'This is a LexLean project. A Prism app is a LexLean project too: start one from a starter with',
-  'npx prism-code@latest init <dir> (or --template decision-app, stateful-app).',
-].join('\n');
-
 /**
  * The gates a new project's author runs next, cheapest first, as `init` prints them. Each names the version that
  * wrote the project: a bare `npx prism-code` in a folder that installs nothing runs whichever version npx last
