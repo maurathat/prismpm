@@ -142,7 +142,10 @@ test('npm create prism-code is prism-code init', () => {
   assert.equal(run(bin, ['init', 'proj2', '--name', 'same'], { cwd: root }).code, 0);
   const a = walk(join(root, 'proj'));
   assert.deepEqual(a, walk(join(root, 'proj2')));
-  for (const path of a) assert.ok(readFileSync(join(root, 'proj', path)).equals(readFileSync(join(root, 'proj2', path))), path);
+  // Every file is the same bytes, but the one that is each project's own: its ID, which init makes from random bytes.
+  for (const path of a.filter((p) => p !== 'prism.project')) assert.ok(readFileSync(join(root, 'proj', path)).equals(readFileSync(join(root, 'proj2', path))), path);
+  const ids = ['proj', 'proj2'].map((p) => /^id = "([0-9a-f]{64})"$/m.exec(readFileSync(join(root, p, 'prism.project'), 'utf8'))?.[1]);
+  assert.ok(ids[0] && ids[1] && ids[0] !== ids[1], 'each project has an ID of its own');
 });
 
 

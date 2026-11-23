@@ -94,6 +94,7 @@
   "src/journey/model-prove.mjs",
   "src/journey/model-site.mjs",
   "src/journey/module-source.mjs",
+  "src/journey/project-id.mjs",
   "src/journey/project.mjs",
   "src/journey/proof-hints.mjs",
   "src/journey/proof-record.mjs",
