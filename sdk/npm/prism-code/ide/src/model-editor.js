@@ -351,6 +351,9 @@ const kernel = channel(EDIT + 'prove-worker.mjs', noted('kernel'));
 let theoremProver = null;
 // What a running build says as each of its steps begins.
 let onBuildStage = null;
+let liveNow = null;
+let liveJudge = null;
+let liveShow = null;
 const theorems = () => {
   if (!theoremProver) {
     theoremProver = channel(EDIT + 'model-prove-worker.mjs', (note) => { if (note.stage) { state.building = note.stage; onBuildStage?.(note.stage); } else state.modelKernel = note; });
@@ -485,6 +488,8 @@ try {
   const runKeep = document.getElementById('runKeep');
   const runLog = document.getElementById('runLog');
   let running = null;
+  let runningLabel = null; // the BLAKE3 label of the holo that is running
+  let lastSent = null; // the last request typed in the box, sent again to the next build when Live is on
   // The app's own page, when its holo carries one: the View's files made into one document by Holospace's library
   // and shown in a frame that may run scripts and nothing else (no network, no storage, no way out of the frame; the
   // document carries the library's own content policy). What the page asks of its app is sent as the page gave it,
@@ -554,10 +559,11 @@ try {
     if (!running) throw new Error('nothing is ready to run: build first');
     const answers = await ask(runKeep.checked ? [...running.steps, text].join(';') : text);
     if (runKeep.checked) running.steps.push(text);
+    lastSent = text;
     return answers;
   };
   runForm.addEventListener('submit', (event) => { event.preventDefault(); const text = runInput.value; if (text === '') return; runInput.value = ''; window.prismModel.send(text); });
-  document.getElementById('runClear').addEventListener('click', () => { if (running) running.steps = []; runLog.textContent = ''; if (state.run) { state.run.sent = []; state.run.answers = []; } });
+  document.getElementById('runClear').addEventListener('click', () => { lastSent = null; if (running) running.steps = []; runLog.textContent = ''; if (state.run) { state.run.sent = []; state.run.answers = []; } });
   // Push: the holo that was just built goes to a registry by the package's own push (prism-code/push-core.mjs,
   // the steps `prism-code push` runs, with oci-registry.mjs as the client). Nothing of it is this page's: the page
   // gives the bytes, the reference and, when the registry asks, what the reader typed, which is held for that one
@@ -634,8 +640,62 @@ try {
   // Build: the package's own build, in the worker that holds LexLean and Lean's kernel. The holo is offered only
   // when the build gives one: every theorem proved, the holo read back verified, every acceptance vector passing.
   const buildButton = document.getElementById('build');
-  window.prismModel.build = async () => {
-    const project = whole();
+  // Live: after each edit that checks and whose theorems are all proved, the model is built and the app that was
+  // built is the one shown. Every such build is a whole build: checked, proved by Lean's kernel, read back verified,
+  // its examples passing. So what is shown is always a proved app, and an edit that is not proved changes nothing that
+  // is running. A build is named by the BLAKE3 label of the model it was made from and the app by the label of its
+  // holo: the same model is not built twice, and the same holo is not opened twice.
+  const liveBox = document.getElementById('live');
+  try { const kept = localStorage.getItem('prism-ide-live'); if (kept !== null) liveBox.checked = kept === 'on'; } catch { /* no storage: the box as the page has it */ }
+  state.live = { on: liveBox.checked, builds: 0, shown: 0, ms: null, building: false };
+  let builtModel = null; // the label of the model the last build was made from
+  let liveAgain = false;
+  let editedAt = null; // when the first edit not yet shown was made
+  async function liveBuild() {
+    if (!liveBox.checked) return;
+    if (state.live.building) { liveAgain = true; return; }
+    let label;
+    try { label = modelTar(whole()).label; } catch { return; }
+    if (label === builtModel) { editedAt = null; return; }
+    state.live.building = true;
+    try { await liveDone(await buildAsk(whole())); } catch (error) { took.textContent = 'Not built: ' + String(error?.message ?? error); took.hidden = false; buildButton.disabled = false; }
+    state.live.building = false;
+    if (liveAgain) { liveAgain = false; liveBuild(); }
+  }
+  /** A live build's answer, shown: the app it made is the one that runs. */
+  async function liveDone(reply) {
+    const since = editedAt;
+    editedAt = null;
+    const built = await finishBuild(reply, { live: true });
+    state.live.builds++;
+    if (built?.holo) {
+      state.live.shown++;
+      // From the first edit this build holds to the app it made being the one that runs.
+      if (since !== null) state.live.ms = Math.round(performance.now() - since);
+    }
+  }
+  // Live, for a model with theorems of its own: the build judges the theorems, so it is asked for in place of the
+  // judging alone, and one pass of Lean's kernel gives both the marks in the editor and the app. Null when a build
+  // is already out, and the theorems are then judged as they are without Live.
+  liveJudge = async (project) => {
+    if (!liveBox.checked || state.live.building) return null;
+    state.live.building = true;
+    try { return await buildAsk(project); } catch { return null; } finally { state.live.building = false; }
+  };
+  liveShow = async (reply) => {
+    try { await liveDone(reply); } catch (error) { took.textContent = 'Not built: ' + String(error?.message ?? error); took.hidden = false; }
+    if (liveAgain) { liveAgain = false; liveBuild(); }
+  };
+  liveBox.addEventListener('change', () => {
+    state.live.on = liveBox.checked;
+    try { localStorage.setItem('prism-ide-live', liveBox.checked ? 'on' : 'off'); } catch { /* not remembered */ }
+    if (liveBox.checked) liveNow?.();
+  });
+  window.prismModel.build = async ({ live = false } = {}) => finishBuild(await buildAsk(whole()), { live });
+  /** The build of a model, asked of the worker. Its answer carries the label of the model it was made from. */
+  async function buildAsk(project) {
+    let model = null;
+    try { model = modelTar(project).label; } catch { /* not a model that can be named: built, and not remembered */ }
     buildButton.disabled = true;
     const steps = { check: 'LexLean is checking the model', prove: 'Lean\'s kernel is judging its theorems', build: 'the holo is being made' };
     onBuildStage = (stage) => { took.textContent = `Building in this tab: ${steps[stage] ?? stage}…`; };
@@ -644,6 +704,10 @@ try {
     const reply = await theorems().ask({ build: true, files: project });
     onBuildStage = null;
     buildButton.disabled = false;
+    return { ...reply, model };
+  }
+  async function finishBuild(reply, { live = false } = {}) {
+    builtModel = reply.model ?? null;
     const built = reply.built;
     if (!built) {
       state.built = { ok: false, error: reply.error ?? 'no answer' };
@@ -657,10 +721,27 @@ try {
     window.prismModel.holo = built.holo ? () => built.holo.bytes : null;
     document.getElementById('pushButton').disabled = !built.holo;
     pushSaid.textContent = '';
-    await openRun(built.holo ? built.holo.bytes : null);
     if (!built.holo) {
+      // Live: a build that gives no holo replaces nothing. The app that was running stays, and is said to be the
+      // earlier one.
+      if (live && running) { took.textContent = `Not built (stopped at ${built.stage}): ${built.message} The app shown is the last build that was proved.`; return state.built; }
+      runningLabel = null;
+      await openRun(null);
       took.textContent = `Not built (stopped at ${built.stage}): ${built.message}`;
       return state.built;
+    }
+    if (live && running && built.holo.label === runningLabel) {
+      // The same holo, byte for byte, is already the one running: nothing is opened again.
+    } else {
+      const before = live && running ? { steps: [...running.steps], last: lastSent, keep: runKeep.checked } : null;
+      await openRun(built.holo.bytes);
+      runningLabel = running ? built.holo.label : null;
+      // Live: the request last typed is asked of the new app, after the same earlier ones, so its answer is seen
+      // to change with the model.
+      if (before && before.last !== null && running) {
+        running.steps = before.keep ? before.steps.slice(0, -1) : [];
+        await window.prismModel.send(before.last).catch(() => {});
+      }
     }
     const name = `${built.holo.name || 'app'}.holo`;
     took.textContent = '';
@@ -732,7 +813,13 @@ try {
   // was typed in between is checked once, as it then stands.
   let checking = false;
   let checkAgain = false;
+  let provedFor = 0; // the check after which every theorem or guarantee of the model stood proved
   async function run() {
+    await judge();
+    if (provedFor === latest && !checking) liveBuild();
+  }
+  liveNow = () => { if (provedFor === latest && !checking) liveBuild(); };
+  async function judge() {
     if (checking) { checkAgain = true; return; }
     const mine = ++latest;
     const project = whole();
@@ -782,7 +869,9 @@ try {
       state.proof = { table: false };
       compare(null, edited);
       say(`The model checks, in ${reply.ms} ms. Lean's kernel is judging its theorems in this tab` + (state.modelKernel?.ready ? '…' : '; the kernel is opened once, which takes some seconds…'));
-      const put = await theorems().ask({ files: project });
+      const liveReply = await liveJudge?.(project) ?? null;
+      const judgedByBuild = Array.isArray(liveReply?.built?.theorems);
+      const put = judgedByBuild ? { result: { theorems: liveReply.built.theorems, via: 'the build', message: liveReply.built.message }, ms: null } : await theorems().ask({ files: project });
       if (mine !== latest) return;
       const proving = put.result;
       if (!proving) {
@@ -817,6 +906,8 @@ try {
         : `${provedCount} of ${total} theorems proved by Lean's kernel in this tab` + (put.ms ? `, in ${put.ms} ms` : '') + (missed.length === 0 ? '.' : `; ${missed.length} not, listed under Problems.`), total > 0 && missed.length === 0 ? 'ok' : total === 0 ? 'ok' : 'bad');
       state.markers = markers.read({}).length;
       state.ready = true;
+      if (missed.length === 0) provedFor = mine;
+      if (judgedByBuild) await liveShow(liveReply);
       return;
     }
     const value = (f, v) => (f.values ? f.values[v] : v);
@@ -841,6 +932,7 @@ try {
     say(`${proved} of ${statuses.length} guarantees proved by Lean's kernel in this tab` + (judged.ms ? `, in ${judged.ms} ms` : '') + (proved === statuses.length ? '.' : `; ${statuses.length - proved} not, listed under Problems.`), proved === statuses.length ? 'ok' : 'bad');
     state.markers = markers.read({ resource }).length;
     state.ready = true;
+    if (proved === statuses.length) provedFor = mine;
   }
 
   // Any file of the model that is open is watched: a change to any of them is a change to the model.
@@ -849,14 +941,14 @@ try {
     const path = pathOf(m.uri);
     if (path === null) return;
     if (m.getLanguageId() !== LEXLEAN && path.endsWith('.lex.tex')) monaco.editor.setModelLanguage(m, LEXLEAN);
-    m.onDidChangeContent(() => { current[path] = m.getValue(); keep(); clearTimeout(timer); timer = setTimeout(run, PAUSE_MS); });
+    m.onDidChangeContent(() => { current[path] = m.getValue(); editedAt ??= performance.now(); keep(); clearTimeout(timer); timer = setTimeout(run, PAUSE_MS); });
   };
   monaco.editor.getModels().forEach(watch);
   monaco.editor.onDidCreateModel(watch);
   // The terminal's six commands that change a file. An open file changes in its editor, so the change can be
   // undone there; a file that is not open changes where the workbench reads it from. Either way it is kept with
   // the draft and the model is checked again. A removed file is back when the page is loaded again.
-  const changedByTerminal = () => { keep(); clearTimeout(timer); timer = setTimeout(run, PAUSE_MS); };
+  const changedByTerminal = () => { editedAt ??= performance.now(); keep(); clearTimeout(timer); timer = setTimeout(run, PAUSE_MS); };
   changeNow = {
     write(path, text) {
       removed.delete(path);
