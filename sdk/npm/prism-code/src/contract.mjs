@@ -32,8 +32,8 @@
  *       contract.theorem-unproved  (checkTheorems) a named theorem Lean's kernel did not prove within its axioms
  *   R5  contract.rejects-scenario  a row with `failure` whose scenario is not tagged @rejects
  *       contract.negative       a row with `failure` whose `negative` is not a registered build row
- *   R6  contract.artifact       (template/1 and template/2) an authority's committed artifact whose bytes are not its checksum
  *       contract.refusal-unreplayed (checkRefusals) a row with `failure` no replayed vector is refused with
+ *   R6  contract.artifact       (template/1 and template/2) an authority's committed artifact whose bytes are not its checksum
  *       contract.policy-drift   a universal policy file whose bytes are not the BLAKE3 label template.lock binds
  *       contract.spec           a register spec that is neither template/1 nor template/2
  *
@@ -42,7 +42,7 @@
  * `{ applies, summary }`.
  */
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { PrismCodeError } from './errors.mjs';
 import { kappa } from './blake3.mjs';
@@ -189,6 +189,9 @@ export function artifactChecksum(root, id, artifact) {
   } catch {
     return { error: `${id}: artifact ${artifact} is not committed: the row names a path that holds no file (R6).` };
   }
+  // A folder above the artifact may be a link: the artifact's real place must still be inside the repository.
+  const inside = relative(realpathSync(root), realpathSync(path));
+  if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) return { error: `${id}: artifact ${artifact} resolves outside the repository through a link (R6).` };
   if (info.isFile()) return { checksum: sha(readFileSync(path)) };
   if (!info.isDirectory()) return { error: `${id}: artifact ${artifact} is not a regular file or directory (R6).` };
   const names = [];
