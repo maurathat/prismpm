@@ -88,9 +88,11 @@ export function nameFromDirectory(directory) {
 /**
  * A new project's `.gitattributes`. LexLean refuses a source with CRLF
  * (`LLC0101`), and Git on Windows writes CRLF unless told not to, so every
- * project keeps its text LF from its first commit.
+ * project keeps its text LF from its first commit. `text=auto` lets Git leave
+ * a binary file, such as a `.holo`, byte for byte: a bare `text` would turn
+ * every CRLF byte pair inside it into LF on commit.
  */
-export const GITATTRIBUTES = '* text eol=lf\n';
+export const GITATTRIBUTES = '* text=auto eol=lf\n';
 
 /**
  * Everything `init` writes before binding an SDK: the template's files,

@@ -79,7 +79,7 @@ test('planInit is the template plus prism.toml and an LF-only .gitattributes; an
   const files = planInit({ name: 'calc' });
   assert.ok(files.has('prism.toml') && files.has('lexlean.lock') && files.has('prismpm.toml') && files.has('src/TextRequest.lex.tex'));
   assert.equal(files.size, templateFiles().size + 2);
-  assert.equal(Buffer.from(files.get('.gitattributes')).toString('utf8'), '* text eol=lf\n', 'LexLean refuses CRLF, so a new project never gets it');
+  assert.equal(Buffer.from(files.get('.gitattributes')).toString('utf8'), '* text=auto eol=lf\n', 'LexLean refuses CRLF, so a new project never gets it');
   // The scaffold names the gates that follow, each run in this process.
   const steps = nextSteps('calc').split('\n');
   assert.match(steps[0], /every step in this process/);

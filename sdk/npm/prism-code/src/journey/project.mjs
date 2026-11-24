@@ -106,7 +106,7 @@ export function scaffold(dir) {
     written.push(path);
   }
   if (!existsSync(join(dir, '.gitattributes'))) {
-    write(dir, '.gitattributes', '* text eol=lf\n');
+    write(dir, '.gitattributes', '* text=auto eol=lf\n');
     written.push('.gitattributes');
   }
   if (!existsSync(join(dir, '.gitignore'))) {
